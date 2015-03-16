@@ -1,0 +1,192 @@
+
+
+
+# Author: name <email>
+#
+# System Units:
+#                
+#   mass          [=] ?
+#   volume        [=] ?
+#   concentration [=] ?
+#   time          [=] ?
+
+
+
+# #-------------#
+# | References  |
+# #-------------#
+#
+# Common conversions
+#
+# Half-life to rate:
+#
+#        ln(2)
+#  kel = -----
+#        thalf
+#
+# Convert ng/ml to nM
+#
+#    ng   1000 ml        nmoles
+#  X -- x ------- x --------------- = X/MW (KDA)
+#    ml    1L       MW (KDA)*1000 ng
+# 
+# Convert from nM to ng/ml:
+#
+# X nM  ===> X*MW(KDA) 
+# 
+# Converting dose in mpk to nmoles
+#
+#   mg            1e6 ng    1 nmole
+# X -- x BW(kg) x ------ x -----------------  =>  X*1e3*BW/MW
+#   kg            1 mg      MW (KDA) * 1000
+#
+#
+# Converting dose in mpk to nM    
+#
+#   mg            1e6 ng    1 nmole             1
+# X -- x BW(kg) x ------ x ----------------- x ---  =>  X*1e3*BW/MW/Vp
+#   kg            1 mg      MW (KDA) * 1000    V(L)
+#
+
+
+# Define Sets
+#
+# <SET:NAME>  E1; E2; E3
+
+# #-------------#
+# | Parameters  |
+# #-------------#
+#
+# System parameters
+#name          value           lower  upper    units  editable grouping
+#                              bound  bound
+# <P> name       1.0            eps    inf      ???    yes      System
+
+# Alernate paramter sets
+#<PSET:default>  Healthy
+#<PSET:ko>       Knock out animal
+#<PSET:ko:name>  0.0
+
+# static secondary parameters
+# <As> param_name = right hand side
+
+#dynamic secondary parameters
+# <Ad> param_name = right hand side
+
+# #-------------------#
+# |Input Information |
+# #-------------------#
+#
+# Bolus Events
+# times/events state   values        scale      units
+# <B:times>;           [  0  ];      ?;          ???
+# <B:events>;    ??;   [1.0  ];      ?;          ???    
+
+# Infusion Rate 
+# #  name     time/levels  values  scale    units
+# <R:name>;    times;     [0  1];     1;    ????
+# <R:name>;    levels;    [1  0];     1;    ????
+#
+# Example Covariates
+# For running simulations, we create example covariate information
+# #     name      times/values  values   units
+#   <CV:cvname>  ; times;      [ 0 10];    weeks
+#   <CV:cvname>  ; values;     [70 55];    kg     
+#
+# These can either be interpolated linearly or as step funcitons
+# #         name    
+#   <CVTYPE:cvname> linear
+#   <CVTYPE:cvname> step
+#
+# The example covariates can be altered based with parameter sets
+#   <CVSET:psetname:cvname>  ; times;   [ 0 10]
+#   <CVSET:psetname:cvname>  ; values;  [60 55]
+
+# #------------------#
+# | Rate Information |
+# #------------------#
+
+# Initial conditions
+# define the non-zero initial conditions
+# <I> name = name0
+
+# ODEs
+# <ODE:state> right hand side
+
+# tissue distribution
+# state; compartment_volume; rate  <C> state; compartment_volume; rate
+
+# rate equation
+# state1 + state2 =rate=> state3 + state4
+
+# equilibrium
+# state1 + state2 <=rate_forward:rate_reverse=> state3 + state4
+
+# sources and sinks for gut and central compartment
+# production/source          elimination/sink
+# rate1; rate2      <S:name>  rate3; rate4 
+
+# #---------#
+# | Outputs |
+# #---------#
+# Outputs that begin with QC will not be displayed in the GUI
+#
+# <O> outputname  = right hand side
+
+
+# #------------#
+# | Estimation |
+# #------------#
+ 
+# Variance parameters
+#     name       value     lower  upper    units  editable  Label
+#                          bound  bound
+# <VP> name      -1        eps    inf       --    no        Variance
+ 
+# Variance Model      
+# <VE:OUTPUT> expression
+
+# Interindividual Variability
+# <IIV:ETANAME>    0.1            # Variance/diagonal element
+# <IIV:ETANAME:LN> PNAME          # Lognormal distirbution (LN) applied to parameter PNAME 
+# <IIVCOR:ETANAME1:ETANAME2> 0.01 # Covariance between ETANAME1 and ETANAME2
+
+
+# <DATA:FILE:CSV> data/mydata.csv
+# <DATA:HEADER:AUTOMATIC>
+# <DATA:HEADER:MANUAL>   col1; col2; col3;
+
+# #---------#
+# | Options #
+# #---------#
+
+# General Options:
+# specify different time scales
+# <TS:name>  scaling factor
+
+# Specify the index of state 'name' to be 'number' in the different targets
+# <INDEX:STATE:name> number
+# 
+# Specify the index of output 'name' to be 'number' in the different targets
+# <INDEX:OUTPUT:name> number
+
+# output times 
+# <OPT:output_times> vector of output times
+# default time scale
+# <OPT:TS>  name                            
+# <OPT:ylim>  [ymin ymax]
+# <OPT:ylim>  [ymin ymax]
+#
+# GUI Callback
+# <OPT:callback_gui> [SIMINT_simulation_options] = update_dosing(SIMINT_cfg, SIMINT_simulation_options, SIMINT_handles);
+
+# guides
+# <GUIDE>  type; name; value, marker, color
+
+# NONMEM options:
+# <NONMEM:INPUT:DROP:dataset_column_name>
+# <NONMEM:INPUT:RENAME:dataset_column_name> new_column_name
+
+
+
+

@@ -1,0 +1,647 @@
+#
+# Comments
+#
+#   Anything following a pound/hash character (#) will be considered a comment
+#
+#
+# General notes
+#
+#  Names (parameters, states, infusion rates, etc.)
+#      Certain names are used internally and cannot be used to name things.
+#      Since targets are generated for many model formats/programs, a list of
+#      reserved words is created each time a system is generated. The
+#      exhaustive list and the targets where they are used can be found in
+#      system_help_reserved_words.txt (created after build_auto_targets.m is
+#      called).
+#      
+# #-------------------------#
+# # Functions and Operators #
+# #-------------------------#
+#    
+#  Some mathematical and boolean operations are defined differently in the
+#  different languages (e.g., C vs Matlab). To deal with this, a generic
+#  format is used and the target specific values are then implemented when the
+#  specific targets are created.
+#   
+#    Operator/Function     Example     General Format 
+#    -----------------------------------------------------                      
+#    # Numerical  Functions             
+#    power                  a^b        SIMINT_POWER[a][b]
+#    exponential            e^a        SIMINT_EXP[a]
+#    log base 10            log(a)     SIMINT_LOG10[a]
+#    log base e             ln(a)      SIMINT_LOGN[a]
+#                          
+#    # Boolean  Relationships          
+#    less than              a <   b    SIMINT_LT[a][b]
+#    less than or equal     a <=  b    SIMINT_LE[a][b]
+#    greater than           a >   b    SIMINT_GT[a][b]
+#    greater than or equal  a >=  b    SIMINT_GE[a][b]
+#    equal                  a ==  b    SIMINT_EQ[a][b]
+#    and                    a and b    SIMINT_AND[a][b]
+#    or                     a or  b    SIMINT_OR[a][b]
+#   
+#    # Other
+#    To calculate the free amount of C which is binding to R with an affinity
+#    of KD given total values Ctot and Rtot the following can be used:
+#    Cfree = SIMINT_QEQ[Ctot][Rtot][KD]
+#   
+#    To get Rfree, just switch the first two arguments:
+#    Rfree = SIMINT_QEQ[Rtot][Ctot][KD]
+#
+# Order of definition 
+#  
+#   The general order in which the components of the system are defined
+#   internally are:
+#   1) Parameters (system, variance, covariate)
+#   2) Infusion inputs
+#   3) Covariates 
+#   4) Static secondary parameters
+#   5) State variables
+#   6) Dynamic secondary parameters
+#   7) Outputs
+#   
+#   This is important because you cannot use one of the entities above until it
+#   is defined. So, for example, you cannot use a dynamic secondary parameter
+#   in the definition of a static secondary parameter.
+#   
+# Parameters <P>    
+# --------------
+#   Each parameter is specified with a name, value, lowerbound, upperbound,
+#   units, whether it should be editable in the gui and the 'type' of parameter
+#   (grouping in the GUI). The values of eps (machine precision, smallest value
+#   that is not zero) and inf (infinity) can be used. For example to specify a
+#   parameter koffR with a value of .1 that is positive and a parameter KDR
+#   with a value of .04 that is also positive.
+#   
+#   #   name  value    lb     ub   units  editable type
+#   <P> koffR 0.1      eps    inf   1/hr  yes      Target
+#   <P> KDR   0.04     eps    inf   nM    yes      Target
+#
+#   This creates the default set of parameters. To give them a verbose name 
+#   use the following command:
+#
+#   <PSET:default> Best construct
+#
+#   Now say we have a weak construct that is only different by the affinity.
+#   We can create a new parameter set named 'weak' using:
+#
+#   <PSET:weak> Weaker construct
+#
+#   This will create a copy of that original parameter set, and we can
+#   overwrite specific values in the following manner:
+#
+#   <PSET:weak:KDR> 1.0
+#
+# Covariates  <CV:?>, <CVSET:?:?>
+# -------------------------------
+#
+#
+#   Covariate Parameters JMH
+#
+#
+#   Sample Covariates 
+#   For simulation purposes covariates (normally found in a data set) need to
+#   be defined. Covariates can be be either constant or change with time. The
+#   following defines the value for the covariate RACE:
+#
+#   <CV:RACE>; times;  [ 0];     weeks
+#   <CV:RACE>; values; [ 1];     ethnicity
+#
+#   Covariates can also change with time. In this case consider the 
+#   subject weight WGT. It begins at 70 and measurements are made at several
+#   time points.  
+#
+#   <CV:WGT>; times;  [ 0 10 20 30 60];     weeks
+#   <CV:WGT>; values; [70 65 60 58 56];     kg     
+#   
+#   Next we can alter how the simulations will interpret these values. By
+#   setting the type of covariate. By default the weight will be linearly
+#   interpolated (type = 'linear'), however we can hold the weight constant
+#   until the next measurement is encountered by declaring the type as 'step'
+#   
+#   <CVTYPE:WGT> step
+#   
+#   Now if the model was parameterized for male and female subjects we can
+#   define two parameter sets (as described above) to account for this:
+#   <PSET:default>  Male   
+#   <PSET:female>   Female          
+#   
+#   And the default values for the covariate can be changed
+#   for the set 'female':
+#   <CVSET:female:WGT>; times;   [ 0 10 30 50]
+#   <CVSET:female:WGT>; values;  [60 55 52 50]
+#   
+#   More complicated profiles can be created as well. For example, to create a
+#   covariate profile that is zero from time 0-1 and at time 1 it jumps to 8
+#   and decreases at a rate of 1 per unit time until time 5 where it stays at
+#   the value 4 until time 12 when it drops to zero. It might have a profile 
+#   like the following:                                                        
+#  
+#      ^                                                
+#     8|   x                                            
+#     7|     x                                           
+#     6|       x                                           
+#     5|         x                                    
+#     4|           xxxxxxxx                          
+#      |                  x                             
+#      |xxx               xxxxxxxxxxxxxx                
+#      o--------------------------------->
+#       0  1 2 3 4        12                            
+#   
+#   # name        time/values  values                         units
+#   <CV:mycov>  ; times;       [0 .999 1 2 3 4 5 12 12.001];  hours
+#   <CV:mycov>  ; values;      [0 0    8 7 6 5 4 4  0     ];  --   
+#   <CVTYPE:mycov> linear
+#
+# Secondary parameters <As> and <Ad> 
+# -------------------------------
+#
+#   This is where you define intermediate values and secondary parameters that
+#   are a function of only your parameters (<As>) or parameters, states and
+#   other inputs (<Ad>). The order here is important. For example say
+#   you wanted to define V1 in terms of KDR above, and then V2 in term of V1 and
+#   koffR. You need to first define V1 then V2:
+#   
+#   #   name  = value
+#   <As> konR  = koffR/KDR
+#   <As> V1    = 2.0*SIMINT_POWER[KDR][2.0]
+#   <As> V2    = V1 + koffR 
+#   
+#   <As> indicates a static secondary parameter, that's why it is only a function
+#   of parameters, previously defined static secondary parameters, and
+#   static covariates (those that do _NOT_ change with time). Dynamic secondary
+#   parameters (<Ad>) can incorporate state and input variables (e.g. rates)
+#   as well. The static parameters (<As>) are defined first internally, so
+#   they can be used in <Ad> statements.
+#
+#   Note: Static here means the parameter does not change for any given
+#   simulation, while dynamic indicates that the parameter can evolve over
+#   time.
+#
+#
+# States 
+# ------
+# State information can be specified in five different ways
+#
+#
+# 1 Differential equations        <ODE:?>
+# 2 Reaction rates                =?=>
+# 3 Equilibrium relationships     <=kforward:kreverse=>
+# 4 Sources and sinks             <S:?>
+# 5 Movement between compartments <C>
+#
+# The details are below:
+#
+# Differential equations <ODE:?>
+#
+#   Portions of differential equations can be specified here where ? is the
+#   state.
+#   To define dA/dT as "koffR*C - konR*A*B"  we would write:
+#
+#    <ODE:A> koffR*C - konR*A*B 
+#
+#   It might be more convenient to specify an ode across several lines (to
+#   make things more readable, for example). Just use multiple statements and
+#   they will be appended together. This would give the same result as the
+#   example above:
+#
+#    <ODE:A>    koffR*C
+#    <ODE:A>  - konR*A*B 
+#
+# Rate equations =?=>
+#     A + B =konR=>   C       
+#     C     =koffR=>  A + B
+#
+# Equilibrium relationships <=kforward:kreverse=>
+#   These are specified by using <=kon:koff=>
+#   The following example:
+#
+#     A + B  <=konR:koffR=>  C       
+#
+#   Will be expanded to the following:
+#
+#     dA =  koffR*C - konR*A*B
+#     dB =  koffR*C - konR*A*B
+#     dC = -koffR*C + konR*A*B
+#
+#  So the expanded kon and koff values will either have to be specified as
+#  parameters or secondary parameters above.
+#
+#
+# Sources and sinks  <S:?>
+#   This is where synthesis and degradation terms are specified
+#   If A is produced at a rate of ksynA (mass quantities) and degraded at a
+#   rate of kdegA. And if the state A is in concentration units then the
+#   sources are specified on the left hand side of <S?> and the sinks
+#   (elimination) are specified on the left hand side of <S?>. Multiple
+#   sources and sinks can be separated by semicolons. In this example with a
+#   compartment volume V
+#
+#   ksynA/V <S:A> kdeg*A
+#
+#   This would further expand the differential equation for A above into:
+#
+#     dA = koffR*C - konR*A*B + ksynA/V - kdeg*A
+#
+# Movement between compartment <C>
+#   When mass moves between two physical spaces with different volumes we need
+#   to specify, for each compartment, the species, volume and rate of
+#   transport. For movement of A between the central compartment A with a
+#   volume V to the tissue space At with a volume Vt at rates kps and ksp
+#   respectively this is specified in the following manner:
+#
+#     A; V; kps <C> At; Vt; ksp
+#
+#   On each side of the <C> we have the compartment information separated by
+#   semicolons. The order is important. It should be:
+#   
+#   Species; Volume; Rate <C> Species; Volume; rate
+#   
+#   This would change the ODE for A and create an ODE for At in the following
+#   way:
+#   
+#     dA  = koffR*C - konR*A*B + ksynA/V - kdeg*A -kps*A + ksp*At*Vt/V
+#     dAt = +kps*A*V/Vt - ksp*At
+#
+# Initial conditions
+#   By default all initial conditions are zero. You can specify a non-zero
+#   initial condition using the <I> string to set a 'state' to a 'value'
+#
+#    <I> state = value
+#
+#   Value can be a number, parameter <P> or static secondary parameter <As>. 
+#   Consider a turnover system where the value of ksyn and kdeg are specified 
+#   as parameters:
+#
+#   <P> ksyn  0.1      eps    inf   1/hr  yes      Target
+#   <P> kdeg  0.04     eps    inf   nM    yes      Target
+#
+#   We can calculate the initial value for a target as:
+#   <As> T0 = ksyn/kdeg
+#
+#   Then we can specify the initial value of the target as:
+#   <I> T = T0
+#  
+#   NOTE: For MATLAB scripts, this initial condition applies at the first time 
+#         specified in the output_times option below. For the relevance of
+#         this, see the help for run_simulation_generic.m
+#  
+# Bolus Events <B:times>, <B:events> 
+# ----------------------------------
+#
+#   Fields delimited by semicolons (;)
+#   
+#   The times when bolus events are going to occur are specified <B:times> and
+#   the events for each state are specified by <B:events>. An example of bolus
+#   time specification is:
+# #               times of         scaling   units of 
+# #               events           factor    the events
+# <B:times> ;     [0 1 2 3 4];     7*24;     months
+#
+#   It's sometimes more convenient to specify the units of the bolus events
+#   different from those of the simulation. In this example we are dosing every
+#   month (months 0 1 2..) but the simulation is in hour so the scaling factor
+#   converts the times specified in months to hours
+#
+# Events are specified for each state receiving a bolus
+# #          state    vector of values
+# #          name     same length as that  scaling
+# #                   for times above      factor   units of dose 
+# <B:events>; At;      [1 1 1 1 1];        1   ;     mg
+# <B:events>; A ;      [1 1 1 1 1];        1/Vp;     mg    
+#
+#
+# #-------------#
+# # Rates <R:?> #
+# #-------------#
+#
+#  name     time/levels  values               scale   units
+# <R:myrate>; times;       [-100    0    4];        1;  hours
+# <R:myrate>; levels;      [0       1    0];    7.143;  mg/hr
+# 
+#                          
+# Time Varying Inputs <TV:?> 
+# # To create a time varying input simply specify a list of times
+# # and corresponding values. These values will be linearly interpolated
+#
+# #-------------#
+# # Outputs <O> #
+# #-------------#
+#
+# Outputs are defined here in terms of states, parameters, secondary
+# parameters, and input rates listed above. The format used is:
+#
+# #   Output     = RHS
+# #   Name            
+# <O> A_obs      = A
+# <O> Coverage   = A/(KD + A)
+#
+# Outputs that begin with QC will not be displayed in the GUI. This is
+# intended to make them available at the scripting level for quality control
+# (QC) purposes.
+#
+# #--------------------------------------#
+# # Conditional statements <IF:?:?> ?; ? # 
+# #--------------------------------------#
+#
+# # To change a secondary parameter based on logical conditions the <IF..>
+# # structure is used and should at least have a condition (COND) and a true
+# # (ELSE) statement.  This is performed on a per-parameter basis, so you have
+# # to have a different conditional statement for each parameter you want to
+# # define as piecewise continuous. The same rules for defining a secondary
+# # parameter apply here (e.g. a static secondary parameter can only be defined
+# # in terms system parameters, and previously defined static secondary
+# # parameters).
+#  
+# # The general structure for a condition is:
+# # <IF:VARNAME:COND> condition; value 
+# # The general structure for a else or default condition is:
+# # <IF:VARNAME:ELSE> value 
+#
+# # For example if we want to define MV based on the value of TV
+# # when TV is greater than 10 we want MV = TV+5 otherwise we just want
+# # MV = TV. The following would implement this: 
+#
+#  <Ad> TV  = A/(KD+A) # where KD and A have been defined before
+#
+# # first we initialize the variable MV
+#  <Ad> MV = 0.0
+# # the we define the conditions for MV
+#  <IF:MV:COND> SIMINT_GT[TV][10.0];  TV + 5.0
+#  <IF:MV:ELSE> TV
+#
+# # Accessing the current simulation time
+# #
+# # To access the current simulation time, the variable SIMINT_TIME can
+# # be used. For example, if you want a value to go from zero
+# # to 1 at time 5, the following should work:
+#
+#  <Ad> MYVAR = 0.0
+#  <IF:MVAR:COND>  SIMINT_LT[SIMINT_TIME][5.0]; 0.0
+#  <IF:MVAR:ELSE>  1.0
+#
+# #----------------------#
+# # Sets <SET:?> ?; ?; ? # 
+# #----------------------#
+# # Sets can be used to quickly enter system information that is repetitive or
+# # follows a pattern. The usage is pretty simple. You define a set with a name
+# # a list of elements in that set. For example if I have 3 targets T1 T2 and
+# # T3 that interact with my drug. I can create that set in the following way:
+#
+# <SET:TARGET>  T1; T2; T3
+#
+# # The set name is 'TARGET' and the elements are 'T1', 'T2' and 'T3'
+#
+# # To use sets you just have to place {SETNAME} in the relationships above.
+# # For example, to write the equilibrium relationship for a drug interacting
+# # with these targets you would write:
+#
+# D + T_{TARGET} <=kon_{TARGET}:koff_{TARGET}=> D_T_{TARGET}
+# # this would be expanded into:
+# 
+# D + T_T1  <=kon_T1:koff_T1=> D_T_T1      
+# D + T_T2  <=kon_T2:koff_T2=> D_T_T2      
+# D + T_T3  <=kon_T3:koff_T3=> D_T_T3      
+#
+# # Note you still have to define the kon and koff in parameters or as a
+# # secondary parameter. The set notation can be used for any of the system
+# # descriptors (<P>, <ODE:?>, <C>, etc.). For example, the set notation can
+# # be used in the secondary parameter assignments as well.
+#
+# # You can use multiple sets as well. And these will be evaluated for each
+# # combination. The following considers two drugs (D) and targets (T) that can
+# # all interact. The mathematical notation would be something along the lines
+# # of: The following relationship should hold:
+#
+# Di + Tj <=kon:koff=> Di_Tj for all i in [1,2] and for all j in [1,2]
+#  
+# # This would be represented in the following manner:
+#
+# <SET:T>  T1; T2
+# <SET:D>  D1; D2
+#
+# {D} + {T} <=kon_{D}_{T}:koff_{D}_{T}=> {D}_{T}
+#
+# # Would be expanded to internally as:
+#
+#  D1 + T1  <=kon_D1_T1:koff_D1_T1=> D1_T1
+#  D1 + T2  <=kon_D1_T2:koff_D1_T2=> D1_T2
+#  D2 + T1  <=kon_D2_T1:koff_D2_T1=> D2_T1
+#  D2 + T2  <=kon_D2_T2:koff_D2_T2=> D2_T2
+#
+# # Set functions
+# # SIMINT_SET_SUM[SETNAME][]
+# # SIMINT_SET_PROD[SETNAME][]
+#
+# Using the sum as an example, the general notation is:
+# SIMINT_SET_SUM[SETNAME][(X_{SETNAME} + Y_{SETNAME})/P_{SETNAME}]
+#
+# From the system above:
+# # To add up all of the free drug:
+# <Ad> Dtot_Free = SIMINT_SET_SUM[D][{D}]
+# # To add up all of the D1 species that are bound:
+# <Ad> D1_bound  = SIMINT_SET_SUM[T][D1_{T}]
+#
+# # These sets can be used recursively
+#
+# #------------#
+# # Estimation #
+# #------------#
+#
+# Interindividual Variability <IIV:?:?> ?, <IIVCOR:?:?>?
+# ------------------------------------------------------
+#
+# To define IIV terms named ETACL with a variance of 0.15 use the
+# following descriptor:
+#
+#  <IIV:ETACL> 0.15
+#
+# To associate this IIV term with the parameter clearance and specifiy that it
+# has a lognormal distribution, we can do the following:
+#
+#  <IIV:ETACL:LN> CL
+#
+# Where LN specifies the lognormal distribution. This can also be Normal. Next
+# we specify the IIV ETAV with a variance of 0.1. This IIV term also has a
+# lognormal distribution and is applied to the volume (V).
+#
+#  <IIV:ETAV>    0.10
+#  <IIV:ETAV:LN> V 
+#
+# Now we can define the covariance (off-diagional elements) between CL and V
+# to be 0.01 in the following way:
+#
+#  <IIVCOR:ETAV:ETACL> 0.01
+#
+# The order isn't important and the following would work too:
+#
+#  <IIVCOR:ETACL:ETAV> 0.01
+#
+# Variance Parameters <VP>
+# ------------------------
+#   
+#   The format here is the same as the format for paramters (<P>) above:
+#
+#   #    name       value    lb     ub   units  editable type
+#   <VP> Slope_Cp   0.1      eps    inf   1/hr  yes      Variance
+#
+# Variance Error model  <VE:?> ?
+# 
+# The variance error model is assigned to an output and is an equations
+# written in terms of the output and the variance parameters. It take the
+# general form of:
+#
+# <VE:OUTPUT> expression
+# ----------------------
+#
+# Where the OUTPUT is the name of the output defined above (<O>) and
+# expression is the mathematical expression. For example to model the error of
+# an output Cp as proportional to the square of Cp we would use the following:
+#
+# <VE:Cp>   Slope_Cp*SIMINT_POWER[Cp][2.0]
+#
+# Data file specification <DATA:?:?>?
+# -----------------------------------
+#
+# To specify tabular data/flat file in CSV format the following descriptor
+# should be used:
+#
+# <DATA:FILE:CSV> data/mydata.csv
+#
+# Column header information can be specified in two ways. If the first row
+# contains header information then these values can be automatically read in:
+#
+# <DATA:HEADER:AUTOMATIC>
+#
+# Alternatively these values can be spcified manually by providing a list of
+# column names delimited by semicolons:
+#
+# <DATA:HEADER:MANUAL>   col1; col2; col3; col4; col5; col6 
+#
+# These can be spread out across multiple lines as well the previous example
+# can also be represented this way:
+#
+# <DATA:HEADER:MANUAL>   col1; col2; col3 
+# <DATA:HEADER:MANUAL>   col4; col5; col6 
+#
+# #---------#
+# # Options #
+# #---------#
+#
+# #-------------------#
+# # Timescale  <TS:?> #
+# #-------------------#
+#
+# If your are modeling in hours and want the output times
+# in days or weeks the following will create named outputs
+# for each time scale
+#
+# <TS:hours> 1
+# <TS:days>  1/24
+# <TS:weeks> 1/24/7
+#
+# #---------#
+# # Index   #
+# #---------#
+#
+# <INDEX:STATE:name> number
+# -----------------------
+#
+# By default, the build script will construct odes, parameter sets, etc.
+# automatically. This means that the order of states are going to be
+# arbitrary. Sometimes it is necessary to specify the order of your states
+# (for example when using NONMEM the order in the control stream must
+# correlate with the values in the dataset). To specify that a state Cp
+# should be compartment 3, the following should be used:
+#
+# <INDEX:STATE:Cp>  3
+#
+#
+# Default options <OPT:?> 
+# -----------------------
+#
+#   Plot output times (this is on the timescale of the simulation)
+#      <OPT:output_times> linspace(0,100,1000)
+#      <OPT:output_times> 0:100
+#      <OPT:output_times> [1 2 5 100]
+#
+#   The x and y limits of figures are set using
+#      <OPT:xlim> [0 100]
+#      <OPT:ylim> [1e-5 1e5]
+#
+#   The x and y scales
+#      <OPT:xscale> linear
+#      <OPT:yscale> log
+#
+#   Preferred timescale for GUI and plotting
+#   # if weeks is defined using the <TS> option above
+#   # then the following will set weeks as the default 
+#   # for generated output
+#
+#      <OPT:TS>  weeks
+#
+#
+#  <OPT:callback_gui>
+#  # optional callback statement that is evaluated before performing the
+#  # simulation in the GUI. You must create the function which can use the
+#  # following variables from the workspace:
+#
+#  SIMINT_handles - handles to the different elements of the gui
+#  SIMINT_cfg     - result of auto_fetch_system_information
+#  SIMINT_parameters
+#                 - current parameter set including changes made in the GUI,
+#                   use SIMINT_cfg to identify the indices of specific
+#                   parameters
+#  SIMINT_simulation_options 
+#                 - the components which control the execution of the
+#                   simulation (see help for run_simulation_generic.m for what
+#                   the fields in this data structure mean).
+#      
+#  <OPT:callback_gui> [SIMINT_simulation_options] = update_dosing(SIMINT_cfg, SIMINT_parameters, SIMINT_simulation_options, SIMINT_handles);
+#
+#
+#
+# Creating visual guide lines with <GUIDE>
+# ---------------------------------------
+#
+# Begin a line with the string <GUIDE> and the line has a semicolon delimited
+# format of:
+#
+# <GUIDE>  type; name; value, marker, color
+#
+#   type   - can be vertical or horiztonal
+#   name   - is a unique identifer
+#   value  - is the vertical or horizontal level where the guide will be drawn
+#   marker - this is the matlab marker specification in single quotes
+#   color  - is either a standard matlab color specification in single quotes
+#            or an RGB specification in Matlab vector format
+#
+# Examples:
+#
+#         type        name        y      marker    color
+# <GUIDE>  horizontal; level   ; 10.0;   '-.';     'g'
+# <GUIDE>  vertical;   time    ; 15.0;   '-.';     [170  0 255]./255
+#
+#
+# NONMEM specific options
+# -----------------------
+#
+# It may be desirable to drop specific columns from a dataset and it may also
+# be necessary to rename columns inthe dataset. For example to drop the column
+# UNIT and rename the column ATIME to TIME, the following two lines can be
+# used:
+#
+# <NONMEM:INPUT:DROP:UNIT>
+# <NONMEM:INPUT:RENAME:ATIME> TIME
+#
+# To append ignore information to the data declaration use the following
+# descriptor: 
+# 
+# <NONMEM:DATA> ?
+#
+# Where the ? indicates an ignore statement. For example the following will
+# ignore records that begin with text (@) and records that have an ID > 0
+#
+# <NONMEM:DATA> IGNORE=@
+# <NONMEM:DATA> IGNORE=(ID.GT.10)
+#

@@ -1,0 +1,81 @@
+General utilities (FEX denotes a script or function from the mathworks file exchange)
+
+add_noise.m
+                  Used to generate noise (normal or log normal) around mean
+                  values for data for a given standard deviation (percent).
+                   
+AUC_Bailors_method.m
+                  This is an implementation of Bailors method for calculating
+                  AUCs with sparse sampling up to tlast. (Giant beaver studies)
+                  
+AUC_trapezoid.m
+                  This is an implementation of the trapizoid rule for calculating
+                  AUCs with sequential sampling up to tlast. 
+
+
+cell2csv.m        Takes the contents of a cell array and dumps them into a
+                  file. This can then be imported into other software (e.g.
+                  Excel or SigmaPlot).
+
+dump_figure.m     Takes the current active figure and dumps it into a file
+                  (pdf on mac, tif on windows).
+
+ed.m              Extract columns of data from a cell array with strings for
+                  column headers
+
+export_fig (FEX)  Set of scripts written by Oliver Woodford for generating
+                  figures for publication. Use the command:
+                    >> export_fig figure_name -transparent -pdf 
+                    eval(sprintf('export_fig output%sfigname -transparent -pdf', filesep));
+
+fce.m             When you have a cell array with row and column headers and
+                  you want to use these as indices to extract information from
+                  the cell array.
+
+fetch_excel_raw.m 
+                  Used to read in an excel data file into a cell array
+
+find_element.m    Used to extract row and column numbers from cell arrays to
+                  locate the position of specific information based on text
+                  string labels.
+
+make_number_pretty.m 
+                  Takes a floating point number and turns it into a readable
+                  string.
+
+pad_string.m      Adds spaces to the beginning of a string.
+
+plot_arrow.m (FEX)
+                  Used to draw lines with arrows on figures (BSD on file exchange).
+
+prepare_figure.m  Take the current active figure/axis and prepares it either
+                  for presentation or printing (alters fontsize, makes the
+                  lines bolder, etc).
+
+sample_from_distribution.m
+                  Takes a cell array with parameter distribution information
+                  (see the help for the function) and returns a vector of
+                  samples.
+
+strip_missing.m   Removes missing values from observation and corresponding
+                  measurement times.
+
+usuptitle.m       Places a title over a figure of subplots. This is the
+                  suptitle.m file that used to be on the file exchange. It
+                  seems it was removed and folded into the bioinformatics
+                  toolbox. So it has been renamed here to avoid naming
+                  conflicts. The original copyright for Drea Thomas has been
+                  preserved.
+
+var2latex.m       Converts a variable in Matlab to a string that can be
+                  interpreted by LaTeX.
+
+var2latex.m       Converts a variable in Matlab to a string for report
+                  generation
+
+vp.m              Verbose print is used internally in functions to provide
+                  feedback to the users about the status of scripts.
+
+xticklabel_rotate.m (FEX)
+                  Used to rotate the xiticklabels 
+
