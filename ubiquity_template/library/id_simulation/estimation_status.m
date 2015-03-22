@@ -274,3 +274,4 @@ catch
 end
  %save /tmp/stuff.mat;
 
+stop = true;

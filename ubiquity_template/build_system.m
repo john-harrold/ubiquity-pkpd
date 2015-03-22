@@ -23,7 +23,12 @@ disp('-----------------------------------')
 if(any(strcmp('Simulink', {myversion.Name})))
   disp('Simulink found');
   disp('mex-ing the model file');
+  try
   mex ode_model.c;
+  catch
+  disp('mex failed, you will only be able');
+  disp('to use the m-file format');
+  end
 else
   disp('Simulink _NOT_ found');
   disp('C-matlab targets will not work');

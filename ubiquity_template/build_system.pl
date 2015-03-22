@@ -648,6 +648,10 @@ sub dump_rproject
   my $set;       
   my $pname      = '';
 
+  my $iname      = '';
+  my $iname2     = '';
+  my $counter2;
+
 
   my $state; 
   my $sname      = '';
@@ -676,6 +680,7 @@ sub dump_rproject
   $mc->{FETCH_SYS_PARAMS}      = '';
   $mc->{FETCH_SYS_INDICES}     = '';
   $mc->{FETCH_SYS_IC}          = '';
+  $mc->{FETCH_SYS_IIV}         = '';
   $mc->{FETCH_SYS_PSETS}       = '';
   $mc->{FETCH_SYS_TS}          = '';
   $mc->{FETCH_SYS_BOLUS}       = '';
@@ -828,6 +833,48 @@ foreach $output    (@{$cfg->{outputs_index}}){
   $mc->{OUTPUTS}           .= &apply_format($cfg->{outputs}->{$sname}, 'rproject')."\n";
   $counter = 1+$counter;
 }
+
+# IIV
+if (defined(@{$cfg->{iiv_index}})){
+  $mc->{FETCH_SYS_INDICES} .= "# iiv \n";
+  $counter = 1;
+  # iiv indices
+  foreach $parameter    (@{$cfg->{iiv_index}}){
+    $iname = $parameter;
+    $mc->{FETCH_SYS_INDICES} .= 'cfg$options$mi$iiv$'."$iname".&fetch_padding($iname, $cfg->{outputs_length})." = $counter \n";
+    $counter = 1+$counter;
+  }
+
+  # listing the parameters the IIVs apply to
+  $counter = 1;
+  foreach $parameter    (@{$cfg->{iiv_index}}){
+    $iname = $parameter;
+    $mc->{FETCH_SYS_IIV}     .= 'cfg$iiv$iivs$'."$iname".'$parameters'.&fetch_padding($iname, $cfg->{parameters_length}).' =c("'.join('", "', @{$cfg->{iiv}->{iivs}->{$iname}->{parameters}}).'"'.")\n";
+    $counter = 1+$counter;
+  }
+  # defining the parameter specific information (distributions and reverse
+  # mapping to the IIV terms);
+  foreach $iname     (keys(%{$cfg->{iiv}->{parameters}})){
+    $mc->{FETCH_SYS_IIV}     .=    'cfg$iiv$parameters$'.$iname.'$iiv_name    '.&fetch_padding($iname, $cfg->{parameters_length})." = '".$cfg->{iiv}->{parameters}->{$iname}->{iiv_name}."'\n";
+    $mc->{FETCH_SYS_IIV}     .=    'cfg$iiv$parameters$'.$iname.'$distribution'.&fetch_padding($iname, $cfg->{parameters_length})." = '".$cfg->{iiv}->{parameters}->{$iname}->{distribution}."'\n";
+  }
+  $mc->{FETCH_SYS_IIV}     .= 'cfg$iiv$values = matrix(0,'.scalar(@{$cfg->{iiv_index}}).",".scalar(@{$cfg->{iiv_index}}).")\n";
+  $counter = 1;
+  foreach $iname     (@{$cfg->{iiv_index}}){
+    $counter2 = 1;
+    foreach $iname2    (@{$cfg->{iiv_index}}){
+      if(defined($cfg->{iiv}->{vcv}->{$iname}->{$iname2})){
+        $mc->{FETCH_SYS_IIV}     .=  'cfg$iiv$values['."$counter, $counter2] =  $cfg->{iiv}->{vcv}->{$iname}->{$iname2}\n";
+      }
+      $counter2 = $counter2+1;
+    }
+  $counter = $counter+1;
+  }
+
+
+}
+
+
 
 # static secondary parameters
 if (defined(@{$cfg->{static_secondary_parameters_index}})){
@@ -2726,11 +2773,13 @@ $tmp_file_chunk    = "function [dx] = auto_odes(SIMINT_TIME,x,S)
 
 
 my $simulation_driver_ph = {
-     BOLUS                =>'',
-     OUTPUT_TIMES         =>'',
-     PSETS                =>'',
-     INFUSION_RATES       =>'',
-     COVARIATES           =>''};
+     BOLUS                  =>'',
+     OUTPUT_TIMES           =>'',
+     PSETS                  =>'',
+     INFUSION_RATES         =>'',
+     PLOT_OUTPUT            =>'',
+     PLOT_OUTPUT_STOCHASTIC =>'',
+     COVARIATES             =>''};
 
 
 my $simulation_driver_template = "clear; close all;
@@ -2782,6 +2831,9 @@ parameters = cfg.parameters.values;
 % To change the ODE sovler that is used:
 % cfg.options.simulation_options.default_simopts.Solver = 'ode23s';
 
+
+% -----------------------------------------------------------------------
+% Indiviudal Simulation:
 % Simulating the system and storing the result in  som (Simulation Output
 % Mapped) -- a data structure with times, states and outputs mapped to 
 % their internal names
@@ -2793,17 +2845,24 @@ som = run_simulation_ubiquity(parameters, cfg);
 figure(1);
 hold on;
 
-output_names = fieldnames(som.outputs);
-
-for output_idx = 1:length(output_names)
-  current_output  = getfield(som.outputs, output_names{output_idx});
-  plot(som.times.sim_time, current_output)
-end
+<PLOT_OUTPUT>
 
 prepare_figure('present');
 % set(gca, 'yscale', 'log');
   xlabel('time');
   ylabel('outputs');
+% -----------------------------------------------------------------------
+
+
+
+% -----------------------------------------------------------------------
+% Stochastic Simulation
+% options.nsub  = 10;
+% predictions = simulate_subjects(parameters, options, cfg)
+% mc = fetch_color_codes;
+
+<PLOT_OUTPUT_STOCHASTIC>
+% -----------------------------------------------------------------------
 
 ";
 
@@ -2876,11 +2935,39 @@ prepare_figure('present');
     else{
        $simulation_driver_ph->{OUTPUT_TIMES} .= "cfg.options.simulation_options.output_times = linspace(0,100,1000)';\n";}
 
+    if(defined($cfg->{outputs_index})){
+     $simulation_driver_ph->{PLOT_OUTPUT}.="% You can access different parts of the\n% simulation using the som variable.\n";
+     $simulation_driver_ph->{PLOT_OUTPUT}.="% som.times.TIMESCALE \n";  
+     $simulation_driver_ph->{PLOT_OUTPUT}.="% som.outputs.OUTPUTNAME \n";  
+     $simulation_driver_ph->{PLOT_OUTPUT}.="% som.states.STATENAME \n"; 
+      
+     $simulation_driver_ph->{PLOT_OUTPUT_STOCHASTIC}.="% % Uncomment the lines below and substiute the          \n";
+     $simulation_driver_ph->{PLOT_OUTPUT_STOCHASTIC}.="% % desired timescale and output for TS and OUTPUT       \n";
+     $simulation_driver_ph->{PLOT_OUTPUT_STOCHASTIC}.="% patch(predictions.times_patch.TS, ...                  \n";
+     $simulation_driver_ph->{PLOT_OUTPUT_STOCHASTIC}.="%       predictions.outputs_patch.OUTPUT.ci, ...         \n";
+     $simulation_driver_ph->{PLOT_OUTPUT_STOCHASTIC}.="%       mc.light_blue, 'edgecolor', 'none');           \n\n";
+     $simulation_driver_ph->{PLOT_OUTPUT_STOCHASTIC}.="% % This plots the mean:                                 \n"; 
+     $simulation_driver_ph->{PLOT_OUTPUT_STOCHASTIC}.="%   plot(predictions.times.weeks, ...                    \n";                      
+     $simulation_driver_ph->{PLOT_OUTPUT_STOCHASTIC}.="%        predictions.outputs_stats.Cp_Total.mean, 'b-'); \n";    
+     if(defined($cfg->{options}->{TS})){
+       $simulation_driver_ph->{PLOT_OUTPUT}.="plot(som.times.".$cfg->{options}->{TS}.", ...\n"; }
+     else{
+       $simulation_driver_ph->{PLOT_OUTPUT}.="plot(som.times.sim_time, ...\n"; }
+     $simulation_driver_ph->{PLOT_OUTPUT}.="     som.outputs.".$cfg->{outputs_index}->[0].", 'b-'); \n"; 
+    }
+    else{
+     $simulation_driver_ph->{PLOT_OUTPUT}.=" % No outputs were defined\ndefine some using <O> OUTPUT=EXPRESSOIN\n"; }
+
+
+
+
     # subbing in the various components
     $simulation_driver_template =~ s#<BOLUS>#$simulation_driver_ph->{BOLUS}#;
     $simulation_driver_template =~ s#<INFUSION_RATES>#$simulation_driver_ph->{INFUSION_RATES}#;
     $simulation_driver_template =~ s#<OUTPUT_TIMES>#$simulation_driver_ph->{OUTPUT_TIMES}#;
     $simulation_driver_template =~ s#<PSETS>#$simulation_driver_ph->{PSETS}#;
+    $simulation_driver_template =~ s#<PLOT_OUTPUT>#$simulation_driver_ph->{PLOT_OUTPUT}#;
+    $simulation_driver_template =~ s#<PLOT_OUTPUT_STOCHASTIC>#$simulation_driver_ph->{PLOT_OUTPUT_STOCHASTIC}#;
     $simulation_driver_template =~ s#<COVARIATES>#$simulation_driver_ph->{COVARIATES}#;
 
 
@@ -5374,18 +5461,12 @@ parameters = cfg$parameters$values
 # and VALUE with the desired value:
 #
 # parameters$PNAME = VALUE;
-
 <BOLUS>
-
 <INFUSION_RATES>
-
 <COVARIATES>
-
 <OUTPUT_TIMES>
-
-# Initial condition
-IC = system_IC(cfg, parameters);
-
+# -------------------------------------------------------------------------
+# Individual Simulation:
 # define the solver to use
 cfg$options$simulation_options$solver$method                  = \'ode23\'
 # specify the output times 
@@ -5396,8 +5477,28 @@ cfg$options$simulation_options$output_times                   = seq(0,100,1)
 
 
 som = run_simulation_ubiquity(parameters, cfg)
+# replace TS with a timescale (i.e. days) and 
+# OUTPUT with a named output  (i.e. Cp)
+#plot(som$times$TS,   som$outputs$OUTPUT)
+# -------------------------------------------------------------------------
 
-#plot(som$times$days, som$outputs$Drug_Serum)
+
+# -------------------------------------------------------------------------
+# Stochastic Simulation:
+# subopts = list();
+# subopts$nsub = 10
+#  p = simulate_subjects(parameters, subopts, cfg)
+# 
+#   plot(p$times$days, p$states_stats$Cp$ub_ci, type="l")
+#  lines(p$times$days, p$states_stats$Cp$lb_ci, type="l")
+#  polygon(p$times_patch$days, 
+#          p$states_patch$Cp$ci, 
+#          col="skyblue",  border=NA)
+#  lines(p$times$days, p$states_stats$Cp$mean, type="l")
+# -------------------------------------------------------------------------
+
+
+
 ';
 return $template;
 }
@@ -5422,6 +5523,9 @@ system_fetch_cfg = function(){
 
 # Parameter Sets
 <FETCH_SYS_PSETS>
+
+# Interindiviudal Varability Information
+<FETCH_SYS_IIV>
 
 <FETCH_SYS_INFUSIONS>
 
@@ -5903,7 +6007,320 @@ simout = ode(IC,
 # mapping the outputs, times, etc.
 simout_mapped = system_map_output(cfg, simout, parameters)
 
-} ';
+} 
+
+simulate_subjects = function (parameters, ssoptions, cfg){
+#function [predictions] = simulate_subjects(parameters, subopts, cfg)
+#
+# Inputs:
+#
+# cfg - System configuration variable generated in the following manner:
+#
+# cfg = system_fetch_cfg()
+# cfg = system_select_set(cfg, \'default\')
+#
+# parameters - vector of typical parameter values. This can be obtained from
+# the cfg variable:
+#
+# parameters = cfg$parameters$values
+#
+# ssoptions - data structure with the following fields:
+#
+#   ssoptions$nsub -
+#      number of subjects to simulate  (default 100)
+#
+#   ssoptions$seed - 
+#      seed for random number generator (default 8675309)
+#
+# These values can then be modified as necessary.
+#
+# Output:
+#
+# The predictions data structure contains the following:
+#
+# predictions$subjects 
+#   Full parameter vector (one per column) for each subject
+#
+# predictions$times
+#   A field for every timescale containing the sample times from the
+#   simulation.
+#
+# predictions$states and predictions$outputs -
+#   There is a field for each state or output which contains a profile for
+#   each subject (one per column) and each row corresponds to the sampling
+#   times in predictions$times
+# 
+# predictions$states_stats and predictions$outputs_stats -
+#   There is a field for each state or output which contains the following
+#   fields:
+#      lb_ci:  lower bound of the confidence interval for that named value
+#      ub_ci:  upper bound of the confidence interval for that named value
+#      mean:   mean of the prediction for that named value 
+#      median: median of the prediction for that named value 
+#   These are all vectors corresponding to the sampling times in
+#   prediction.times
+#
+# predictions$times_patch, predictions$states_patch and predictions$outputs_patch -
+# These contain vectors to be used with the patch command to generate shaded
+# regions. For example if you had an output called Coverage, the following
+# would shade in the region representing the confidence interval, specified by
+# options$ci = 95 (the default):
+#
+#
+# 
+# This plots the upper and lower confidence intervals:
+#   plot(p$times$days, p$states_stats$Cp$ub_ci, type="l")
+#  lines(p$times$days, p$states_stats$Cp$lb_ci, type="l")
+# 
+# Creating the shaded region
+#  polygon(p$times_patch$days, 
+#          p$states_patch$Cp$ci, 
+#          col=\'skyblue\',  border=NA)
+#
+# This plots the mean:
+#  lines(p$times$days, p$states_stats$Cp$mean, type="l")
+#   % This line is only necessary if you have some negative values and you want
+#   % to put it on a log scale:
+
+p = list()
+
+# Parsing ssoptions
+if("nsub" %in% names(ssoptions)){
+  nsub = ssoptions$nsub
+} else {
+  nsub = 100}
+
+if("seed" %in% names(ssoptions)){
+  seed = ssoptions$seed
+} else {
+  seed = 8675309}
+
+if("ci" %in% names(ssoptions)){
+  ci   = ssoptions$ci
+} else {
+  ci   = 95}
+
+
+max_errors = 100;
+
+isgood = 1;
+
+if("iiv" %in% names(cfg)){
+  if(min((eigen((cfg$iiv$values + (cfg$iiv$values))/2))$values) <= 0){
+    cat("----------------------------------------------\n ");
+    cat("  simulate_subjects.R                         \n ");
+    cat("> Warning: The variance/covariance matrix is not\n ");
+    cat("> positive semi-definite. Testing only the diagonal\n ");
+    cat("> elements. I.e. no covariance/interaction terms\n");
+  
+    cfg$iiv$values = diag(diag(cfg$iiv$values))
+    if(min((eigen((cfg$iiv$values + (cfg$iiv$values))/2))$values) <= 0){
+      cat("> Failed using only diagonal/variance elements.");
+      cat("> Check the specified IIV elements in");
+      cat("> cfg$iiv$values");
+      isgood = 0;
+    } else {
+      cat("> Using only the diagional elements seems to   ");
+      cat("> have worked. Understand that the results do  ");
+      cat("> not include any interaction.                 ");
+    }
+  }
+  
+  set.seed(seed)
+  
+  
+  # generating the subject specific parameters and 
+  # simulating the system out for each subject
+  sub_idx = 1;
+  while((sub_idx <= nsub) & isgood) {
+    # Generating a subject:
+    subject = generate_subject(parameters,  cfg);
+    parameters_subject = subject$parameters;
+  
+    # simulating the system
+    som = run_simulation_ubiquity(parameters_subject, cfg)
+  
+    # for the first subject we initialize a bunch of things
+    if(sub_idx == 1){
+      p$subjects = parameters_subject
+      p$times    = som$times
+      # creating the time patch vectors for the different timescales
+      for(timescale_name   in names(som$times)){
+       p$times_patch[[timescale_name]] = c(som$times[[timescale_name]], rev(som$times[[timescale_name]]))
+      }
+  
+      # initializing the matrices to hold state and output information
+      # then adding the current simulation as the first row
+      for(state_name   in names(som$states)){
+        p$states[[state_name]] = matrix(0, nsub, length(som$states[[state_name]]))
+        p$states[[state_name]][1,] = som$states[[state_name]]
+        }
+  
+      for(output_name   in names(som$outputs)){
+        p$outputs[[output_name]] = matrix(0, nsub, length(som$outputs[[output_name]]))
+        p$outputs[[output_name]][1,] = som$outputs[[output_name]]
+        }
+  
+    } else{
+      # appending parameters, state and output information to the matrices and
+      # datastructures created when the first subject was simulated above
+      p$subjects = rbind(p$subjects, parameters_subject)
+  
+      for(state_name   in names(som$states)){
+        p$states[[state_name]][sub_idx,] = som$states[[state_name]] }
+  
+      for(output_name   in names(som$outputs)){
+        p$outputs[[output_name]][sub_idx,] = som$outputs[[output_name]] }
+      }
+  
+    sub_idx = sub_idx + 1;
+  }
+  
+  
+  # summarizing the statistics for both the states and the outputs
+  for(state_name   in names(som$states)){
+    tc = timecourse_stats(p$states[[state_name]],ci)
+    p$states_stats[[state_name]] = tc$stats
+    p$states_patch[[state_name]] = tc$patch
+    }
+  for(output_name   in names(som$outputs)){
+    tc = timecourse_stats(p$outputs[[output_name]],ci)
+    p$outputs_stats[[output_name]] = tc$stats
+    p$outputs_patch[[output_name]] = tc$patch
+    }
+} else {
+  cat("---------------------------------------------- \n");
+  cat("  simulate_subjects.R                          \n");
+  cat("> Error:Trying to simulate subjects with       \n");
+  cat(">    variability, but no variance/covariance   \n");
+  cat(">    information was specified.                \n");
+  cat(">                                              \n");
+  cat(">    Modify the system.txt file to add the     \n");
+  cat(">    IIV information using the following:      \n");
+  cat(">     <IIV:?>      ?                           \n");
+  cat(">     <IIV:?:?>    ?                           \n");
+  cat(">     <IIVCOR:?:?> ?                           \n");
+  cat("---------------------------------------------- \n");
+}
+
+return(p)
+}
+
+
+
+timecourse_stats = function (d, ci){
+#
+# Given a matrix (d) of time courses (each row is an individual and each column is
+# a time point) and a confidence interval (ci) this will calculate the mean,
+# median, confidence intervals and a vector of values for creating patches.
+# 
+
+tc = list();
+
+myci = ci/100
+dsorted = apply(d, 2, sort)
+nsubs   = length(dsorted[,1]) 
+lb_idx  = nsubs*(1-myci)/2 + 1;
+ub_idx  = nsubs - nsubs*(1-myci)/2;
+
+tc$stats$lb_ci  = apply(rbind(dsorted[floor(lb_idx),],  dsorted[ ceiling(lb_idx),]), 2, mean)
+tc$stats$ub_ci  = apply(rbind(dsorted[floor(ub_idx),],  dsorted[ ceiling(ub_idx),]), 2, mean)
+
+tc$stats$mean   = apply(dsorted, 2, mean)
+tc$stats$median = apply(dsorted, 2, median)
+
+
+tc$patch$ci  = c(tc$stats$ub_ci,  rev(tc$stats$lb_ci))
+
+return(tc)
+
+}
+
+
+
+generate_subject = function (parameters, cfg){
+# function [subject] = generate_subject(parameters, cfg)
+#
+# Generates subject with variability specified using the <IIV:?> descriptor
+# in the system.txt file
+#
+# Inputs:
+#
+# cfg - system configuration variable generated in the following manner:
+#
+# cfg = system_fetch_cfg()
+# cfg = system_select_set(cfg, \'default\')
+#
+# parameters - vector of typical parameter values. This can be obtained from
+# the cfg variable:
+#
+# parameters = cfg$parameters$values
+#
+# This can be modified before subject generation
+#
+# Output:
+#
+# The data structure \'subject\' will be generated with the following fields:
+#
+# subject$parameters  - parameters for a sample from a subject 
+#
+
+library("MASS") 
+
+subject = list()
+subject$parameters   = parameters;
+
+
+#
+# Generating the subject
+#
+#iiv_parameter_names = fieldnames(cfg.iiv.parameters);
+# creating a temporary vector containing the typical values of all of the
+# parameters:
+TMP_parameters_all = parameters;
+
+# defining the mean of the IIVs and the covariance matirx
+covmatrix = cfg$iiv$values;
+muzero    = matrix(0, nrow(covmatrix),1)
+
+# Generating the normal sample:
+iiv_sample = mvrnorm(n = 1, muzero, covmatrix, tol = 1e-6, empirical = FALSE, EISPACK = FALSE);
+
+# now looping through each parameter with inter-individual variability
+#names(cfg$iiv$iivs)
+#names(cfg$iiv$parameters)
+for(TMP_parameter_name in names(cfg$iiv$parameters)){
+
+  # getting the typical value of the parameter
+  TMP_parameter_value = parameters[TMP_parameter_name];
+
+  # pulling out the distribution and IIV name
+  eval(parse(text=paste(sprintf("TMP_distribution = cfg$iiv$parameters$%s$distribution",TMP_parameter_name))))
+  eval(parse(text=paste(sprintf("TMP_iiv_name     = cfg$iiv$parameters$%s$iiv_name",    TMP_parameter_name))))
+
+  # pulling out the random IIV value for the current iiv
+  eval(parse(text=paste(sprintf("TMP_iiv_value = iiv_sample[cfg$options$mi$iiv$%s]",TMP_iiv_name))))
+
+
+  # Sampling based on the distribution
+  # Normal distribution:
+  if(TMP_distribution == \'N\'){
+    TMP_subject_parameter_value = TMP_parameter_value*(1.0 + TMP_iiv_value) 
+  # Log-Normal distribution:
+  } else if(TMP_distribution == \'LN\'){
+    TMP_subject_parameter_value =  TMP_parameter_value*exp(TMP_iiv_value) }
+
+
+  # Storing the sample in the vector with all parameters
+  subject$parameters[TMP_parameter_name] = TMP_subject_parameter_value
+}
+
+
+return(subject)
+
+}
+
+';
 
 return $template;
 }

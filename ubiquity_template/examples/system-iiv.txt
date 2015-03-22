@@ -53,17 +53,17 @@
 # <Ad> param_name = right hand side
 
 
-<IIV:ETACL>       0.2
-<IIV:ETACL:LN>    CL
+ <IIV:ETACL>       0.2
+ <IIV:ETACL:LN>    CL
+ 
+ 
+ <IIV:ETAQ>        0.15
+ <IIV:ETAQ:LN>     Q
 
+#<IIV:ETAV>        0.10
+#<IIV:ETAV:LN>     Vp
 
-<IIV:ETAQ>        0.15
-<IIV:ETAQ:LN>     Q
-
-<IIV:ETAV>        0.10
-<IIV:ETAV:LN>     Vp
-
-<IIVCOR:ETAQ:ETACL> 0.22
+# <IIVCOR:ETAQ:ETACL> 0.01
 
 #--------------------#
 # Dosing information #

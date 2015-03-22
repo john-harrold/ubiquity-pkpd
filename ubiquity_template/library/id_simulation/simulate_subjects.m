@@ -119,142 +119,157 @@ max_errors = 100;
 isgood = 1;
 
 
+% checking to make sure we've specified the iiv terms
+if(isfield(cfg.iiv, 'parameters'))
   % trying to generate a random sample from the variance covariance matrix:
-if(min(eig((cfg.iiv.values + cfg.iiv.values')./2)) <=0)
-  disp('---------------------------------------------- ');
-  disp('  simulate_subjects.m                          ');
-  disp('> Warning: The variance/covariance matrix is not ');
-  disp('> positive semi-definite. Testing only the diagonal ');
-  disp('> elements. I.e. no covariance/interaction terms');
-  try
-    cfg.iiv.values = diag(diag(cfg.iiv.values));
-    mvnrnd(zeros(1, length(cfg.iiv.values(:,1))), ...
-           cfg.iiv.values, 1);
-    disp('> Using only the diagional elements seems to   ');
-    disp('> have worked. Understand that the results do  ');
-    disp('> not include any interaction.                 ');
-
-  catch
-    disp('> Failed using only diagonal/variance elements.');
-    disp('> Check the specified IIV elements in');
-    disp('> cfg.iiv.values');
-    isgood = 0;
-  end
-  disp('---------------------------------------------- ');
-end
-
-% Seeding the random number generator
-rng(seed);
-
-
-%
-% simulating for each subject
-%
-sub_idx = 1;
-while (sub_idx <= nsub) & isgood
+  if(min(eig((cfg.iiv.values + cfg.iiv.values')./2)) <=0)
+    disp('---------------------------------------------- ');
+    disp('  simulate_subjects.m                          ');
+    disp('> Warning: The variance/covariance matrix is not ');
+    disp('> positive semi-definite. Testing only the diagonal ');
+    disp('> elements. I.e. no covariance/interaction terms');
+    try
+      cfg.iiv.values = diag(diag(cfg.iiv.values));
+      mvnrnd(zeros(1, length(cfg.iiv.values(:,1))), ...
+             cfg.iiv.values, 1);
+      disp('> Using only the diagional elements seems to   ');
+      disp('> have worked. Understand that the results do  ');
+      disp('> not include any interaction.                 ');
   
-  % Generating a subject:
-  subject = generate_subject(parameters,  cfg);
-  parameters_subject = subject.parameters.all;
-
-  % attempting to simulate that subject if this fails we try again :)
-  error_count = 0;
-  try
-    som          = run_simulation_ubiquity(parameters_subject, cfg);
+    catch
+      disp('> Failed using only diagonal/variance elements.');
+      disp('> Check the specified IIV elements in');
+      disp('> cfg.iiv.values');
+      isgood = 0;
+    end
+    disp('---------------------------------------------- ');
+  end
+  
+  % Seeding the random number generator
+  rng(seed);
+  
+  
+  %
+  % simulating for each subject
+  %
+  sub_idx = 1;
+  while (sub_idx <= nsub) & isgood
     
-    % Some things are going to be the same for all simulations
-    % so we pull that information out of the first simulation
-    if(sub_idx == 1)
-      state_names  = fieldnames(som.states);
-      output_names = fieldnames(som.outputs);
-      p.times      = som.times;
-
-      % for each set of time units
-      % we create a vector to be used in
-      % generating patches
-      time_names = fieldnames(p.times);
-      for time_idx = 1:length(time_names)
-        time_name = time_names{time_idx};
-        time_values = getfield(p.times, time_name);
-        eval(sprintf('p.times_patch.%s = [time_values; flipud(time_values)];', time_name));
-      end
-    end
-    
-    % creating a summary table for each state and output
-    for state_idx = 1:length(state_names)
-      state_name = state_names{state_idx};
-      if(isfield(p.states, state_names))
-        eval(sprintf('p.states.%s(:,end+1) = som.states.%s;', state_name, state_name));
-      else
-        eval(sprintf('p.states.%s = som.states.%s;', state_name, state_name));
-      end
-    end
-    for output_idx = 1:length(output_names)
-      output_name = output_names{output_idx};
-      if(isfield(p.outputs, output_names))
-        eval(sprintf('p.outputs.%s(:,end+1) = som.outputs.%s;', output_name, output_name));
-      else
-        eval(sprintf('p.outputs.%s = som.outputs.%s;', output_name, output_name));
-      end
-    end
-    % since we're sucessful up to this point
-    % we're saving the subject parameter data
-
-    pnames = fieldnames(subject.parameters.name);
-    for p_idx = 1:length(pnames)
-      pname = pnames{p_idx};
-
+    % Generating a subject:
+    subject = generate_subject(parameters,  cfg);
+    parameters_subject = subject.parameters.all;
+  
+    % attempting to simulate that subject if this fails we try again :)
+    error_count = 0;
+    try
+      som          = run_simulation_ubiquity(parameters_subject, cfg);
+      
+      % Some things are going to be the same for all simulations
+      % so we pull that information out of the first simulation
       if(sub_idx == 1)
-        eval(sprintf('p.subjects.name.%s = subject.parameters.name.%s;', pname, pname));
-        eval(sprintf('p.subjects.all     = parameters_subject;'));
-      else
-        eval(sprintf('p.subjects.name.%s = [p.subjects.name.%s, subject.parameters.name.%s];', pname, pname, pname));
-        eval(sprintf('p.subjects.all     = [p.subjects.all     parameters_subject];'));
+        state_names  = fieldnames(som.states);
+        output_names = fieldnames(som.outputs);
+        p.times      = som.times;
+  
+        % for each set of time units
+        % we create a vector to be used in
+        % generating patches
+        time_names = fieldnames(p.times);
+        for time_idx = 1:length(time_names)
+          time_name = time_names{time_idx};
+          time_values = getfield(p.times, time_name);
+          eval(sprintf('p.times_patch.%s = [time_values; flipud(time_values)];', time_name));
+        end
       end
-
-
-    end
-
-    sub_idx = sub_idx + 1;
-  catch
-    if error_count < max_errors
-      % we had an error so we just add that to the count
-      error_count = error_count + 1;
-    else
-      % we've reached the maximum number of errors
-      % we're going to issue a warning and exit the 
-      % for loop
-      disp(sprintf('Warning we''ve reached the maximum'));
-      disp(sprintf('number of errors (%d)', max_errors));
-      disp(sprintf('Exiting, simulation of subjects failed.'));
-      sub_idx = nsub  + 2;
+      
+      % creating a summary table for each state and output
+      for state_idx = 1:length(state_names)
+        state_name = state_names{state_idx};
+        if(isfield(p.states, state_names))
+          eval(sprintf('p.states.%s(:,end+1) = som.states.%s;', state_name, state_name));
+        else
+          eval(sprintf('p.states.%s = som.states.%s;', state_name, state_name));
+        end
+      end
+      for output_idx = 1:length(output_names)
+        output_name = output_names{output_idx};
+        if(isfield(p.outputs, output_names))
+          eval(sprintf('p.outputs.%s(:,end+1) = som.outputs.%s;', output_name, output_name));
+        else
+          eval(sprintf('p.outputs.%s = som.outputs.%s;', output_name, output_name));
+        end
+      end
+      % since we're sucessful up to this point
+      % we're saving the subject parameter data
+  
+      pnames = fieldnames(subject.parameters.name);
+      for p_idx = 1:length(pnames)
+        pname = pnames{p_idx};
+  
+        if(sub_idx == 1)
+          eval(sprintf('p.subjects.name.%s = subject.parameters.name.%s;', pname, pname));
+          eval(sprintf('p.subjects.all     = parameters_subject;'));
+        else
+          eval(sprintf('p.subjects.name.%s = [p.subjects.name.%s, subject.parameters.name.%s];', pname, pname, pname));
+          eval(sprintf('p.subjects.all     = [p.subjects.all     parameters_subject];'));
+        end
+  
+  
+      end
+  
+      sub_idx = sub_idx + 1;
+    catch
+      if error_count < max_errors
+        % we had an error so we just add that to the count
+        error_count = error_count + 1;
+      else
+        % we've reached the maximum number of errors
+        % we're going to issue a warning and exit the 
+        % for loop
+        disp(sprintf('Warning we''ve reached the maximum'));
+        disp(sprintf('number of errors (%d)', max_errors));
+        disp(sprintf('Exiting, simulation of subjects failed.'));
+        sub_idx = nsub  + 2;
+      end
     end
   end
+  
+  
+  % Calculating the statistics for the output
+  % (mean, median, CI etc. for each time point)
+  for output_idx = 1:length(output_names)
+    output_name = output_names{output_idx};
+    output_data = getfield(p.outputs, output_name);
+    [tcs, tcp] = timecourse_stats(output_data, ci);
+    eval(sprintf('p.outputs_stats.%s = tcs;', output_name));
+    eval(sprintf('p.outputs_patch.%s = tcp;', output_name));
+  end
+  
+  % Calculating the statistics for the states
+  % (mean, median, CI etc. for each time point)
+  for state_idx = 1:length(state_names)
+    state_name = state_names{state_idx};
+    state_data = getfield(p.states, state_name);
+    [tcs, tcp] = timecourse_stats(state_data, ci);
+    eval(sprintf('p.states_stats.%s = tcs;', state_name));
+    eval(sprintf('p.states_patch.%s = tcp;', state_name));
+  end
+else
+    disp('---------------------------------------------- ');
+    disp('  simulate_subjects.m                          ');
+    disp('> Error:Trying to simulate subjects with       ');
+    disp('>    variability, but no variance/covariance   ');
+    disp('>    information was specified.                ');
+    disp('>                                              ');
+    disp('>    Modify the system.txt file to add the     ');
+    disp('>    IIV information using the following:      ');
+    disp('>     <IIV:?>      ?                           ');
+    disp('>     <IIV:?:?>    ?                           ');
+    disp('>     <IIVCOR:?:?> ?                           ');
+    disp('---------------------------------------------- ');
+
 end
 
-
-% Calculating the statistics for the output
-% (mean, median, CI etc. for each time point)
-for output_idx = 1:length(output_names)
-  output_name = output_names{output_idx};
-  output_data = getfield(p.outputs, output_name);
-  [tcs, tcp] = timecourse_stats(output_data, ci);
-  eval(sprintf('p.outputs_stats.%s = tcs;', output_name));
-  eval(sprintf('p.outputs_patch.%s = tcp;', output_name));
-end
-
-% Calculating the statistics for the states
-% (mean, median, CI etc. for each time point)
-for state_idx = 1:length(state_names)
-  state_name = state_names{state_idx};
-  state_data = getfield(p.states, state_name);
-  [tcs, tcp] = timecourse_stats(state_data, ci);
-  eval(sprintf('p.states_stats.%s = tcs;', state_name));
-  eval(sprintf('p.states_patch.%s = tcp;', state_name));
-end
-
-
-%keyboard;
 
 function [tcs, tcp] = timecourse_stats(d, ci)
 %
