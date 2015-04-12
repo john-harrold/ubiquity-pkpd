@@ -352,17 +352,24 @@ end
 %
 % all_inputs: adding time varying inputs 
 %
+%keyboard
 if(isfield(simulation_options, 'mytimevarying'));
   for inptno=1:numel(timevarying_input_names)
       input_name    = char(timevarying_input_names(inptno));
       input_profile = getfield(simulation_options.blocks.mytimevarying, input_name); 
-      simulation_options.blocks.all_inputs(:,inptno+offset) = interp1(input_profile(:,1),input_profile(:,2), simulation_options.blocks.all_inputs(:,1));
+      simulation_options.blocks.all_inputs(:,inptno+offset) = interp1(input_profile(:,1),input_profile(:,2), simulation_options.blocks.all_inputs(:,1), 'linear');
   end
   offset = offset+length(timevarying_input_names);
 end
 
 if(strcmp(simulation_options.include_important_output_times, 'yes'));
-   simulation_options.output_times = important_times';
+
+   % trimming off the edges. If important times contains values out of the
+   % range of the specified output times, then we remove those
+   ot_min = min(simulation_options.output_times);
+   ot_max = max(simulation_options.output_times);
+
+   simulation_options.output_times = important_times(important_times >= ot_min & important_times <= ot_max)';
 end
 
 
@@ -531,14 +538,17 @@ function [infusion]=make_infusion(levels,output_times)
 switch_times  = levels(1,:);
 magnitude     = levels(2,:);
 
-delta         = 500*eps;
-
 for i = 1:numel(switch_times)
     if (1==i)
       infusion = [switch_times(i) magnitude(i)];
     else
+      if(switch_times(i) == 0)
+        delta         = 250*eps;
+      else
+        delta         = 250*eps*switch_times(i);
+      end
       infusion = [infusion
-                   switch_times(i)          magnitude(i-1)
+                  (switch_times(i)-delta)   magnitude(i-1)
                   (switch_times(i)+delta)   magnitude(i)];
     end
 end

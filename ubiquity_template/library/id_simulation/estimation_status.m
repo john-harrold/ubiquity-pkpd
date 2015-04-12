@@ -18,7 +18,6 @@ function [stop]=estimation_status(pest, state,cfg)
 
 stop=false;
 
-try
 % pulling out the initial guess for the 
 % parameters and the bounds
 pinit = cfg.estimation.parameters.guess;
@@ -55,7 +54,7 @@ end
 end
 
 
-if(state.iteration == 0)
+if(state.iteration == 1)
    vp(cfg,'-----------------------------------');
    vp(cfg,'       estimation_status.m         ');
    vp(cfg,'       -------------------         ');
@@ -138,9 +137,9 @@ for pest_idx = 1:length(pest)
     set(child_pest, 'YData', [pest_percent(pest_idx) get(child_pest, 'YData')]) ;
     pest_data = [pest_data; fliplr(get(child_pest, 'YData'))];
 
-    % updating the parameter bounds series
+   %% updating the parameter bounds series
     if(not(pub_percent(pest_idx) == inf))
-      if(findobj(get(sph, 'children'), 'DisplayName', 'pctub'))
+      if(length(findobj(get(sph, 'children'), 'DisplayName', 'pctub')) > 0)
         child_pctub = findobj(get(sph, 'children'), 'DisplayName', 'pctub');
         set(child_pctub, 'XData', [state.iteration                         get(child_pctub, 'XData')]) ;
         set(child_pctub, 'YData', [pub_percent(pest_idx)                   get(child_pctub, 'YData')]) ;
@@ -148,10 +147,8 @@ for pest_idx = 1:length(pest)
         plot([xlim()], [pub_percent(pest_idx) pub_percent(pest_idx)], 'b--', 'DisplayName', 'pctub');
       end
     end
-
-
     if(not(plb_percent(pest_idx) == inf))
-      if(findobj(get(sph, 'children'), 'DisplayName', 'pctlb'))
+      if(length(findobj(get(sph, 'children'), 'DisplayName', 'pctlb')) > 0)
         child_pctlb = findobj(get(sph, 'children'), 'DisplayName', 'pctlb');
         set(child_pctlb, 'XData', [state.iteration                         get(child_pctlb, 'XData')]) ;
         set(child_pctlb, 'YData', [plb_percent(pest_idx)                   get(child_pctlb, 'YData')]) ;
@@ -269,9 +266,8 @@ if(strcmp(exit_when_stable, 'yes'))
      end
    end
 end
+try
 catch
   vp(cfg,         'estimation_status.m -- function failed');
 end
- %save /tmp/stuff.mat;
 
-stop = true;

@@ -1,9 +1,6 @@
 # ! /usr/bin/perl
 #
 #
-#  Fixed:
-#     Adapt output secondary parameters not declared in subroutine where they
-#     were not defined in SPARAM
 # JMH 
 # in system_check, look for repeated set elements (like A below)
 #  <SET:MYSET> A ; B ; C ; A ; D
@@ -30,6 +27,8 @@
 #       - potters wheel
 #     implement covariates in 
 #       - monolix
+#       - nonmem -- check to make sure they exist in the data set (when both
+#                   are specified)
 #       - adapt  
 #
 # R Target
@@ -136,6 +135,7 @@ MAIN:
     # rproject
     $cfg->{files}->{rproject}->{components}           = 'auto_rcomponents.R';
     $cfg->{files}->{rproject}->{simulation_driver}    = 'auto_simulation_driver.R';
+    $cfg->{files}->{rproject}->{compiled}             = 'r_ode_model.c';
 
     # berkeley_madonna output
     $cfg->{files}->{berkeley_madonna}                  = 'target_berkeley_madonna';
@@ -652,6 +652,9 @@ sub dump_rproject
   my $iname2     = '';
   my $counter2;
 
+  # used to keep track of forcing function counter in C
+  my $counter_ff_C = 0;
+  my $namespace_map; 
 
   my $state; 
   my $sname      = '';
@@ -689,6 +692,7 @@ sub dump_rproject
   $mc->{COVARIATES}            = '';
   $mc->{INFUSION_RATES}        = '';
   $mc->{SS_PARAM}              = '';
+  $mc->{SS_PARAM_META}         = '';
   $mc->{DS_PARAM}              = '';
   $mc->{ODES}                  = '';
   $mc->{ODES_REMAP}            = '';
@@ -706,7 +710,42 @@ sub dump_rproject
   $md->{OUTPUT_TIMES}          = '';
 
 
+  
 
+  my $mo;
+  my $template_compiled   = &fetch_rproject_compiled_template();
+  $mo->{SYSTEM_PARAM}          = '';
+  $mo->{VARIABLE_INIT}         = '';
+  $mo->{STATES}                = '';
+  $mo->{ODES}                  = '';
+  $mo->{ODES_REMAP}            = '';
+  $mo->{SS_PARAM}              = '';
+  $mo->{DS_PARAM}              = '';
+  $mo->{OUTPUTS}               = '';
+  $mo->{OUTPUTS_REMAP}         = '';
+  $mo->{NPARAMS}               = scalar(@{$cfg->{parameters_index}});
+  $mo->{FORCEFUNC}             = '';
+  $mo->{FORCE_PARAM}           = '';
+  $mo->{FORCEDECLARE}          = '';
+
+
+#
+# defining aspects of forcing functions in C
+#
+# the total number of forcing functions is 1 for each infusion rate and two for
+# the covariates (1 for the initial condition and 1 for the initial value of the
+# covariate in case it's used  as a secondary parameter
+if((scalar(@{$cfg->{covariates_index}}) + 
+    scalar(@{$cfg->{input_rates_index}})) gt 0) {
+     
+$mo->{FORCEFUNC} .= 'void initforcs(void (* odeforcs)(int *, double *))
+{
+    int N='.(2*scalar(@{$cfg->{covariates_index}}) + scalar(@{$cfg->{input_rates_index}})).';
+    odeforcs(&N, forc);
+}';
+     
+$mo->{FORCEDECLARE}   = "\nstatic double forc[".(2*scalar(@{$cfg->{covariates_index}}) + scalar(@{$cfg->{input_rates_index}}))."];";
+}
 
 #
 # First we create the parameters field with the parameter 'matrix' first
@@ -774,14 +813,14 @@ foreach $parameter (@{$cfg->{parameters_index}}){
   $pname = $parameter;
   # defining the indices of the parameters
   $mc->{FETCH_SYS_INDICES} .= 'cfg$options$mi$parameters$'."$pname".&fetch_padding($pname, $cfg->{parameters_length})." = $counter \n";
-  # defining parameters in terms of parameter vector
-  #JMH trying out two different options
-  #$mc->{SYSTEM_PARAM}  .= $pname.&fetch_padding($pname, $cfg->{parameters_length})." = SIMINT_p[$counter]\n";
   $mc->{SYSTEM_PARAM}  .= $pname.&fetch_padding($pname, $cfg->{parameters_length}).' = SIMINT_p$'.$pname."\n";
-  #/JMH
   $mc->{SELECT_PARAMS} .= "  ".$pname.&fetch_padding($pname, $cfg->{parameters_length}).' = c(cfg$parameters$matrix$value['.$counter.'])';
   if($counter < scalar(@{$cfg->{parameters_index}})){
     $mc->{SELECT_PARAMS} .= ",\n"; }
+
+
+  # Compiled C Code
+  $mo->{SYSTEM_PARAM} .= "#define $pname".&fetch_padding($pname, $cfg->{parameters_length})." parms[".($counter-1)."]\n";
   $counter = 1+$counter;
 }
 
@@ -792,19 +831,13 @@ $mc->{FETCH_SYS_INDICES} .= "# states   \n";
 $counter = 1;
 foreach $state     (@{$cfg->{species_index}}){
   $sname = $state;
+
+  # R-script level
   $mc->{FETCH_SYS_INDICES} .= 'cfg$options$mi$states$'."$sname".&fetch_padding($sname, $cfg->{species_length})." = $counter \n";
-  #JMH testing alternatives
   $mc->{STATES}         .= $sname.&fetch_padding($sname, $cfg->{species_length})." = SIMINT_x[$counter];\n";
-  #$mc->{STATES}         .= $sname.&fetch_padding($sname, $cfg->{species_length}).' = SIMINT_x$'.$sname."\n";
-  #/JMH
   $mc->{ODES}           .= "SIMINT_d$sname".&fetch_padding("SIMINT_d$sname", $cfg->{species_length})." = ".&make_ode($cfg, $sname, 'rproject').";\n";
   $mc->{ODES_REMAP}     .= $indent."SIMINT_d$sname";
-
-  #JMH testing alternatives
-  #$mc->{STATE_ICS_REMAP}.= $indent." SIMINT_$sname"."_IC";
   $mc->{STATE_ICS_REMAP}.= $indent.$sname.&fetch_padding("$sname", $cfg->{species_length})." = c(SIMINT_$sname"."_IC)";
-  #/JMH
-
 
   if(defined($cfg->{initial_conditions}->{$sname})){
     $mc->{FETCH_SYS_IC}      .= 'cfg$options$initial_conditions$'."$sname".&fetch_padding($sname, $cfg->{species_length})." = '";
@@ -816,6 +849,19 @@ foreach $state     (@{$cfg->{species_index}}){
   if($counter < scalar( (@{$cfg->{species_index}}))){
     $mc->{ODES_REMAP} .= ", \n"; 
     $mc->{STATE_ICS_REMAP} .= ", \n"; }
+
+  # Compiled code level
+  if($counter eq 1){
+    $mo->{VARIABLE_INIT} .= "/* States and ODEs */\n";
+  }
+  $mo->{VARIABLE_INIT} .= "double $sname".&fetch_padding($sname, $cfg->{species_length})." = 0.0;\n";
+  $mo->{VARIABLE_INIT} .= "double SIMINT_d$sname".&fetch_padding("SIMINT_d$sname", $cfg->{species_length})." = 0.0;\n";
+
+  $mo->{STATES}     .= "$sname".&fetch_padding($sname, $cfg->{species_length})." = y[".($counter-1)."];\n";
+  $mo->{ODES}       .= "SIMINT_d$sname".&fetch_padding($sname, $cfg->{species_length})." = ";
+  $mo->{ODES}       .= &make_ode($cfg, $sname, 'C').";\n";
+  $mo->{ODES_REMAP} .= "ydot[".($counter-1)."] = SIMINT_d$sname;\n";
+
   
   $counter = 1+$counter;
 }
@@ -831,7 +877,19 @@ foreach $output    (@{$cfg->{outputs_index}}){
   # output definitions used in mapping simulation output
   $mc->{OUTPUTS}           .= $sname.&fetch_padding($sname, $cfg->{outputs_length})." = ";
   $mc->{OUTPUTS}           .= &apply_format($cfg->{outputs}->{$sname}, 'rproject')."\n";
+
+  # Compiled code level
+  if($mo->{OUTPUTS} eq ""){
+    $mo->{VARIABLE_INIT} .= "/* Outputs*/\n";
+  }
+  $mo->{VARIABLE_INIT}     .= "double $sname".&fetch_padding($sname, $cfg->{outputs_length})." = 0.0;\n";
+  $mo->{OUTPUTS}           .= $sname.&fetch_padding($sname, $cfg->{outputs_length})." = ";
+  $mo->{OUTPUTS}           .= &apply_format($cfg->{outputs}->{$sname}, 'C').";\n";
+
+  $mo->{OUTPUTS_REMAP}      .= "yout[".($counter-1)."] = $sname;\n";
+
   $counter = 1+$counter;
+
 }
 
 # IIV
@@ -876,17 +934,6 @@ if (defined(@{$cfg->{iiv_index}})){
 
 
 
-# static secondary parameters
-if (defined(@{$cfg->{static_secondary_parameters_index}})){
-  foreach $parameter    (@{$cfg->{static_secondary_parameters_index}}){
-    $pname = $parameter;
-    $mc->{SS_PARAM} .= $pname.&fetch_padding($pname, $cfg->{parameters_length})." = ";
-    $mc->{SS_PARAM} .= &apply_format($cfg->{static_secondary_parameters}->{$pname}, 'rproject')." \n"; 
-    if(defined($cfg->{if_conditional}->{$pname})){
-      $mc->{SS_PARAM} .= &extract_conditional($cfg, $pname, 'rproject');
-    }
-  }
-}
 
 # infusion rates
 if(defined(@{$cfg->{input_rates_index}})){
@@ -918,8 +965,12 @@ if(defined(@{$cfg->{input_rates_index}})){
     $md->{INFUSION_RATES} .= '# cfg$options$inputs$infusion_rates$'.$rname.'$levels$values = '."c(".join(', ', &extract_elements($cfg->{input_rates}->{$rname}->{levels}->{values})).")\n";
     $md->{INFUSION_RATES} .= "\n";
 
-    # JMH this is a placeholder 
-    $mc->{INFUSION_RATES} .= $rname.&fetch_padding($rname, $cfg->{inputs_length})." = 0.0\n";
+    #JMH this seems aberrant 2015.04.08
+    # $mc->{INFUSION_RATES} .= $rname.&fetch_padding($rname, $cfg->{inputs_length})." = 0.0\n";
+
+    # c target
+    $mo->{FORCE_PARAM} .= "#define $rname".&fetch_padding($rname, $cfg->{inputs_length})." forc[$counter_ff_C]\n";
+    $counter_ff_C = $counter_ff_C +1;
   }
 }
 
@@ -927,23 +978,31 @@ if(defined(@{$cfg->{input_rates_index}})){
 if(defined(@{$cfg->{covariates_index}})){
   $md->{COVARIATES} .= "# Covariates are set using the select_set statement above.\n";
   $md->{COVARIATES} .= "# The default values are listed here, and they may be \n";
-  $md->{COVARIATES} .= "# different than the default values. Uncomment to change them.\n";
+  $md->{COVARIATES} .= "# different than the current values. Uncomment to change them.\n";
   $mc->{FETCH_SYS_COVARIATES} .= "#Covariates \n";
   foreach $covariate  (@{$cfg->{covariates_index}}){
     $cname = $covariate; 
 
-    $md->{COVARIATES} .= "# Covariate name:  $cname\n";
-    $md->{COVARIATES} .= "# Covariate units: ".$cfg->{covariates}->{$cname}->{values}->{units}."\n";
-    $md->{COVARIATES} .= "# Covariate type:  ".$cfg->{covariates}->{$cname}->{values}->{units}."\n";
-    $md->{COVARIATES} .= "# Time units:      ".$cfg->{covariates}->{$cname}->{cv_type}."\n";
+    # simulation driver
+    $md->{COVARIATES} .= "# Covariate name:     $cname\n";
+    $md->{COVARIATES} .= "# Covariate time in:  ".$cfg->{covariates}->{$cname}->{times}->{units}."\n";
+    $md->{COVARIATES} .= "# Covariate value in: ".$cfg->{covariates}->{$cname}->{values}->{units}."\n";
+    $md->{COVARIATES} .= "# Covariate type:     ".$cfg->{covariates}->{$cname}->{cv_type}."\n";
     $md->{COVARIATES} .= '# cfg$options$inputs$covariates$'.$cname.'$times$values  = '."c(".join(', ', &extract_elements($cfg->{covariates}->{$cname}->{parameter_sets}->{default}->{times})).")\n"; 
     $md->{COVARIATES} .= '# cfg$options$inputs$covariates$'.$cname.'$values$values = '."c(".join(', ', &extract_elements($cfg->{covariates}->{$cname}->{parameter_sets}->{default}->{values})).")\n"; 
     $md->{COVARIATES} .= "\n";
 
+    # rcomponents
     $mc->{FETCH_SYS_COVARIATES} .= 'cfg$options$inputs$covariates$'.$cname.'$cv_type       = '."'".$cfg->{covariates}->{$cname}->{cv_type}."'\n";
     $mc->{FETCH_SYS_COVARIATES} .= 'cfg$options$inputs$covariates$'.$cname.'$times$units   = '."'".$cfg->{covariates}->{$cname}->{times}->{units}."'\n";
     $mc->{FETCH_SYS_COVARIATES} .= 'cfg$options$inputs$covariates$'.$cname.'$values$units  = '."'".$cfg->{covariates}->{$cname}->{values}->{units}."'\n";
 
+    # c target
+    $mo->{FORCE_PARAM} .= "#define $cname".&fetch_padding($cname, $cfg->{inputs_length})." forc[$counter_ff_C]\n";
+    $counter_ff_C = $counter_ff_C +1;
+    $mo->{FORCE_PARAM} .= "#define SIMINT_CVIC_$cname".&fetch_padding("SIMINT_CVIC_$cname", $cfg->{inputs_length})." forc[$counter_ff_C]\n";
+    $counter_ff_C = $counter_ff_C +1;
+    $namespace_map->{$cname} = "SIMINT_CVIC_$cname";
 
     foreach $set (keys(%{$cfg->{covariates}->{$cname}->{parameter_sets}})) {
       $mc->{FETCH_SYS_COVARIATES} .= 'cfg$options$inputs$covariates$'.$cname.'$parameter_sets$'.$set.'$times  = '."c(".join(', ', &extract_elements($cfg->{covariates}->{$cname}->{parameter_sets}->{$set}->{times})).")\n"; 
@@ -953,15 +1012,59 @@ if(defined(@{$cfg->{covariates_index}})){
   }
 }
 
+# static secondary parameters
+if (defined(@{$cfg->{static_secondary_parameters_index}})){
+  foreach $parameter    (@{$cfg->{static_secondary_parameters_index}}){
+    $pname = $parameter;
+    # R script
+    $mc->{SS_PARAM} .= $pname.&fetch_padding($pname, $cfg->{parameters_length})." = ";
+    $mc->{SS_PARAM} .= &apply_format($cfg->{static_secondary_parameters}->{$pname}, 'rproject')." \n"; 
+    if(defined($cfg->{if_conditional}->{$pname})){
+      $mc->{SS_PARAM} .= &extract_conditional($cfg, $pname, 'rproject');
+    }
+    # storing the secondary parameters in the output
+    $mc->{SS_PARAM_META} .= 'SIMINT_meta$secondary_parameters$'.$pname.&fetch_padding($pname, $cfg->{parameters_length})." = $pname\n";
+    
+    # Compiled code level
+    if($mo->{SS_PARAM} eq ""){
+      $mo->{VARIABLE_INIT} .= "/* Static Secondary Parameters*/\n";
+      $mo->{SS_PARAM} .= "/* Static Secondary Parameters*/\n";
+    }
+    $mo->{VARIABLE_INIT} .= "double $pname ".&fetch_padding($pname, $cfg->{parameters_length})." = 0.0;\n";
+    $mo->{SS_PARAM} .= $pname.&fetch_padding($pname, $cfg->{parameters_length})." = ";
+    $mo->{SS_PARAM} .= &apply_format($cfg->{static_secondary_parameters}->{$pname}, 'C')."; \n"; 
+    if(defined($cfg->{if_conditional}->{$pname})){
+      $mo->{SS_PARAM} .= &extract_conditional($cfg, $pname, 'C');
+    }
+  }
+  # if any covariates were used in the static secondary parameters, we change
+  # those to the SIMINT_CVIC_ versions which are just the covariates evaluated 
+  # at their initial values.
+  $mo->{SS_PARAM} = &remap_namespace($mo->{SS_PARAM}, $namespace_map);
+
+}
 
 # dynamic secondary parameters
 if (defined(@{$cfg->{dynamic_secondary_parameters_index}})){
   foreach $parameter    (@{$cfg->{dynamic_secondary_parameters_index}}){
     $pname = $parameter;
+    # R script
     $mc->{DS_PARAM} .= $pname.&fetch_padding($pname, $cfg->{parameters_length})." = ";
     $mc->{DS_PARAM} .= &apply_format($cfg->{dynamic_secondary_parameters}->{$pname}, 'rproject')." \n"; 
     if(defined($cfg->{if_conditional}->{$pname})){
       $mc->{DS_PARAM} .= &extract_conditional($cfg, $pname, 'rproject');
+    }
+
+    # Compiled code level
+    if($mo->{DS_PARAM} eq ""){
+      $mo->{VARIABLE_INIT} .= "/* Dynamic Secondary Parameters*/\n";
+      $mo->{DS_PARAM} .= "/* Dynamic Secondary Parameters*/\n";
+    }
+    $mo->{VARIABLE_INIT} .= "double $pname ".&fetch_padding($pname, $cfg->{parameters_length})." = 0.0;\n";
+    $mo->{DS_PARAM} .= $pname.&fetch_padding($pname, $cfg->{parameters_length})." = ";
+    $mo->{DS_PARAM} .= &apply_format($cfg->{dynamic_secondary_parameters}->{$pname}, 'C')."; \n"; 
+    if(defined($cfg->{if_conditional}->{$pname})){
+      $mo->{DS_PARAM} .= &extract_conditional($cfg, $pname, 'C');
     }
   }
 }
@@ -1046,6 +1149,14 @@ $mc->{COMMENTS} .= &fetch_comments($cfg->{comments}, 'rproject');
   open(FH, '>', &ftf($cfg, $cfg->{files}->{rproject}->{simulation_driver}));
   print FH $template_driver;
   close(FH);
+
+ foreach $field     (keys(%{$mo})){
+     $template_compiled   =~ s#<$field>#$mo->{$field}#g;
+ }
+ open(FH, '>', &ftf($cfg, $cfg->{files}->{rproject}->{compiled}));
+ print FH $template_compiled;
+ close(FH);
+
 }
 
 
@@ -1839,7 +1950,8 @@ sub remap_namespace{
     $string =~ s#\/#%%SPACER%%\/%%SPACER%%#g;
     $string =~ s#-#%%SPACER%%-%%SPACER%%#g;
     $string =~ s#\+#%%SPACER%%\+%%SPACER%%#g;
-    
+    $string =~ s#;#%%SPACER%%;%%SPACER%%#g;
+
     # now all named species should be surrounded by spacers
     # and we can then do exact matching of the name with the 
     # spacers  on either side.
@@ -2037,7 +2149,9 @@ sub dump_matlab
   my $m_common_block = '';
   my $m_odes         = '';
   my $m_outputs      = '';
+  my $cv_namespace_map = {};
 
+  my $tmp_text = '';
 
   # Things to check for:
   # rates have both times and levels
@@ -2096,6 +2210,11 @@ sub dump_matlab
       foreach $name (@{$cfg->{covariates_index}}){
       print FHCOMMON_BLOCK      "double $name".&fetch_padding($name, $cfg->{parameters_length})."= 0.0; \n";     
       $counter = $counter + 1;
+      print FHCOMMON_BLOCK      "double SIMINT_CVIC_$name".&fetch_padding("SIMINT_CVIC_$name", $cfg->{parameters_length})."= 0.0; \n";     
+      $counter = $counter + 1;
+
+      # storing the mapping information in the namespace map
+      $cv_namespace_map->{$name} = "SIMINT_CVIC_$name";
       }
     }
 
@@ -2175,12 +2294,16 @@ sub dump_matlab
       print FHCOMMON_BLOCK        "\n\n\n/* Defining covariates */\n"; 
       $m_common_block .= "\n\n\n% Defining covariates \n";
       foreach $name (@{$cfg->{covariates_index}}){
+      # This dumps the timeseries
       print FHCOMMON_BLOCK      "$name".&fetch_padding($name, $cfg->{parameters_length})."= u[$counter]; \n";     
       $m_common_block .=        "$name".&fetch_padding($name, $cfg->{parameters_length})."= u(".($counter+1)."); \n";     
       $counter = $counter + 1;
+      # This dumps the initial condition
+      print FHCOMMON_BLOCK      "SIMINT_CVIC_$name".&fetch_padding("SIMINT_CVIC_$name", $cfg->{parameters_length})."= u[$counter]; \n";     
+      $m_common_block .=        "SIMINT_CVIC_$name".&fetch_padding("SIMINT_CVIC_$name", $cfg->{parameters_length})."= u(".($counter+1)."); \n";     
+      $counter = $counter + 1;
       }
     }
-
 
     # static secondary parameter initializing 
     if (defined(@{$cfg->{static_secondary_parameters_index}})){
@@ -2188,10 +2311,15 @@ sub dump_matlab
       print FHCOMMON_BLOCK &extract_conditional($cfg, 'not defined', 'C');
       $m_common_block .= "\n\n\n% Defining static secondary parameters\n";
       foreach $parameter (@{$cfg->{static_secondary_parameters_index}}){
-          print FHCOMMON_BLOCK   "$parameter".&fetch_padding($parameter, $cfg->{parameters_length})."=".&apply_format($cfg->{static_secondary_parameters}->{$parameter}, 'C')."; \n";     
-          print FHCOMMON_BLOCK &extract_conditional($cfg, $parameter, 'C');
-          $m_common_block  .=    "$parameter".&fetch_padding($parameter, $cfg->{parameters_length})."=".&apply_format($cfg->{static_secondary_parameters}->{$parameter}, 'matlab')."; \n";     
-          $m_common_block .=  &extract_conditional($cfg, $parameter, 'matlab')."\n";
+          # we have to remap the covariate parameters so they take on the
+          # initial condition (SIMINT_CVIC_CVNAME) instead of the timeseries
+          # CVNAME
+          $tmp_text  = "$parameter".&fetch_padding($parameter, $cfg->{parameters_length})."=".&apply_format($cfg->{static_secondary_parameters}->{$parameter}, 'C')."; \n";     
+          $tmp_text .= &extract_conditional($cfg, $parameter, 'C');
+          print FHCOMMON_BLOCK &remap_namespace($tmp_text, $cv_namespace_map);
+          $tmp_text  = "$parameter".&fetch_padding($parameter, $cfg->{parameters_length})."=".&apply_format($cfg->{static_secondary_parameters}->{$parameter}, 'matlab')."; \n";     
+          $tmp_text .= &extract_conditional($cfg, $parameter, 'matlab')."\n";
+          $m_common_block  .=   &remap_namespace($tmp_text, $cv_namespace_map); 
       }
     }
 
@@ -2314,7 +2442,7 @@ sub dump_matlab
     # to a file
 $tmp_file_chunk = "
 ssSetNumContStates(    S, ".scalar((@{$cfg->{species_index}})).");  
-ssSetNumInputs(        S, ".(scalar((@{$cfg->{parameters_index}})) + scalar((keys(%{$cfg->{input_rates}})))+ scalar((@{$cfg->{covariates_index}}))) .");  
+ssSetNumInputs(        S, ".(scalar((@{$cfg->{parameters_index}})) + scalar((keys(%{$cfg->{input_rates}})))+ 2*scalar((@{$cfg->{covariates_index}}))) .");  
 ssSetNumOutputs(       S, ".scalar((@{$cfg->{outputs_index}})).");  
 ssSetNumDiscStates(    S, 0);
 ssSetDirectFeedThrough(S, 1);
@@ -2746,8 +2874,10 @@ $tmp_file_chunk    = "function [SIMINT_t, SIMINT_x, y] = auto_sim(S, SIMINT_outp
     # M-file odes
     #
     #  Flow of the file:
-    #   - map parameters  (interpolate at t)
-    #   - map rate inputs (interpolate at t)
+    #   - map parameters     (interpolate at t)
+    #   - map rate inputs    (interpolate at t)
+    #   - map covariates     (interpolate at t)
+    #   - map covariates_ic  (interpolate at first time)
     #   - create static algebraic values
     #   - map states to state names
     #   - create dynamic states/conditionals
@@ -5438,10 +5568,19 @@ rm(list=ls())
 # This gets rid of that weird grepl warning message:
 Sys.setlocale(locale="C")
 library("deSolve")
+library("ggplot2")
 
 # Uncomment to force the system to be recompiled
 # each time the script is run
-# system(\'perl build_system.pl\')
+# system("perl build_system.pl")
+
+# If you wish to use the compiled version of the model uncomment the following
+# to compile the generated C code and load the model library. Note you will
+# also need to uncomment the simulation option below to specify "c-file"
+# system("cp transient/r_ode_model.c  .")
+# system("R CMD SHLIB r_ode_model.c")
+# dyn.load(paste("r_ode_model", .Platform$dynlib.ext, sep = ""))
+
 
 # loading the different functions
 source(\'transient/auto_rcomponents.r\');
@@ -5461,40 +5600,61 @@ parameters = cfg$parameters$values
 # and VALUE with the desired value:
 #
 # parameters$PNAME = VALUE;
+
 <BOLUS>
 <INFUSION_RATES>
 <COVARIATES>
 <OUTPUT_TIMES>
+
+
+# The following applies to both individual and stochastic simulations:
+# Define the solver to use
+cfg$options$simulation_options$solver$method                  = "ode23"
+# Specify the output times 
+cfg$options$simulation_options$output_times                   = seq(0,100,1)
+# Uncomment to include important times in the simulation output
+# e.g., bolus times, sampling before and after rate switches, etc.
+#cfg$options$simulation_options$include_important_output_times = "yes"
+# Uncomment to use compiled code
+#cfg$options$simulation_options$integrate_with                 = "c-file"
+
 # -------------------------------------------------------------------------
 # Individual Simulation:
-# define the solver to use
-cfg$options$simulation_options$solver$method                  = \'ode23\'
-# specify the output times 
-cfg$options$simulation_options$output_times                   = seq(0,100,1)
-# uncomment to include important times in the simulation output
-# e.g., bolus times
-#cfg$options$simulation_options$include_important_output_times = \'yes\'
-
-
 som = run_simulation_ubiquity(parameters, cfg)
-# replace TS with a timescale (i.e. days) and 
-# OUTPUT with a named output  (i.e. Cp)
-#plot(som$times$TS,   som$outputs$OUTPUT)
+# # replace TS with a timescale (i.e. days) and 
+# # OUTPUT with a named output  (i.e. Cp)
+#plot(som$simout$TS,        som$simout$OUTPUT)
 # -------------------------------------------------------------------------
 
 
 # -------------------------------------------------------------------------
-# Stochastic Simulation:
+# # Stochastic Simulation:
+# # To use this you need to have specified variability 
+# # in your model using the <IIV:?>, <IIV:?:?>, and <IIVCOR:?:?> 
+# # delimiters see examples/system-iiv.txt
+#
 # subopts = list();
 # subopts$nsub = 10
-#  p = simulate_subjects(parameters, subopts, cfg)
+# p     = simulate_subjects(parameters, subopts, cfg)
+#
+# # replace TS with a timescale (i.e. days) and 
+# # OUTPUT with a named output  (i.e. Cp)
+#
+# myfig = ggplot(p$tcsummary, aes(x=ts.TS, y=o.OUTPUT.mean)) +
+#                geom_ribbon(aes(ymin=o.OUTPUT.lb_ci, 
+#                                ymax=o.OUTPUT.ub_ci), 
+#                                border="",
+#                                fill="lightblue", 
+#                                alpha=0.6) +
+#                geom_line(linetype="solid", size=0.7, color="blue")  +
+#                geom_line(aes(x=ts.TS, y=o.OUTPUT.ub_ci), linetype="dashed", size=0.2, color="blue")  +
+#                geom_line(aes(x=ts.TS, y=o.OUTPUT.lb_ci), linetype="dashed", size=0.2, color="blue")  +
+#                xlab("Time (TS)")+
+#                ylab("OUTPUT (units)")+
+#                guides(fill=FALSE) 
+# myfig = prepare_figure("print", myfig)
+# print(myfig)
 # 
-#   plot(p$times$days, p$states_stats$Cp$ub_ci, type="l")
-#  lines(p$times$days, p$states_stats$Cp$lb_ci, type="l")
-#  polygon(p$times_patch$days, 
-#          p$states_patch$Cp$ci, 
-#          col="skyblue",  border=NA)
-#  lines(p$times$days, p$states_stats$Cp$mean, type="l")
 # -------------------------------------------------------------------------
 
 
@@ -5502,6 +5662,74 @@ som = run_simulation_ubiquity(parameters, cfg)
 ';
 return $template;
 }
+
+sub fetch_rproject_compiled_template
+{
+my $template ='#include <R.h>
+
+static double parms[<NPARAMS>];<FORCEDECLARE>
+
+<SYSTEM_PARAM>
+
+<FORCE_PARAM>
+
+/* initializing the parameters and forcing functions  */
+void initparams(void (* odeparms)(int *, double *))
+{
+    int N=<NPARAMS>;
+    odeparms(&N, parms);
+}
+
+<FORCEFUNC>
+
+/* Derivatives and outputs  */
+void derivs (int *neq, 
+             double *t, 
+             double *y, 
+             double *ydot,
+             double *yout, 
+             int *ip)
+{
+
+if (ip[0] <1) error("nout should be at least 1");
+
+/* Start Initializing variables 
+*/
+double SIMINT_TIME = 0.0;
+
+<VARIABLE_INIT>
+/* Done Initializing variables */
+
+/* 
+*/
+SIMINT_TIME = *t; 
+
+<SS_PARAM>
+
+/* Mapping states to named variables */
+<STATES>
+
+<DS_PARAM>
+
+/* Defining the ODEs*/
+<ODES>
+
+/* Mapping back to ydot variables */
+<ODES_REMAP>
+
+/* Defining the outputs*/
+<OUTPUTS>
+
+/* Mapping back to yout variables */
+<OUTPUTS_REMAP>
+}
+
+';
+
+return $template;
+}
+
+
 
 sub fetch_rproject_components_template
 {
@@ -5738,32 +5966,21 @@ list(dy=SIMINT_DYDT,global=c())
 }
 
 
-system_map_output = function(SIMINT_cfg, SIMINT_simout, SIMINT_p){
-
-# System parameters
-<SYSTEM_PARAM>
+system_map_output = function(SIMINT_cfg, SIMINT_simout, SIMINT_p, SIMINT_ODE_func_type){
 
 
 # States
 # Checking the 
 SIMINT_tts     = SIMINT_simout[,\'time\']
-SIMINT_xts     = SIMINT_simout[,2:length(SIMINT_simout[1,])]
 SIMINT_som     = list();
-SIMINT_times   = list();
-SIMINT_states  = list();
-SIMINT_outputs = list();
-
-for (SIMINT_sname in names(cfg$options$mi$states)){
-  # storing the states as named values
-  SIMINT_tmp_assignment = sprintf("SIMINT_states$%s =  SIMINT_simout[,\'%s\']", SIMINT_sname, SIMINT_sname) 
-  eval(parse(text=SIMINT_tmp_assignment))
-}
+SIMINT_outputs = list();  
+SIMINT_meta    = list();
+SIMINT_som$simout = data.frame(time = SIMINT_simout[,\'time\'])
 
 
-# mapping the timescales
-for (SIMINT_tscale in names(cfg$options$time_scales)){
-  SIMINT_times[[SIMINT_tscale]] =   SIMINT_cfg$options$time_scales[[SIMINT_tscale]]*SIMINT_tts
-}
+# System parameters
+<SYSTEM_PARAM>
+SIMINT_meta$parameters = SIMINT_p
 
 for(SIMINT_cov_name in names(SIMINT_cfg$options$inputs$covariates)){
 # Looping through each covariate and creating a variable in the current
@@ -5784,6 +6001,9 @@ for(SIMINT_cov_name in names(SIMINT_cfg$options$inputs$covariates)){
 # Static secondary parameters
 <SS_PARAM>
 
+# storing the secondary parameters
+<SS_PARAM_META>
+
 
 for (SIMINT_tidx in seq(1,length(SIMINT_tts))){
   SIMINT_TIME = SIMINT_tts[SIMINT_tidx]
@@ -5791,7 +6011,7 @@ for (SIMINT_tidx in seq(1,length(SIMINT_tts))){
   # Creating the states here at a given time
   # (above a vector was created)
   for (SIMINT_sname in names(SIMINT_cfg$options$mi$states)){
-    SIMINT_tmp_assignment = sprintf(\'%s =  SIMINT_states$%s[SIMINT_tidx]\', SIMINT_sname, SIMINT_sname) 
+    SIMINT_tmp_assignment = sprintf(\'%s =  SIMINT_simout[[SIMINT_tidx, SIMINT_sname]]\', SIMINT_sname)  #JMH modify
     eval(parse(text=SIMINT_tmp_assignment))
   }
 
@@ -5836,27 +6056,52 @@ for (SIMINT_tidx in seq(1,length(SIMINT_tts))){
     eval(parse(text=paste(sprintf("%s = SIMINT_cov_value",SIMINT_cov_name))))
   }
 
-# Dynamic secondary parameters
-<DS_PARAM>
+  # we only calculate the dynamic secondary parameters and the outputs if the
+  # \'r\' function was used. If the \'c\' function was used then these are not
+  # needed because they were calculated and returned from the simulation.
+  if(\'r\' == SIMINT_ODE_func_type){
 
-# Outputs
-<OUTPUTS>  
-
-  for (SIMINT_oname in names(SIMINT_cfg$options$mi$outputs)){
-    SIMINT_tmp_assignment = sprintf(\'SIMINT_outputs$%s[SIMINT_tidx] = %s\', SIMINT_oname, SIMINT_oname) 
-    eval(parse(text=SIMINT_tmp_assignment))
-  }
+  # Dynamic secondary parameters
+  <DS_PARAM>
+  
+  # Outputs
+  <OUTPUTS>  
+  
+    for (SIMINT_oname in names(SIMINT_cfg$options$mi$outputs)){
+      SIMINT_tmp_assignment = sprintf(\'SIMINT_outputs$%s[SIMINT_tidx] = %s\', SIMINT_oname, SIMINT_oname) 
+      eval(parse(text=SIMINT_tmp_assignment))
+      }
+    }
 
 }
 
+# Storing the time scales, appending ts. to the 
+# beginning to prevent any namespace issues
+for (SIMINT_name   in names(cfg$options$time_scales)){
+  eval(parse(text=sprintf(\'SIMINT_som$simout["ts.%s"] =  SIMINT_cfg$options$time_scales[[SIMINT_name]]*SIMINT_tts\', SIMINT_name))) 
+}
 
-# storing everything to be returned
-SIMINT_som$raw$t    = SIMINT_tts
-SIMINT_som$raw$x    = SIMINT_xts
-SIMINT_som$states   = SIMINT_states
-SIMINT_som$times    = SIMINT_times 
-SIMINT_som$outputs  = SIMINT_outputs
+# storing the states
+for (SIMINT_name in names(cfg$options$mi$states)){
+     SIMINT_som$simout[SIMINT_name] =  SIMINT_simout[,SIMINT_name]
+   }
+# Storing the outputs
+# this is done differently depending on whether the R script or compiled C
+# code was used. 
+if(\'r\' == SIMINT_ODE_func_type){
+  # here we are returning the outputs calculated in this funciton
+  for(SIMINT_name   in names(SIMINT_outputs)){
+    SIMINT_som$simout[SIMINT_name] =SIMINT_outputs[SIMINT_name] 
+    }
+  } else if(\'c\' == SIMINT_ODE_func_type){
+  # otherwise we return those calculated in the compiled c code.
+  for (SIMINT_name in names(cfg$options$mi$outputs)){
+       SIMINT_som$simout[SIMINT_name] =  SIMINT_simout[,SIMINT_name]
+     }
+}
 
+# storing the meta data to be returned
+SIMINT_som$meta     = SIMINT_meta
 
 return(SIMINT_som)
 
@@ -5952,7 +6197,7 @@ system_evaluate_input = function(tvals, lvals, etime, type){
   return(value)
 }
 
-run_simulation_ubiquity = function(parameters,cfg){
+run_simulation_ubiquity = function(SIMINT_parameters,SIMINT_cfg){
 # This runs a simulation for a model created in the system.txt format
 #  
 # # compile   the system to make sure the 
@@ -5963,51 +6208,201 @@ run_simulation_ubiquity = function(parameters,cfg){
 #   transient/auto_simulation_driver.R 
 # for examples on how to control different aspects of the simulation. 
 
-simulation_options = c()
+SIMINT_simulation_options = c()
 # default simulation options 
-simulation_options$solver$method          = "lsoda"
-simulation_options$output_times           = seq(0,100,1)
-simulation_options$include_important_output_times = "no"
-
+SIMINT_simulation_options$solver$method          = "lsoda"
+SIMINT_simulation_options$output_times           = seq(0,100,1)
+SIMINT_simulation_options$include_important_output_times = "no"
+SIMINT_simulation_options$integrate_with          = "r-file"
 
 # overriding the default simulation options
-for(option in names(cfg$options$simulation_options)){
-  if(is.null(simulation_options[[option]])){
-    print(paste("Unknown simulation option ", option))}
+for(SIMINT_option in names(SIMINT_cfg$options$simulation_options)){
+  if(is.null(SIMINT_simulation_options[[SIMINT_option]])){
+    print(paste("Unknown simulation option ", SIMINT_option))}
   else{
-    simulation_options[[option]] = cfg$options$simulation_options[[option]] }
+    SIMINT_simulation_options[[SIMINT_option]] = SIMINT_cfg$options$simulation_options[[SIMINT_option]] }
 }
+
+
+# It can be important to force the solver to evaluate 
+# the system at specific times to make sure all events 
+# are observed. The way bolus values are handled means 
+# the system will be evaluated at each bolus event. However
+# other events must be accounted for explicitly. This includes 
+# the time varying inputs like infusion_rates and timevarying.
+# The times these events occur are stored in the 
+# important_times variable
+SIMINT_important_times = SIMINT_simulation_options$output_times
 
 # placing the parameters vector into cfg 
 # because cfg is passed into the odes
-cfg$parameters$values =  parameters
+SIMINT_cfg$parameters$values =  SIMINT_parameters
 
 # setting up the nonzero initial conditions
-IC = system_IC(cfg, parameters)
+SIMINT_IC = system_IC(SIMINT_cfg, SIMINT_parameters)
 
 # creating the bolus inputs
-eventdata = system_prepare_inputs(cfg, parameters)
+SIMINT_eventdata = system_prepare_inputs(SIMINT_cfg, SIMINT_parameters)
  
-# including the important output times if selected
-if(simulation_options$include_important_output_times  == "yes"){
-  output_times_actual = unique(sort(c(eventdata$time, simulation_options$output_times)))}
-else{
-  output_times_actual = simulation_options$output_times }
+# adding the bolus times to the important times
+SIMINT_important_times =   c(SIMINT_eventdata$time, SIMINT_important_times)
+
+# defining the parameters
+for(SIMINT_parameter_names in names(SIMINT_parameters)){
+  eval(parse(text=sprintf("%s = SIMINT_parameters$%s", SIMINT_parameter_names, SIMINT_parameter_names)))
+}
+
+
+# all forcing functions will be stored in SIMINT_forces
+# this will be used with the compiled option
+SIMINT_forces = c()
+
+# processing infusion rates
+for(SIMINT_rate_name in names(SIMINT_cfg$options$inputs$infusion_rates)){
+  # Looping through each infusion rate 
+  # plucking out the rate name
+  SIMINT_my_rate = SIMINT_cfg$options$inputs$infusion_rates[[SIMINT_rate_name]]
+
+
+  SIMINT_rate_time_scale   = eval(parse(text=SIMINT_my_rate$times$scale))
+  SIMINT_rate_values_scale = eval(parse(text=SIMINT_my_rate$levels$scale))
+
+  SIMINT_my_ff = make_forcing_function(SIMINT_my_rate$times$values*SIMINT_rate_time_scale,
+                                       SIMINT_my_rate$levels$values*SIMINT_rate_values_scale,
+                                       "step", SIMINT_rate_name,  
+                                       SIMINT_simulation_options$output_times)
+  
+  eval(parse(text=sprintf("SIMINT_forces$%s = SIMINT_my_ff", SIMINT_rate_name)))
+
+
+  # adding the time values to important times
+  SIMINT_important_times =   c(SIMINT_my_ff[,1], SIMINT_important_times)
+  
+}
+
+
+# processing infusion rates
+for(SIMINT_cv_name in names(SIMINT_cfg$options$inputs$covariates)){
+  # Looping through each infusion rate 
+  # plucking out the rate name
+  SIMINT_my_cv = SIMINT_cfg$options$inputs$covariates[[SIMINT_cv_name]]
+
+  # the full covariate (time varying component)
+  SIMINT_my_ff = make_forcing_function(SIMINT_my_cv$times$values,
+                                       SIMINT_my_cv$values$values,
+                                       SIMINT_my_cv$cv_type, 
+                                       SIMINT_cv_name,  
+                                       SIMINT_simulation_options$output_times)
+  eval(parse(text=sprintf("SIMINT_forces$%s = SIMINT_my_ff", SIMINT_cv_name)))
+  # adding the time values to important times
+  SIMINT_important_times =   c(SIMINT_my_ff[,1], SIMINT_important_times)
+
+  # covariate evaluated at the initial condition and carried forward
+  SIMINT_my_ff = make_forcing_function(SIMINT_my_cv$times$values[1],
+                                       SIMINT_my_cv$values$values[1],
+                                       SIMINT_my_cv$cv_type, 
+                                       \'step\',  
+                                       SIMINT_simulation_options$output_times)
+  eval(parse(text=sprintf("SIMINT_forces$SIMINT_CVIC_%s = SIMINT_my_ff", SIMINT_cv_name)))
+  # adding the time values to important times
+  SIMINT_important_times =   c(SIMINT_my_ff[,1], SIMINT_important_times)
+  
+}
+
+# processing covariates 
  
 
-# simulating the system
-simout = ode(IC, 
-             output_times_actual,
-             system_DYDT, cfg, 
-             method=simulation_options$solver$method, 
-             events=list(data=eventdata))
+# If important times were selected to be included then we set the output times
+# equal to that vector (bounded on either end by the min and max of the
+# selected simulation times).
+if("yes" == SIMINT_simulation_options$include_important_output_times){
+  SIMINT_important_times = SIMINT_important_times[(SIMINT_important_times >= min(SIMINT_simulation_options$output_times))  
+                                                & (SIMINT_important_times <= max(SIMINT_simulation_options$output_times))]
+  SIMINT_output_times_actual = sort(unique(SIMINT_important_times))
+} else {
+  SIMINT_output_times_actual = SIMINT_simulation_options$output_times}
 
 
 
+if("r-file" == SIMINT_simulation_options$integrate_with){
+# simulating the system using R
+SIMINT_simout = ode(SIMINT_IC, 
+                    SIMINT_output_times_actual,
+                    system_DYDT, SIMINT_cfg, 
+                    method=SIMINT_simulation_options$solver$method, 
+                    events=list(data=SIMINT_eventdata))
 # mapping the outputs, times, etc.
-simout_mapped = system_map_output(cfg, simout, parameters)
+SIMINT_simout_mapped = system_map_output(SIMINT_cfg, SIMINT_simout, SIMINT_parameters, \'r\')
+                    
+} else if("c-file" == SIMINT_simulation_options$integrate_with){
 
+# simulating the system using compiled C
+SIMINT_simout <- ode(SIMINT_IC, SIMINT_output_times_actual, 
+           func     = "derivs", 
+           parms    = unlist(SIMINT_parameters),
+           jacfunc  = NULL, 
+           dllname  = "r_ode_model",
+           initfunc = "initparams", 
+           initforc = "initforcs",
+           forcings = SIMINT_forces, 
+           method   = SIMINT_simulation_options$solver$method, 
+           nout     = length(names(cfg$options$mi$outputs)),
+           events   = list(data=SIMINT_eventdata), 
+           outnames = names(cfg$options$mi$outputs))
+SIMINT_simout_mapped = system_map_output(SIMINT_cfg, SIMINT_simout, SIMINT_parameters, \'c\')
+}
+
+return(SIMINT_simout_mapped)
 } 
+
+make_forcing_function = function(times, values, type, name, output_times){
+#
+# Inputs:
+#
+# times - time values for the forcing function
+#
+# values - magnitude for each time (same length of time)
+#
+# type - type of forcing function can be one of the following:
+#         "step" for constant values that switch to new values at
+#                the times
+#         "linear" to linearly interpolate between the points
+#
+# cfg - System configuration variable generated in the following manner:
+#
+
+
+delta         = 250*.Machine$double.eps
+
+if("step" == type){
+ counter = 1
+ while( counter <= length(times)){
+  if(counter == 1){
+    myforce = matrix(ncol=2,byrow=TRUE,data=c(times[counter], values[counter]))
+  } else{
+    # just before the switching time it takes the previous value
+    myforce = (rbind(myforce, c((times[counter]-delta), values[counter-1])))
+    # just afterwards it takes on the next value
+    myforce = (rbind(myforce, c((times[counter]+delta), values[counter])))
+  }
+  counter = counter +1
+ }
+
+ # if the last switching time occurs before the end of the simulation
+ # then we extend the last rate specified to the end of the simulation
+ if(tail(myforce[,1], n=1) < tail(output_times, n=1)){
+   myforce = (rbind(myforce, c((tail(output_times, n=1)), tail(values, n=1) )))
+   }
+}else  if("linear" == type){
+   myforce = cbind(times, values)
+ # if the last switching time occurs before the end of the simulation
+ # then we extend the last rate specified to the end of the simulation
+ if(tail(myforce[,1], n=1) < tail(output_times, n=1)){
+   myforce = (rbind(myforce, c((tail(output_times, n=1)), tail(values, n=1) )))
+ }
+}
+return(myforce);
+}
 
 simulate_subjects = function (parameters, ssoptions, cfg){
 #function [predictions] = simulate_subjects(parameters, subopts, cfg)
@@ -6032,11 +6427,26 @@ simulate_subjects = function (parameters, ssoptions, cfg){
 #   ssoptions$seed - 
 #      seed for random number generator (default 8675309)
 #
+#   ssoptions$ci   - 
+#      desired confidence interval (e.g. 95)
+#
 # These values can then be modified as necessary.
 #
 # Output:
 #
 # The predictions data structure contains the following:
+#
+# predictions$tcsummary
+#   This is a data frame that summarizes the predictions with the following
+#   fields:
+#     ts.TIMESCALE
+#     s.STATE.X
+#     o.OUTPUT.X
+#
+#   Where TIMESCALE, STATE, and OUTPUT refer to the named timescales states
+#   and outputs. X can be either the mean, median, lb_ci or ub_ci (the latter
+#   represent the lower and upper bounds on the confidence interval).
+#
 #
 # predictions$subjects 
 #   Full parameter vector (one per column) for each subject
@@ -6137,28 +6547,29 @@ if("iiv" %in% names(cfg)){
     subject = generate_subject(parameters,  cfg);
     parameters_subject = subject$parameters;
   
-    # simulating the system
+    # simulating the system for the current subject
     som = run_simulation_ubiquity(parameters_subject, cfg)
   
     # for the first subject we initialize a bunch of things
     if(sub_idx == 1){
       p$subjects = parameters_subject
-      p$times    = som$times
+      p$times    = som$simout["time"]
       # creating the time patch vectors for the different timescales
-      for(timescale_name   in names(som$times)){
-       p$times_patch[[timescale_name]] = c(som$times[[timescale_name]], rev(som$times[[timescale_name]]))
+      for(timescale_name   in names(cfg$options$time_scales)){
+       timescale_name = sprintf(\'ts.%s\', timescale_name)
+       p$times_patch[[timescale_name]] = c(som$simout[[timescale_name]], rev(som$simout[[timescale_name]]))
       }
   
       # initializing the matrices to hold state and output information
       # then adding the current simulation as the first row
-      for(state_name   in names(som$states)){
-        p$states[[state_name]] = matrix(0, nsub, length(som$states[[state_name]]))
-        p$states[[state_name]][1,] = som$states[[state_name]]
+      for(state_name   in names(cfg$options$mi$states)){
+        p$states[[state_name]] = matrix(0, nsub, length(som$simout[[state_name]]))
+        p$states[[state_name]][1,] = som$simout[[state_name]]
         }
   
-      for(output_name   in names(som$outputs)){
-        p$outputs[[output_name]] = matrix(0, nsub, length(som$outputs[[output_name]]))
-        p$outputs[[output_name]][1,] = som$outputs[[output_name]]
+      for(output_name   in names(cfg$options$mi$outputs)){
+        p$outputs[[output_name]] = matrix(0, nsub, length(som$simout[[output_name]]))
+        p$outputs[[output_name]][1,] = som$simout[[output_name]]
         }
   
     } else{
@@ -6166,11 +6577,11 @@ if("iiv" %in% names(cfg)){
       # datastructures created when the first subject was simulated above
       p$subjects = rbind(p$subjects, parameters_subject)
   
-      for(state_name   in names(som$states)){
-        p$states[[state_name]][sub_idx,] = som$states[[state_name]] }
+      for(state_name   in names(cfg$options$mi$states)){
+        p$states[[state_name]][sub_idx,] = som$simout[[state_name]] }
   
-      for(output_name   in names(som$outputs)){
-        p$outputs[[output_name]][sub_idx,] = som$outputs[[output_name]] }
+      for(output_name   in names(cfg$options$mi$outputs)){
+        p$outputs[[output_name]][sub_idx,] = som$simout[[output_name]] }
       }
   
     sub_idx = sub_idx + 1;
@@ -6178,16 +6589,37 @@ if("iiv" %in% names(cfg)){
   
   
   # summarizing the statistics for both the states and the outputs
-  for(state_name   in names(som$states)){
+  for(state_name   in names(cfg$options$mi$states)){
     tc = timecourse_stats(p$states[[state_name]],ci)
     p$states_stats[[state_name]] = tc$stats
     p$states_patch[[state_name]] = tc$patch
     }
-  for(output_name   in names(som$outputs)){
+  for(output_name   in names(cfg$options$mi$outputs)){
     tc = timecourse_stats(p$outputs[[output_name]],ci)
     p$outputs_stats[[output_name]] = tc$stats
     p$outputs_patch[[output_name]] = tc$patch
     }
+  #
+  # placing the structured data into a data frame
+  #
+  for(timescale_name   in names(cfg$options$time_scales)){
+    if("tcsummary" %in% names(p)){
+      eval(parse(text=sprintf(\'p$tcsummary[["ts.%s"]] = som$simout[["ts.%s"]]\', timescale_name, timescale_name))) 
+    }else{
+      eval(parse(text=sprintf(\'p$tcsummary = data.frame(ts.%s =  som$simout[["ts.%s"]])\', timescale_name, timescale_name))) 
+    }
+  }
+  for(state_name   in names(p$states)){
+      eval(parse(text=sprintf(\'p$tcsummary[["s.%s.lb_ci"]] = p$states_stats$%s$lb_ci\', state_name, state_name))) 
+      eval(parse(text=sprintf(\'p$tcsummary[["s.%s.ub_ci"]] = p$states_stats$%s$ub_ci\', state_name, state_name))) 
+      eval(parse(text=sprintf(\'p$tcsummary[["s.%s.mean"]]  = p$states_stats$%s$median\', state_name, state_name))) 
+    }
+  for(output_name   in names(p$outputs)){
+      eval(parse(text=sprintf(\'p$tcsummary[["o.%s.lb_ci"]] = p$outputs_stats$%s$lb_ci\',  output_name, output_name))) 
+      eval(parse(text=sprintf(\'p$tcsummary[["o.%s.ub_ci"]] = p$outputs_stats$%s$ub_ci\',  output_name, output_name))) 
+      eval(parse(text=sprintf(\'p$tcsummary[["o.%s.mean"]]  = p$outputs_stats$%s$median\', output_name, output_name))) 
+    }
+
 } else {
   cat("---------------------------------------------- \n");
   cat("  simulate_subjects.R                          \n");
@@ -6205,6 +6637,7 @@ if("iiv" %in% names(cfg)){
 
 return(p)
 }
+
 
 
 
@@ -6320,7 +6753,58 @@ return(subject)
 
 }
 
-';
+prepare_figure = function(purpose, fo){
+#
+# Takes a ggplot figure object and removes some of the accoutrements and
+# adjusts line thicknesses and what not to make it more appropriate for
+# different outputs
+#
+  # general things like the axis color and grids
+  fo = fo +
+  theme(axis.line = element_line(colour = "black"),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(),
+        panel.border     = element_blank(),
+        panel.background = element_blank()) 
+
+  # setting line thickness and font size for the specific output type
+  if(purpose == "present"){
+  fo = fo + 
+       theme( axis.text.x  = element_text(color="black", size=14), 
+              axis.title.x = element_text(color="black", size=14), 
+              axis.title.y = element_text(color="black", size=14), 
+              axis.text.y  = element_text(color="black", size=14)) 
+  } else if (purpose == "print") {
+       theme( axis.text.x  = element_text(color="black", size=10), 
+              axis.title.x = element_text(color="black", size=10), 
+              axis.title.y = element_text(color="black", size=10), 
+              axis.text.y  = element_text(color="black", size=10)) 
+  }
+return(fo)
+}
+
+# The following are implementations of the tic and toc commands from matlab.
+# The original source is here:
+# http://stackoverflow.com/questions/1716012/stopwatch-function-in-r
+
+tic <- function(gcFirst = TRUE, type=c("elapsed", "user.self", "sys.self"))
+{
+   type <- match.arg(type)
+   assign(".type", type, envir=baseenv())
+   if(gcFirst) gc(FALSE)
+   tic <- proc.time()[type]         
+   assign(".tic", tic, envir=baseenv())
+   invisible(tic)
+}
+
+toc <- function()
+{
+   type <- get(".type", envir=baseenv())
+   toc <- proc.time()[type]
+   tic <- get(".tic", envir=baseenv())
+   print(toc - tic)
+   invisible(toc)
+} ';
 
 return $template;
 }

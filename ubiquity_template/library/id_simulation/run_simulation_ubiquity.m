@@ -35,7 +35,7 @@ for parameter_idx = 1:length(parameters)
   eval(sprintf('SIMINT_META.parameters.%s = parameters(parameter_idx);',cfg.parameters.names{parameter_idx}));
 end
 
-% covariates are evaluated at the first simulation output time
+% covariates are evaluated at the first value specified 
 % so they can be used in the calculation of static secondary parameters
 if(isfield(cfg.options, 'inputs'))
 if(isfield(cfg.options.inputs, 'covariates'))

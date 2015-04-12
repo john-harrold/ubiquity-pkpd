@@ -50,7 +50,8 @@
 <As> ksyn = Tp_IC*kint*Vp
 
 #dynamic secondary parameters
-# <Ad> param_name = right hand side
+<Ad>  CLtot = CL/Q*Cp
+<Ad>  Some  = CL/Q*Cp
 
 
  <IIV:ETACL>       0.2
