@@ -1,19 +1,22 @@
+function []=build_system(usersysfile)
+
+sysfile = 'system.txt';
+
+if(exist('usersysfile', 'var'))
+   sysfile=usersysfile;
+end
 
 % generating the system
 disp('-----------------------------------')
-disp('Running the perl script to')
+disp('Building the system to    ')
 disp('generate the model targets');
-disp('   -> Adapt 5');
-disp('   -> Berkeley Madonna');
 disp('   -> Matlab: C/Simulink   ');
 disp('   -> Matlab: m-file       ');
-disp('   -> MONOLIX              ');
-%disp('   -> NONMEM               ');
-disp('   -> PottersWheel ');
-perl_output = perl('build_system.pl');
+perl_output = perl('build_system.pl', sysfile);
 
 if(not(strcmp(perl_output, '')))
-    disp('perl script may have failed, see below:');
+    disp('Build reported errors and');
+    disp('may have failed, see below:');
     disp(perl_output);
 end
 
@@ -28,6 +31,8 @@ if(any(strcmp('Simulink', {myversion.Name})))
   catch
   disp('mex failed, you will only be able');
   disp('to use the m-file format');
+  disp('To debug try the following');
+  disp('mex ode_model.c');
   end
 else
   disp('Simulink _NOT_ found');

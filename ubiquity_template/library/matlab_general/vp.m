@@ -11,6 +11,8 @@ function []=vp(cfg, str)
 %
 
 
+system_log_entry(cfg, str);
+
 if(isfield(cfg, 'options'))
 if(isfield(cfg.options, 'verbose'))
 if(strcmp('yes', cfg.options.verbose))

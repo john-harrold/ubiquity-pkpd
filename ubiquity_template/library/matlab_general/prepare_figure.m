@@ -18,15 +18,21 @@ if(strcmp(purpose,'present'))
    h=gca;
    set(h,'Fontsize',14);
    set(h,'linewidth',1.5);
+   try
    set(get(gca,'children'),'linewidth',1.5);
+   end
 elseif(strcmp(purpose,'poster'))
    h=gca;
    set(h,'Fontsize',16);
    set(h,'linewidth',1.5);
+   try
    set(get(gca,'children'),'linewidth',1.5);
+   end
 elseif(strcmp(purpose,'print'))
    h=gca;
    set(h,'Fontsize',12);
    set(h,'linewidth',1.1);
+   try
    set(get(gca,'children'),'linewidth',1.);
+   end
 end

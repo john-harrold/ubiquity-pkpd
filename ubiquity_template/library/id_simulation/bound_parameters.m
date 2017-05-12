@@ -23,8 +23,9 @@ for i=1:length(params)
         objmult = objmult + 10*exp(abs(params(i) - ub(i)));
         params(i) = ub(i);
     elseif(params(i) < lb(i))
-        params(i) = lb(i);
         objmult = objmult + 10*exp(abs(params(i) - lb(i)));
+        params(i) = lb(i);
     end
+
 end
 

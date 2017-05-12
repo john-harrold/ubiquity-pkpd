@@ -20,19 +20,19 @@ if(isrow(ydata))
   ydata = ydata';
 end
 
-data_sorted = sort([xdata, ydata], 1);
-
-xdata = data_sorted(:,1);
-ydata = data_sorted(:,2);
+% making sure the x data is increasing
+[xdata, sidx] = sort(xdata);
+ydata = ydata(sidx);
 
 % finding the least squares parameters
-params =  [xdata ones(size(xdata))]\ydata;
+params =  [ ones(size(xdata)) xdata]\ydata;
 
-m = params(1);
-b = params(2);
+m = params(2);
+b = params(1);
 
 ymean = mean(ydata);
 ypred = m*xdata + b;
+
 
 SStot = sum((ypred-ymean).^2);
 SSres = sum((ypred-ydata).^2);

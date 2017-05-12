@@ -100,7 +100,6 @@ end
     return
   end
 
-%keyboard
 
   % notes:
   % index lengths:
@@ -256,11 +255,6 @@ end
 
     % initializing M
     M     = zeros(length(parameters), length(parameters));
-    %cfg.parameters.system = 1:6;
-    %cfg.parameters.variance = 7:8;
-    %dim.p = length(cfg.parameters.system);
-    %dim.q = length(cfg.parameters.variance);
-    %cfg.parameters.system = 6;
     dim.p = cfg.estimation.parameters.system;
     dim.q = length(parameters) - dim.p;
 
@@ -339,7 +333,6 @@ end
 
 
   % calculating the cv% and confidence intervals
-
   for i=1:length(parameters)
       s.coefficient_of_variation(i) = 100.*sqrt(s.covariance(i,i))./parameters(i);
       s.confidence_interval.lower_bound(i) = parameters(i) - sqrt(s.covariance(i,i))*tinv(.975,s.degrees_of_freedom);

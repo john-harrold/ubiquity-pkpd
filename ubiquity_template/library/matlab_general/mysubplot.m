@@ -1,5 +1,5 @@
-function [] = mysubplot(rows, cols, idx)
-% function [] = mysubplot(rows, cols, idx)
+function [h] = mysubplot(rows, cols, idx)
+% function [h] = mysubplot(rows, cols, idx)
 %
 % Has the same syntax as the subplot command but the gap between subplots is
 % decreased. 

@@ -13,5 +13,12 @@ if(ismac)
     eval(sprintf('export_fig %s -transparent -png -jpeg -m4  -painters', filename));
   end
 elseif(ispc) 
-  eval(sprintf('export_fig %s -transparent -tiff -jpeg -m4  -painters', filename));
+  eval(sprintf('export_fig %s -transparent -tiff -jpeg -m4', filename));
 end
+
+% Saving the matlab fig file for editing later
+ if(verLessThan('matlab', '8.2'))
+   saveas(gcf, sprintf('%s.fig', filename))
+ else
+   savefig(gcf, sprintf('%s.fig', filename))
+ end

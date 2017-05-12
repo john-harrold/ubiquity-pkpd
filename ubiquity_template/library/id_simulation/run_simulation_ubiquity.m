@@ -128,12 +128,16 @@ if(isfield(cfg.options, 'inputs'))
       SIMINT_species = SIMINT_fields{SIMINT_idx};
       
       eval(sprintf('SIMINT_bolus_values = cfg.options.inputs.bolus.species.%s.values;', SIMINT_species));
-      eval(sprintf('SIMINT_bolus_scale  = cfg.options.inputs.bolus.species.%s.scale;', SIMINT_species)); 
+      % JMH moved scaling to a different function remove lines here and just
+      % below later (2015.10)
+      % eval(sprintf('SIMINT_bolus_scale  = cfg.options.inputs.bolus.species.%s.scale;', SIMINT_species)); 
       eval(sprintf('SIMINT_state_idx    = cfg.options.mi.states.%s;', SIMINT_species));
 
       
       % this creates the bolus magnitudes:
-      eval(sprintf('simulation_options.bolus_inputs(end+1,:) = SIMINT_bolus_values.*%s ;', SIMINT_bolus_scale));
+      % JMH (2015.10)
+      % eval(sprintf('simulation_options.bolus_inputs(end+1,:) = SIMINT_bolus_values.*%s ;', SIMINT_bolus_scale));
+      eval(sprintf('simulation_options.bolus_inputs(end+1,:) = SIMINT_bolus_values ;'));
       % and here we specify the state id associated with that bolus value:
                     simulation_options.bolus_inputs(end+1,:) = SIMINT_state_idx*ones(size(SIMINT_bolus_times));
     end
@@ -164,7 +168,84 @@ if(isfield(cfg.options, 'inputs'))
 end
 
 % running the simulation
-[simout]=run_simulation_generic(parameters, simulation_options);
+[simout]=run_simulation_generic(parameters, simulation_options, cfg);
 % mapping the outputs and states
 simout_mapped = auto_map_simulation_output(simout, cfg);
+
+% adding error to the output
+simout_mapped = add_observation_errors(simout_mapped, parameters, cfg);
+
+
 simout_mapped.meta = SIMINT_META;
+
+
+function [som]=add_observation_errors(som, parameters, cfg)
+
+% pulling out the error models
+em = fieldnames(cfg.ve);
+
+% now we loop through them and add them one at a time
+for(emidx = 1:length(em))
+   current_em = getfield(cfg.ve, em{emidx});
+
+   som =  ...
+   output_add_error(som,                         ... % simulation output without error
+                    em{emidx},                   ... % output
+                    getfield(cfg.ve, em{emidx}), ... % error model
+                    parameters,                  ... % current parameter values
+                    cfg);
+
+end
+
+
+function [SIMINT_som]=output_add_error(SIMINT_som, SIMINT_output, SIMINT_em, SIMINT_parameters, SIMINT_cfg)
+% function [SIMINT_som]=output_add_error(SIMINT_som, SIMINT_output, SIMINT_em, SIMINT_parameters, SIMINT_cfg)
+% This function takes the current simulation output and adds the error
+% specified by SIMINT_em to the utput SIMINT_output for the given set of
+% parameters SIMINT_parameters
+%
+%
+% SIMINT_som                  mapped simulation output without error
+% SIMINT_output               output name
+% SIMINT_em                   error model
+% SIMINT_parameters           vector of parameters
+% SIMINT_cfg                  cfg data structure describing the system
+
+% Defining the time
+SIMINT_TIME = SIMINT_som.times.sim_time;
+
+
+% defining the PRED values locally 
+eval(sprintf('PRED  = SIMINT_som.outputs.%s;', SIMINT_output));
+
+
+% pulling out the variance parameter names
+SIMINT_VP_NAMES = SIMINT_cfg.parameters.names(strcmp(SIMINT_cfg.parameters.ptype, 'variance'));
+
+% vectorize the equation in em
+SIMINT_em = strrep(SIMINT_em, '^', '.^');
+SIMINT_em = strrep(SIMINT_em, '/', './');
+SIMINT_em = strrep(SIMINT_em, '*', '.*');
+
+
+for(SIMINT_IDX = 1:length(SIMINT_VP_NAMES))
+    % defining the variance parameters locally
+    eval(sprintf('%s = system_fetch_parameter(SIMINT_cfg, SIMINT_parameters, ''%s'');', ...
+              SIMINT_VP_NAMES{SIMINT_IDX}, ...
+              SIMINT_VP_NAMES{SIMINT_IDX}))
+
+end
+
+% calculating the error model value
+SIMINT_em_VARIANCE  =  eval(SIMINT_em);
+
+% normrnd takes as the second argument the standard deviation
+% which is the sqrt of the variance
+eval(sprintf('SIMINT_ERR = normrnd(zeros(size(PRED)), sqrt(SIMINT_em_VARIANCE));', ...
+          SIMINT_VP_NAMES{SIMINT_IDX}, ...
+          SIMINT_VP_NAMES{SIMINT_IDX}))
+
+% Adding the error to the prediction and storing it in som
+eval(sprintf('SIMINT_som.outputs.SIOE_%s = PRED + SIMINT_ERR;', SIMINT_output));
+
+

@@ -9,7 +9,7 @@ function [parameters_full] = fetch_full_parameters(parameters_subset, cfg);
 % The function select_set pulls out a parameter set and can optionally select
 % only a subset for estimation:
 %
-%    cfg=select_set(cfg, 'default', {'Vp', 'CL'});
+%    cfg=system_select_set(cfg, 'default', {'Vp', 'CL'});
 %
 % The default values of this subset can be accessed in the following way:
 %

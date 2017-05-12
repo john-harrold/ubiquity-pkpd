@@ -9,6 +9,13 @@ function [parameters_est, statistics_est]=estimate_parameters(cfg)
 %   report.txt         % summary report with estimates, cis and
 %                      % variance/covariance matrix
 % 
+%
+%
+% For options on how to control parameter estimation see
+%
+% help system_set_option
+
+
 % % assuming you've created the system.txt file to 
 % % describe the system, this makes sure all the 
 % % files are up to date:
@@ -29,9 +36,9 @@ function [parameters_est, statistics_est]=estimate_parameters(cfg)
 % % select the parameter set in the following way:
 % cfg = select_set(cfg, 'default')
 % 
-% % if there are variance parameters being estimated then the objective type
-% % will be set to maximum likelihood. otherwise it will default to weighted
-% % least squares. if you wish to overwrite them the following options can be
+% % If there are variance parameters being estimated then the objective type
+% % will be set to maximum likelihood. Otherwise it will default to weighted
+% % least squares. If you wish to overwrite them the following options can be
 % % set:
 %
 % cfg.estimation.objective_type = 'ml';  % maximum likelihood
@@ -70,7 +77,7 @@ function [parameters_est, statistics_est]=estimate_parameters(cfg)
 % % at time (t). The model predictions are given by yhat, and var is
 % % the variance of y. 
 % % 
-% % Calcualting var:
+% % Calculating var:
 % % 
 % % For WLS:
 % % If you just want to do sum-squared error
@@ -84,7 +91,7 @@ function [parameters_est, statistics_est]=estimate_parameters(cfg)
 % %
 % % For ML:
 % % Modeling the variance, where the variance parameters are stored in
-% % elements 8 and 9 of your parameter vector:
+% % the parameter vector:
 % % 
 % %    slope      =  parameters(cfg.options.mi.parameters.slope)
 % %    intercept  =  parameters(cfg.options.mi.parameters.intercept)
@@ -142,15 +149,12 @@ function [parameters_est, statistics_est]=estimate_parameters(cfg)
 % % To make your own custom function copy estimation_status.m to the main
 % % template directory and rename it something, say mystatus.m. Then you can 
 % % use the following to specify that the new function should be used.
-% cfg.estimation.status_function = 'mystatus';
+% cfg.estimation.monitor.status_function = 'mystatus';
 %
 % % Then you can modify mystatus.m to make it do provide useful feedback at each
 % % iteration. Note: When you make changes to this new function it may break
 % % the stopping criteria specified above.
 
-
-  % Pulling the defaults for fminsearch
-  options = optimset('fminsearch');
   
   if(not(isdir('output')))
     vp(cfg, '-----------------------------------');
@@ -159,18 +163,33 @@ function [parameters_est, statistics_est]=estimate_parameters(cfg)
     mkdir('output');
   end
 
+  % Setting things up for fminsearch
+  if(strcmp(cfg.estimation.optimizer, 'fminsearch'))
+    % Pulling the defaults for fminsearch
+    options = optimset('fminsearch');
+    % if the user has specified an estimation status function, then we
+    % add that to the optimset options.
+    if(isfield(cfg.estimation, 'monitor'))
+      if(isfield(cfg.estimation.monitor, 'status_function'))
+        if(~strcmp(cfg.estimation.monitor.status_function, ''))
+          eval(sprintf('options = optimset(options, ''OutputFcn'', @(optimValues,state,varargin)%s(optimValues,state,cfg));', cfg.estimation.monitor.status_function));
+        end
+      end
+    end
+  end
+
+  if(strcmp(cfg.estimation.optimizer, 'ga'))
+    % Pulling the defaults for ga
+    options = optimset('ga');
+  end
+
+
   if( isfield(cfg.estimation, 'options'))
     %merging the user specified options with the default values
     options = optimset(options, cfg.estimation.options);
   end
 
-  % if the user has specified an estimation status function, then we
-  % add that to the optimset options.
-  if(isfield(cfg.estimation, 'monitor'))
-    if(isfield(cfg.estimation.monitor, 'status_function'))
-      eval(sprintf('options = optimset(options, ''OutputFcn'', @(optimValues,state,varargin)%s(optimValues,state,cfg));', cfg.estimation.monitor.status_function));
-    end
-  end
+
 
   % making sure there is a default  value for effort
   if(~isfield(cfg.estimation, 'effort'))
@@ -196,6 +215,8 @@ function [parameters_est, statistics_est]=estimate_parameters(cfg)
     run_estimation = 'no';
   end
 
+  % disabling logging in the simulation 
+  cfg.options.simulation_options.logging = 'no';
 
   % Now we compare the objective type to the system 
   % information. We can then let the user know if
@@ -222,11 +243,9 @@ function [parameters_est, statistics_est]=estimate_parameters(cfg)
 
   % Now we perform the estimation
   if(strcmp(run_estimation, 'yes'))
-    % initializing the best objective function value to 
-    % infinity, this will be updated below
-    best_obj      = inf;
-    best_params   =  cfg.estimation.parameters.guess ;
-    initial_guess = best_params;
+
+    % Here the optimizer field is used to determine the 
+    % function used to estimate parameters
     vp(cfg,  '-----------------------------------');
     vp(cfg,  'Beginning parameter estiamtion');
     if(strcmp(cfg.estimation.objective_type, 'wls'))
@@ -235,127 +254,167 @@ function [parameters_est, statistics_est]=estimate_parameters(cfg)
       vp(cfg,  '   Obj: Maximum Likelihood');
     end
 
-    if(cfg.estimation.effort >1)
-      vp(cfg,  'Pseudo simulated annealing selected:');
-      vp(cfg,  '   Sit back and have a cup of coffee;');
-      vp(cfg,  '   this is going to take a while');
+    % Using the genetic algorithm:
+    if(strcmp(cfg.estimation.optimizer, 'ga'))
 
-      % seeding the random number generator
-      rng(8675309)
+      vp(cfg,  '   Method: Genetic Algorithm (ga)');
+      vp(cfg,  '-----------------------------------');
+     
+      initial_guess = cfg.estimation.parameters.guess ;
+
+      if(iscolumn(initial_guess))
+        initial_guess = initial_guess';
+      end
+
+      options = gaoptimset(options, 'InitialPopulation', initial_guess);
+      fitnessfun = @(pvalues)calculate_objective(pvalues, cfg);  
+      parameters_est = ...
+      ga(fitnessfun, ...
+         length(initial_guess), ...
+         [], [], [], [],  ...
+         cfg.estimation.parameters.lower_bound, ...
+         cfg.estimation.parameters.upper_bound, ...
+         [], [],  ...
+         options);
     end
-    vp(cfg,  '-----------------------------------');
 
-    for est_ctr = 1:cfg.estimation.effort
-       if(cfg.estimation.effort >1)
-         if(est_ctr/cfg.estimation.effort <= .2)
-           options =  optimset('Display',   'none', ...
-                               'maxfuneval', 300, ...
-                               'maxiter',    300);
-           sigma     = .5;
-           stage_ctr = 1;
-         elseif(est_ctr/cfg.estimation.effort <= .5)
-           options =  optimset('Display',   'none', ...
-                               'maxfuneval', 300, ...
-                               'maxiter',    300);
-           sigma     = .4;
-           stage_ctr = 2;
-         elseif(est_ctr/cfg.estimation.effort <= .7)
-           options =  optimset('Display',   'none', ...
-                               'maxfuneval', 200, ...
-                               'maxiter',    200);
-           sigma     = .20;
-           stage_ctr = 3;
-         elseif(est_ctr/cfg.estimation.effort < 1)
-           options =  optimset('Display',   'none', ...
-                               'maxfuneval', 200, ...
-                               'maxiter',    200);
-           sigma     = .10 ;
-           stage_ctr = 3;
-         else
-           options =  optimset('Display',   'Iter', ...
-                               'maxfuneval', 500, ...
-                               'maxiter',    500);
-           sigma     = .0001;
-           stage_ctr = 4;
-         end
-         
-         vp(cfg,sprintf('Stage %d (sigma = %.1e) iteration %d of %d (%s)', ...
-                         stage_ctr,...
-                         sigma,...
-                         est_ctr,...
-                         cfg.estimation.effort, ...
-                         datestr(now)));
+
+    % Using fminsearch:
+    if(strcmp(cfg.estimation.optimizer, 'fminsearch'))
+      % initializing the best objective function value to 
+      % infinity, this will be updated below
+      best_obj      = inf;
+      best_params   = cfg.estimation.parameters.guess ;
+      initial_guess = best_params;
+
+      vp(cfg,  '   Method: Nelder-Mead (fminsearch)');
+     
+      if(cfg.estimation.effort >1)
+        vp(cfg,  'Pseudo simulated annealing selected:');
+        vp(cfg,  '   Sit back and have a cup of coffee;');
+        vp(cfg,  '   this is going to take a while');
+     
+        % seeding the random number generator
+        rng(8675309)
+      end
+      vp(cfg,  '-----------------------------------');
+     
+      for est_ctr = 1:cfg.estimation.effort
+         if(cfg.estimation.effort >1)
+           if(est_ctr/cfg.estimation.effort <= .2)
+             options =  optimset('Display',   'none', ...
+                                 'maxfuneval', 300, ...
+                                 'maxiter',    300);
+             sigma     = .5;
+             stage_ctr = 1;
+           elseif(est_ctr/cfg.estimation.effort <= .5)
+             options =  optimset('Display',   'none', ...
+                                 'maxfuneval', 300, ...
+                                 'maxiter',    300);
+             sigma     = .4;
+             stage_ctr = 2;
+           elseif(est_ctr/cfg.estimation.effort <= .7)
+             options =  optimset('Display',   'none', ...
+                                 'maxfuneval', 200, ...
+                                 'maxiter',    200);
+             sigma     = .20;
+             stage_ctr = 3;
+           elseif(est_ctr/cfg.estimation.effort < 1)
+             options =  optimset('Display',   'none', ...
+                                 'maxfuneval', 200, ...
+                                 'maxiter',    200);
+             sigma     = .10 ;
+             stage_ctr = 3;
+           else
+             options =  optimset('Display',   'Iter', ...
+                                 'maxfuneval', 500, ...
+                                 'maxiter',    500);
+             sigma     = .0001;
+             stage_ctr = 4;
+           end
            
-       else
-           sigma     = .0001;
-       end
-
-
-      
-       % not trying too hard, just running fminsearch:
-       [current_est, current_obj ] = ...
-       fminsearch('calculate_objective', ...
-                  initial_guess,         ...
-                  options,               ...
-                  cfg);
-       
-
-       % disp(sprintf('Intermediate Obj: %.6e', current_obj));
-
-       % rebounding the parameters
-       current_est    = bound_parameters(current_est   , ...
-                                         cfg.estimation.parameters.lower_bound, ...
-                                         cfg.estimation.parameters.upper_bound);
-       
-       % if we found a solution better than the previous best,
-       % then we update our best parameter set and objective value
-       if(current_obj < best_obj)
-         best_params = current_est;
-         best_obj    = current_obj;
-         disp(sprintf('New Objective found: %.6e', best_obj));
-       end
-
-       % Adding noise to the best estimate so far  but only if 
-       % we're not at the last stage that one starts with the
-       % best guess
-       if(est_ctr < cfg.estimation.effort - 1)
-
-
-         initial_guess  = add_noise(best_params,  sigma.*ones(size(initial_guess)), 'log_normal');
-         % rebounding guess
-         initial_guess  = bound_parameters(initial_guess , ...
+           vp(cfg,sprintf('Stage %d (sigma = %.1e) iteration %d of %d (%s)', ...
+                           stage_ctr,...
+                           sigma,...
+                           est_ctr,...
+                           cfg.estimation.effort, ...
+                           datestr(now)));
+             
+         else
+             sigma     = .0001;
+         end
+     
+     
+        
+         % not trying too hard, just running fminsearch:
+         [current_est, current_obj ] = ...
+         fminsearch('calculate_objective', ...
+                    initial_guess,         ...
+                    options,               ...
+                    cfg);
+         
+     
+         % disp(sprintf('Intermediate Obj: %.6e', current_obj));
+     
+         % rebounding the parameters
+         current_est    = bound_parameters(current_est   , ...
                                            cfg.estimation.parameters.lower_bound, ...
                                            cfg.estimation.parameters.upper_bound);
-       else
-         % On the last stage we start with whatever our 
-         % best solution is so far, so best_params is stored
-         % in initial_guess
-         vp(cfg, 'On the last stage');
-         initial_guess = best_params;
-       end
-
-    end
-
-    % If we're tracking the estimation status, we'll try to 
-    % dump that figure to a file as well. This will fail if 
-    % user specified a different status function that doesn't 
-    % create this figure with the appropriate name:
-    if(isfield(cfg.estimation, 'monitor'))
-    if(isfield(cfg.estimation.monitor, 'status_function'))
-      try
-        figure(findobj('type', 'figure', 'name', 'Estimation Status'));
-        dump_figure(sprintf('output%smonitor_estimation_progress', filesep));
-        vp(cfg, 'Estimation Status figure saved to:');
-        vp(cfg, sprintf('output%smonitor_estimation_progress', filesep));
-      catch
-        vp(cfg, 'Estimation status function was selected, but ');
-        vp(cfg, 'we were unable to find a figure named ');
-        vp(cfg, '''Estimation Status''');
+         
+         % if we found a solution better than the previous best,
+         % then we update our best parameter set and objective value
+         if(current_obj < best_obj)
+           best_params = current_est;
+           best_obj    = current_obj;
+           disp(sprintf('New Objective found: %.6e', best_obj));
+         end
+     
+         % Adding noise to the best estimate so far  but only if 
+         % we're not at the last stage that one starts with the
+         % best guess
+         if(est_ctr < cfg.estimation.effort - 1)
+     
+     
+           initial_guess  = add_noise(best_params,  sigma.*ones(size(initial_guess)), 'log_normal');
+           % rebounding guess
+           initial_guess  = bound_parameters(initial_guess , ...
+                                             cfg.estimation.parameters.lower_bound, ...
+                                             cfg.estimation.parameters.upper_bound);
+         else
+           % On the last stage we start with whatever our 
+           % best solution is so far, so best_params is stored
+           % in initial_guess
+           vp(cfg, 'On the last stage');
+           initial_guess = best_params;
+         end
+     
       end
-    end
+     
+      % If we're tracking the estimation status, we'll try to 
+      % dump that figure to a file as well. This will fail if 
+      % user specified a different status function that doesn't 
+      % create this figure with the appropriate name:
+      if(isfield(cfg.estimation, 'monitor'))
+      if(isfield(cfg.estimation.monitor, 'status_function'))
+      if(~strcmp(cfg.estimation.monitor.status_function, ''))
+        try
+          figure(findobj('type', 'figure', 'name', 'Estimation Status'));
+          dump_figure(sprintf('output%smonitor_estimation_progress', filesep));
+          vp(cfg, 'Estimation Status figure saved to:');
+          vp(cfg, sprintf('output%smonitor_estimation_progress', filesep));
+        catch
+          vp(cfg, 'Estimation status function was selected, but ');
+          vp(cfg, 'we were unable to find a figure named ');
+          vp(cfg, '''Estimation Status''');
+        end
+      end
+      end
+      end
+      parameters_est = best_params;
     end
 
-    parameters_est = best_params;
+
+
 
     % creating statistics_est so that if 
     % the calculation fails below, this empty 
@@ -383,7 +442,7 @@ function [parameters_est, statistics_est]=estimate_parameters(cfg)
         vp(cfg, 'paste, and delete the previous entries');
         for parameter_idx =1:length(parameters_est)
           ptmp.set_name  = cfg.estimation.set_name;
-          ptmp.value     = var2string(parameters_est(parameter_idx), 12);
+          ptmp.value     = var2string(parameters_est(parameter_idx), 12, 5);
           ptmp.name      = cfg.estimation.parameters.names{parameter_idx};
           ptmp.units     = cfg.estimation.parameters.units{parameter_idx};
           ptmp.type      = cfg.estimation.parameters.type{parameter_idx};
@@ -430,14 +489,15 @@ function [parameters_est, statistics_est]=estimate_parameters(cfg)
       % If we fail to calculate the solution statistics
       % a message is displayed and the parameter values are
       % also given back.
-      disp('#--> Solution statistics calculation failed');
-      disp('#--> This can happen when you have a parameter');
-      disp('#--> set that makes the system stiff. Below are');
-      disp('#--> the final parameter estimates:');
+      vp(cfg, 'Solution statistics calculation failed');
+      vp(cfg, 'This can happen when you have a parameter');
+      vp(cfg, 'set that makes the system stiff, or if you');
+      vp(cfg, 'do not have a license for the Statistics  ');
+      vp(cfg, 'Toolbox. The final parameter estimates are:');
       for parameter_idx =1:length(parameters_est)
-        disp(sprintf('#--> %s = %.4f', ...
+        disp(sprintf('#--> %s = %s', ...
                cfg.estimation.parameters.names{parameter_idx}, ...
-               parameters_est(parameter_idx)));
+               var2string(parameters_est(parameter_idx), 8, 5)));
       end
     end
 

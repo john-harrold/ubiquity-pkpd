@@ -85,7 +85,7 @@ status_message(handles, 'Running simulations with initial parameter set, be pati
 drawnow;
 manage_state(handles);
 update_simulation_output_figure(handles);
-status_message(handles, 'A/C PDM GUI Initialized');
+status_message(handles, 'Ubiquity GUI Initialized (ubiquity.grok.tv)');
 
 function [] = update_simulation_output_figure(handles)
  
@@ -608,12 +608,12 @@ function [cfg] = manage_state(handles, simout_mapped, selected_parameter_set_idx
   % selecting the defualt parameter set
   % this is overwritten in the next conditional
   % statement if a parameter set has been selected
-  cfg = select_set(cfg, 'default');
+  cfg = system_select_set(cfg, 'default');
   
   if(exist('selected_parameter_set_idx', 'var'))
     % pulling out selected parameter set short name:
     active_parameter_set  = cfg.options.mi.parameter_sets_reverse{selected_parameter_set_idx};
-    cfg = select_set(cfg, active_parameter_set);
+    cfg = system_select_set(cfg, active_parameter_set);
     % values stores the current editable and non-editable parameters
     % by default it contains the 'default' parmeter set, here we overwrite it
     % with whatever has been selected in the gui.

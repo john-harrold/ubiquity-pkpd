@@ -3,6 +3,12 @@ General utilities (FEX denotes a script or function from the mathworks file exch
 add_noise.m
                   Used to generate noise (normal or log normal) around mean
                   values for data for a given standard deviation (percent).
+
+add_headers_to_array.m 
+                  Takes an array of data and a cell array of names and creates
+                  a cell array with the names on top of the data. This cell
+                  array can then be used to save the information as a CSV file
+                  with headers (see cell2csv.m)
                    
 AUC_Bailors_method.m
                   This is an implementation of Bailors method for calculating
@@ -60,6 +66,11 @@ sample_from_distribution.m
 strip_missing.m   Removes missing values from observation and corresponding
                   measurement times.
 
+
+textprogressbar.m (FEX)
+                  Updates status of a chunk of code that takes a while to
+                  execute.
+
 usuptitle.m       Places a title over a figure of subplots. This is the
                   suptitle.m file that used to be on the file exchange. It
                   seems it was removed and folded into the bioinformatics
@@ -69,9 +80,6 @@ usuptitle.m       Places a title over a figure of subplots. This is the
 
 var2latex.m       Converts a variable in Matlab to a string that can be
                   interpreted by LaTeX.
-
-var2latex.m       Converts a variable in Matlab to a string for report
-                  generation
 
 vp.m              Verbose print is used internally in functions to provide
                   feedback to the users about the status of scripts.

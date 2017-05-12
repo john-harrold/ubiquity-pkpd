@@ -172,7 +172,7 @@ Cp + Tp <=kon:koff=> CpTp
 <TS:weeks> 1/24/7
 
 # output times 
-<OPT:output_times> linspace(0,12*7*24, 100)
+<OPT:output_times> SIMINT_SEQ[0][2*7*24][1]
 # default time scale
 <OPT:TS>  weeks 
 # <OPT:ylim>  [ymin ymax]

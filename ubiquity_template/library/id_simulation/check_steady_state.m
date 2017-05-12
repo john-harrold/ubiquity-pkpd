@@ -16,13 +16,13 @@ for state_idx = 1:length(states)
     if state_max > 0
       if(range(state)/state_max > eps*100)
         if(strcmp(offset_found, 'no'))
-          disp(sprintf('#> Possible steady state offset'))
-          disp(sprintf('#> range       |             | state'))
-          disp(sprintf('#> (max-min)   | max(abs(s)) | name '))
-          disp(sprintf('#>------------------------------------'))
+          disp(sprintf(' Possible steady state offset'))
+          disp(sprintf(' range       |             | state'))
+          disp(sprintf(' (max-min)   | max(abs(s)) | name '))
+          disp(sprintf('------------------------------------'))
           offset_found = 'yes';
         end
-          disp(sprintf('#> %.3e   | %.3e   | %s', range(state), state_max, states{state_idx}));
+          disp(sprintf(' %.3e   | %.3e   | %s', range(state), state_max, states{state_idx}));
       end
     end
 end

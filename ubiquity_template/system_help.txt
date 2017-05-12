@@ -11,8 +11,7 @@
 #      Since targets are generated for many model formats/programs, a list of
 #      reserved words is created each time a system is generated. The
 #      exhaustive list and the targets where they are used can be found in
-#      system_help_reserved_words.txt (created after build_auto_targets.m is
-#      called).
+#      system_help_reserved_words.txt (created after build_system.pl is called).
 #      
 # #-------------------------#
 # # Functions and Operators #
@@ -47,6 +46,10 @@
 #   
 #    To get Rfree, just switch the first two arguments:
 #    Rfree = SIMINT_QEQ[Rtot][Ctot][KD]
+#
+#    # Used when specifying a vector of output times (see below)
+#    # Go from 0 to 100 in steps of 1
+#    SIMINT_SEQ[0][100][1]
 #
 # Order of definition 
 #  
@@ -95,14 +98,13 @@
 # Covariates  <CV:?>, <CVSET:?:?>
 # -------------------------------
 #
-#
 #   Covariate Parameters JMH
-#
 #
 #   Sample Covariates 
 #   For simulation purposes covariates (normally found in a data set) need to
 #   be defined. Covariates can be be either constant or change with time. The
-#   following defines the value for the covariate RACE:
+#   times must be the same scale as the system. The following defines the
+#   value for the covariate RACE:
 #
 #   <CV:RACE>; times;  [ 0];     weeks
 #   <CV:RACE>; values; [ 1];     ethnicity
@@ -144,7 +146,9 @@
 #     5|         x                                    
 #     4|           xxxxxxxx                          
 #      |                  x                             
-#      |xxx               xxxxxxxxxxxxxx                
+#      ~                  x                             
+#      ~                  x                             
+#     0|xxx               xxxxxxxxxxxxxx                
 #      o--------------------------------->
 #       0  1 2 3 4        12                            
 #   
@@ -448,8 +452,8 @@
 # # Estimation #
 # #------------#
 #
-# Interindividual Variability <IIV:?:?> ?, <IIVCOR:?:?>?
-# ------------------------------------------------------
+# Interindividual Variability <IIV:?:?> ?, <IIVCOR:?:?>?, <IIVSET:?:?> ?, <IIVCORSET:?:?>?
+# ----------------------------------------------------------------------------------------
 #
 # To define IIV terms named ETACL with a variance of 0.15 use the
 # following descriptor:
@@ -461,7 +465,7 @@
 #
 #  <IIV:ETACL:LN> CL
 #
-# Where LN specifies the lognormal distribution. This can also be Normal. Next
+# Where LN specifies the lognormal distribution. This can also be Normal (N). Next
 # we specify the IIV ETAV with a variance of 0.1. This IIV term also has a
 # lognormal distribution and is applied to the volume (V).
 #
@@ -471,9 +475,48 @@
 # Now we can define the covariance (off-diagional elements) between CL and V
 # to be 0.01 in the following way:
 #
+# To use a Weibull (WB) or Box-Cox (BC) distribution you need to define the
+# system parameters which are needed to fully characterize this distribution.
+# The naming is controlled by the user, the grouping is arbitrary and the
+# lower bound should be eps.
+#
+# By default all parameter sets will have inter individual variability
+# specified using the IIV <IIV> and <IIVCOR> descriptors. To associate a
+# specific set of IIVs to a parameter set use the <IIVSET> and
+# <IIVCORSET> desciriptors. These set descriptors operate differently than the
+# parameter set descriptors (<PSET>) in that the entire variance covariacne
+# matrix needs to be specified. 
+#
+# Weibull (WB)
+# -----------
+# For the Weibull distribution we use WBK and WBL for the shape and scaling
+# parameters. 
+#
+#
+#  <P> WBK  0.1      eps    inf   --    no       WB  
+#  <P> WBL  0.1      eps    inf   --    no       WB  
+#
+#  <IIV:ETAV>    0.10
+#  <IIV:ETAV:WB> V; WBK; WBL
+#
+# Box-Cox (BC)
+# -----------
+#
+#  <P> BCL1 0.1      eps    inf   --    no       BC  
+#  <P> BCL2 0.1      eps    inf   --    no       BC  
+#
+#  <IIV:ETAV>    0.10
+#  <IIV:ETAV:BC> V; BCL1; BCL2
+#
+# Covariance
+# ----------
+#
+# Correlations (off-diagonal) elements can also be define in the following
+# manner:
+#
 #  <IIVCOR:ETAV:ETACL> 0.01
 #
-# The order isn't important and the following would work too:
+# The order isn't important and the following would work as well:
 #
 #  <IIVCOR:ETACL:ETAV> 0.01
 #
@@ -498,7 +541,9 @@
 # expression is the mathematical expression. For example to model the error of
 # an output Cp as proportional to the square of Cp we would use the following:
 #
-# <VE:Cp>   Slope_Cp*SIMINT_POWER[Cp][2.0]
+# <VE:Cp>   Slope_Cp*SIMINT_POWER[PRED][2.0]
+#
+# Where PRED is the prediction of Cp.
 #
 # Data file specification <DATA:?:?>?
 # -----------------------------------
@@ -557,11 +602,35 @@
 # <INDEX:STATE:Cp>  3
 #
 #
+# #---------#
+# # AMTIFY  #
+# #---------#
+#
+# <AMTIFY> ?; ?; ?
+# ----------------
+#
+# It can be convenient to develop models in terms of concentrations but some
+# software (e.g. NONMEM) requires that dosing compartments be coded in terms
+# of amounts. You can tell the system to automatically convert certain states
+# into amounts using the following:
+#
+# <AMTIFY> CONC; AMT; REL
+#
+# Where CONC is the concentration that the model was developed in and AMT is
+# the name of the amount to be used in it's place.  Lastly you need to define
+# the relationship between these to with REL. For example, if you modeled the
+# central compartment as a concentration (Cp) but wanted to use the amount
+# (Ap) instead, and the volume of the central compartment is Vp the following
+# would be used:
+#
+# <AMTIFY> Cp; Ap; Ap/Vp 
+#
+#
 # Default options <OPT:?> 
 # -----------------------
 #
 #   Plot output times (this is on the timescale of the simulation)
-#      <OPT:output_times> linspace(0,100,1000)
+#      <OPT:output_times> SIMINT_SEQ[0][100][1]
 #      <OPT:output_times> 0:100
 #      <OPT:output_times> [1 2 5 100]
 #
@@ -598,8 +667,6 @@
 #                   the fields in this data structure mean).
 #      
 #  <OPT:callback_gui> [SIMINT_simulation_options] = update_dosing(SIMINT_cfg, SIMINT_parameters, SIMINT_simulation_options, SIMINT_handles);
-#
-#
 #
 # Creating visual guide lines with <GUIDE>
 # ---------------------------------------
@@ -643,5 +710,5 @@
 # ignore records that begin with text (@) and records that have an ID > 0
 #
 # <NONMEM:DATA> IGNORE=@
-# <NONMEM:DATA> IGNORE=(ID.GT.10)
+# <NONMEM:DATA> IGNORE=(ID.GT.0)
 #

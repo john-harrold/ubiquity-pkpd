@@ -99,13 +99,14 @@ try
   % getting all subjects
   subjects = fieldnames(observations);
 
-catch
-  disp(sprintf(' -> unable to retrieve observations'));
-  disp(sprintf(' -> possible causes:'));
-  disp(sprintf('      o cfg.estimation.observation_function is not defined'));
-  disp(sprintf('      o odd parameter combinations sent to the'));
-  disp(sprintf('        objective function during estimation '));
-  disp(sprintf('        is causing problems '));
+catch TRYERROR
+  vp(cfg, sprintf(' -> unable to retrieve observations'));
+  vp(cfg, sprintf(' -> possible causes:'));
+  vp(cfg, sprintf('      o cfg.estimation.observation_function is not defined'));
+  vp(cfg, sprintf('      o odd parameter combinations sent to the'));
+  vp(cfg, sprintf('        objective function during estimation '));
+  vp(cfg, sprintf('        is causing problems '));
+  system_log_tryerror(cfg, TRYERROR);
   errorflag = 1;
   value = inf;
 end
@@ -162,8 +163,12 @@ if(strcmp('ml', cfg.estimation.objective_type))
   value = value + num_measurements.all*log(2*pi())/2;
 end
 
-% Adding increase due to bounds being crossed.
-value = value + objmult*abs(value);
+% Fminsearch does not have an explicit constraint for parameter bounds, so
+% these are handled by  increasing the objective function due to the parameter
+% bounds being crossed.
+if(strcmp(cfg.estimation.optimizer, 'fminsearch'))
+  value = value*(1 + objmult);
+end
 
 details.value = value;
 if(errorflag)

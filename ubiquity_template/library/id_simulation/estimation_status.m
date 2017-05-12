@@ -16,6 +16,9 @@ function [stop]=estimation_status(pest, state,cfg)
 %  stop - false if the optimization should continue and 'true' if it should
 %  terminate
 
+
+[pest, errorflag, objmult]=bound_parameters(pest , cfg.estimation.parameters.lower_bound, cfg.estimation.parameters.upper_bound);
+
 stop=false;
 
 % pulling out the initial guess for the 
@@ -159,7 +162,7 @@ for pest_idx = 1:length(pest)
 
     if(pest_idx == 1)
       myxlim = [min(get(child_pest, 'XData')) max(get(child_pest, 'XData'))];
-      if(range(myxlim) < 1)
+      if(myrange(myxlim) < 1)
         myxlim = [0 1];
       end
     end
@@ -208,6 +211,7 @@ end
 
 % Pulling out the estimation data
 
+
 % plotting the progress of the objective function.
 sph = subplot(nrow, ncol, [(nrow*ncol-ncol+1) nrow*ncol]); hold on;
 if((state.iteration == 0) & (length(get(sph, 'children')) == 0))
@@ -226,7 +230,10 @@ else
   end
 end
 grid on;
+
+try
 axis tight;
+end
 
 
 % forcing the figure to update after 
@@ -271,3 +278,7 @@ catch
   vp(cfg,         'estimation_status.m -- function failed');
 end
 
+
+function [val] = myrange(x)
+
+  val = max(x) - min(x);

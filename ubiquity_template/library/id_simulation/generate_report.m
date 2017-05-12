@@ -14,13 +14,10 @@ parameters_all_file = sprintf('output%sparameters_all.csv', filesep) ;
 parameters_est_file = sprintf('output%sparameters_est.csv', filesep) ;
 
 
-header_1 = {'Parameter' 'Original' 'Estimate' 'CV %%' '95%% CI' '95%% CI' 'Units' 'Notes'};
-header_2 = {'Name'      'Value'    ''         ''      'Lower'  'Upper'  ''      ''};
+header_1 = {'pname' 'guess'  'estimate' 'cvpct' 'cilb' 'ciub' 'units' 'notes'};
 
 p_all(1,:) = header_1;
-p_all(2,:) = header_2;
 p_est(1,:) = header_1;
-p_est(2,:) = header_2;
 
 % parameter, original estimate, 95% CI, 95% CI, Units,
 % name,      guess,           , Lower,   Upper,      ,

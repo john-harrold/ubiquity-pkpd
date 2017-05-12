@@ -1,6 +1,5 @@
 # ! /usr/bin/perl
 #
-#
 # JMH 
 # in system_check, look for repeated set elements (like A below)
 #  <SET:MYSET> A ; B ; C ; A ; D
@@ -15,6 +14,8 @@
 #    -- Check Conditional statments
 #    -- Confirm that in the ERROR block things defined in PK will be available
 #    -- Check for namespace conflicts (reserved words)
+#    -- system check (WB and BC IIV check to make sure the specified parameters exist)
+#    -- define equation for BC transform
 #    -- Need to relate this to how outputs and variance models are used in adapt
 #    -- NONMEM options: Data omit lines
 #                       Tables outputs
@@ -33,18 +34,10 @@
 #
 # R Target
 #      Todo
-#         - inputs (bolus, infusion, and covariates)
-#         - time/varying parameters/rates
 #         - load data when file is specified (see matlab)
-#         - better document structure of cfg variable
 #      Check 
 #         - conditionals
 #         - generic (SIMINT_) functions
-#
-# Matlab target
-#      Todo 
-#         - better document structure of cfg variable
-#
 #
 #   Number of states:  scalar(@{$cfg->{species_index}}) 
 #
@@ -65,6 +58,8 @@
 #   fetch_padding   
 #
 #   apply_format
+#
+#   extract_conditional
 #        
 #
 #   The following strings are used internally to
@@ -84,6 +79,8 @@
 #    Modify the following functions
 #          apply_format
 #          extract_conditional
+#          $nsmap->{STRING} = 'replacement';
+#          remap_namespace(string, $nsmap);
 #
 #
 
@@ -97,7 +94,10 @@ use File::Spec::Functions;
 MAIN:
 {
     
-    my $cfg;
+    # this is the data structure that contains all of the system information
+    # as well as information about files used, reserved words, etc.
+    my $cfg = &fetch_cfg();
+
     my (@lines, @lines_expanded, $line);
     my $file_handle;
 
@@ -106,204 +106,10 @@ MAIN:
 
     my $name;
 
-    $cfg->{files}->{system}                            = 'system.txt';
 
-    $cfg->{files}->{temp_directory}                    = 'transient';
-    # C files
-    $cfg->{files}->{initialize}                        = 'auto_initial_sizes.h';
-    $cfg->{files}->{common_block}                      = 'auto_common_block.h';
-    $cfg->{files}->{remap_odes}                        = 'auto_remap_odes.h';
-    $cfg->{files}->{odes}                              = 'auto_odes.h';
-    $cfg->{files}->{outputs}                           = 'auto_outputs.h';
-
-    # matlab files
-    $cfg->{files}->{fetch_system_information}          = 'auto_fetch_system_information.m';
-    $cfg->{files}->{map_simulation_output}             = 'auto_map_simulation_output.m';
-    $cfg->{files}->{simulation_driver}                 = 'auto_simulation_driver.m';
-    $cfg->{files}->{analysis_estimation}               = 'auto_analysis_estimation.m';
-
-    # used to run the ode in m format
-    $cfg->{files}->{sim_m}                             = 'auto_sim.m';
-    $cfg->{files}->{odes_m}                            = 'auto_odes.m';
-
-    # potterswheel output
-    $cfg->{files}->{potterswheel2}                     = 'target_pw_2.m';
-
-    # potterswheel output
-    $cfg->{files}->{potterswheel3}                     = 'target_pw_3';
-
-    # rproject
-    $cfg->{files}->{rproject}->{components}           = 'auto_rcomponents.R';
-    $cfg->{files}->{rproject}->{simulation_driver}    = 'auto_simulation_driver.R';
-    $cfg->{files}->{rproject}->{compiled}             = 'r_ode_model.c';
-
-    # berkeley_madonna output
-    $cfg->{files}->{berkeley_madonna}                  = 'target_berkeley_madonna';
-
-
-    # adapt 5 output
-    # This is the prefix for the
-    # different files generated 
-    # for adapt and extensions 
-    # will be added as appropriate
-    # (.for, .prm, etc)
-    $cfg->{files}->{adapt}                             = 'target_adapt_5';
-
-    $cfg->{files}->{nonmem}                            = 'target_nonmem';
-    $cfg->{files}->{monolix}                           = 'target_monolix';
-
-    # berkeley_madonna output
-    $cfg->{files}->{reserved_words}                    = 'system_help_reserved_words.txt';
-
-    # hash elements to hold system information
-    $cfg->{equations}                                  = ();
-    $cfg->{parameters}                                 = {};
-    $cfg->{parameters_index}                           = ();
-    $cfg->{parameter_sets}                             = {};
-    $cfg->{parameter_sets_index}                       = ();
-    # making sure there is an entry for the 'default' parameter set.
-    $cfg = &initialize_parameter_set($cfg, 'default');
-    $cfg->{parameter_sets}->{default}->{name}          = 'default';
-
-    # these break the parameters down between system 
-    # and variance parameters
-    $cfg->{parameters_system_index}                    = ();
-    $cfg->{parameters_variance_index}                  = ();
-
-    $cfg->{static_secondary_parameters}                = {};
-    $cfg->{static_secondary_parameters_index}          = ();
-    $cfg->{dynamic_secondary_parameters}               = {};
-    $cfg->{dynamic_secondary_parameters_index}         = ();
-    $cfg->{initial_conditions}                         = ();
-    $cfg->{bolus_inputs}                               = {};
-    $cfg->{input_rates}                                = {};
-    $cfg->{input_rates_index}                          = ();
-    $cfg->{covariates}                                 = {};
-    $cfg->{covariates_index}                           = ();
-    $cfg->{iiv}                                        = {};
-    $cfg->{iiv}->{parameters}                          = {};
-    $cfg->{iiv_index}                                  = ();
-    $cfg->{species}                                    = ();
-    $cfg->{species_index}                              = ();
-    $cfg->{outputs}                                    = {};
-    $cfg->{outputs_index}                              = ();
-    $cfg->{guides}                                     = {};
-    $cfg->{options}                                    = {};
-    $cfg->{options}->{nonmem}->{input}->{drop}         = {};
-    $cfg->{options}->{nonmem}->{input}->{rename}       = {};
-    $cfg->{options}->{nonmem}->{data}                  = '';
-    $cfg->{index}->{STATE}->{byname}                   = {};
-    $cfg->{index}->{STATE}->{byvalue}                  = {};
-    $cfg->{current_section}                            = '';
-    $cfg->{times_scales_index}                         = ();
-    $cfg->{times_scales}                               = {};
-
-    $cfg->{variance}->{equations}                      = {};
-
-    $cfg->{sets}                                       = {};
-    
-    $cfg->{if_conditional}                             = {};
-
-    $cfg->{comments}                                   = "";
-
-    $cfg->{data}->{file}                               = '';
-    $cfg->{data}->{headers}->{values}                  = ();
-    $cfg->{data}->{headers}->{mode}                    = ''; #manual or automoatic
-                                                       
-    # formatting parameters
-    $cfg->{term_length}                                = 20;
-    $cfg->{inputs_length}                              = 10;
-    $cfg->{species_length}                             = 12;
-    $cfg->{outputs_length}                             = 12;
-    $cfg->{time_scales_length}                         = 12;
-    $cfg->{parameters_length}                          = 12;
-    $cfg->{parameter_values_length}                    = 10; 
-    $cfg->{parameter_text_length}                      = 15; 
-
-
-
-    #
-    # data structure containing reserved words and their
-    # associated programs
-    # 
-    # 
-    #  insensitive = full string; case insensitive
-    #  exact       = full string; case sensitive 
-    #  start       = strings begin with this; case sensitive
-    # 
-    # 
-    $cfg->{reserved} = {
-          'ADAPT 5'          => {
-                                  IC         =>  'insensitive' ,
-                                  P          =>  'insensitive' ,
-                                  PS         =>  'insensitive' ,
-                                  T          =>  'insensitive' ,
-                                  Y          =>  'insensitive' ,
-                                  V          =>  'insensitive' ,
-                                  XP         =>  'insensitive' ,
-                                  X          =>  'insensitive' 
-                                },
-          'Matlab'           => {
-                                  x          =>  'exact' ,
-                                  dx         =>  'exact' ,
-                                  y          =>  'exact' ,
-                                  tid        =>  'exact' ,
-                                  S          =>  'exact' ,
-                                  SIMINT_    =>  'start' 
-                                },
-          'Berkeley Madonna' => {
-                                  STARTTIME  => 'insensitive' ,
-                                  STOPTIME   => 'insensitive' ,
-                                  DT         => 'insensitive' ,
-                                  DTMIN      => 'insensitive' ,
-                                  DTMAX      => 'insensitive' ,
-                                  TOLERANCE  => 'insensitive' ,
-                                  DTOUT      => 'insensitive' ,
-                                  ROOTTOL    => 'insensitive' ,
-                                  TIME       => 'insensitive' 
-                                },
-          'Monolix'          => {
-                                  pop_       => 'start'       ,
-                                },
-          'Nonmem'           => {
-                                  'S\d+'     => 'start'       ,
-                                },
-          'C'                => {
-                                 auto        => 'exact' ,
-                                 else        => 'exact' ,
-                                 long        => 'exact' ,
-                                 switch      => 'exact' ,
-                                 break       => 'exact' ,
-                                 enum        => 'exact' ,
-                                 register    => 'exact' ,
-                                 typedef     => 'exact' ,
-                                 case        => 'exact' ,
-                                 extern      => 'exact' ,
-                                 return      => 'exact' ,
-                                 union       => 'exact' ,
-                                 char        => 'exact' ,
-                                 float       => 'exact' ,
-                                 short       => 'exact' ,
-                                 unsigned    => 'exact' ,
-                                 const       => 'exact' ,
-                                 for         => 'exact' ,
-                                 signed      => 'exact' ,
-                                 void        => 'exact' ,
-                                 continue    => 'exact' ,
-                                 goto        => 'exact' ,
-                                 sizeof      => 'exact' ,
-                                 volatile    => 'exact' ,
-                                 default     => 'exact' ,
-                                 if          => 'exact' ,
-                                 static      => 'exact' ,
-                                 while       => 'exact' ,
-                                 do          => 'exact' ,
-                                 int         => 'exact' ,
-                                 struct      => 'exact' ,
-                                 _Packed     => 'exact' ,
-                                 double      => 'exact' 
-                                }
-    };
+    # Checking for user specified system file.
+    if(exists($ARGV[0])){
+      $cfg->{files}->{system} = $ARGV[0]; }
 
 
 
@@ -315,13 +121,12 @@ MAIN:
       mkdir($cfg->{files}->{temp_directory});}
 
 
-    open(EQFH, $cfg->{files}->{system}) or die 'unable to open system.txt';
+    open(EQFH, $cfg->{files}->{system}) or die "unable to open $cfg->{files}->{system}";
 
     # reading in each line in system file
     { local $/=undef;  $file_handle=<EQFH>; }
     @lines=split /[\r\n]+/, $file_handle;
     close(EQFH);
-
 
     #
     # First Pass through system file to detect 
@@ -367,6 +172,7 @@ MAIN:
       # SIMINT_SET_SUM[]  SIMINT_SET_PRODUCT[]
       # if they exist then expand them to account for all entries
       $line = &apply_set_functions($cfg, $line);
+
       # checking to see if the line has any set information
       # basically looking for some string enclosed in curly braces:
       # {sometext}
@@ -442,24 +248,24 @@ MAIN:
       $cfg  = &parse_static_secondary_parameters($cfg, $line); }
 
     #
-    # Dynamic secondary parameters     
+    # dynamic secondary parameters     
     #
     if($line =~ '<Ad>'){
       $cfg  = &parse_dynamic_secondary_parameters($cfg, $line); }
 
     #
-    # Initial conditions
+    # initial conditions
     #
     if($line =~ '<I>'){
       $cfg  = &parse_initial_conditions($cfg, $line); }
     #
-    # Outputs
+    # outputs
     #
     if($line =~ '<O>'){
       $cfg  = &parse_output($cfg, $line); }
 
     #
-    # Rate inputs
+    # rate inputs
     #
     if($line =~ '<R:\S+>'){
       $cfg  = &parse_input_rate($cfg, $line); }
@@ -479,12 +285,13 @@ MAIN:
     #
     # iiv  inter-individual variability  
     #
-    if($line =~ '<IIV:\S+>' or $line =~ '<IIVCOR:\S+>'){
+    if($line =~ '<IIV:\S+>'    or $line =~ '<IIVCOR:\S+>' or
+       $line =~ '<IIVSET:\S+>' or $line =~ '<IIVCORSET:\S+>'){
       $cfg  = &parse_interindivudal_varability($cfg, $line); }
 
 
     #
-    # Bolus inputs
+    # bolus inputs
     #
     if($line =~ '<B:\S+>'){
       $cfg  = &parse_bolus_inputs($cfg, $line); }
@@ -533,6 +340,10 @@ MAIN:
     if($line =~ '<INDEX:\S+>'){
       $cfg  = &parse_index($cfg, $line); }
 
+ #  # amtify
+    if($line =~ '<AMTIFY>'){
+      $cfg  = &parse_amtify($cfg, $line); }
+
     #
     # Guide   
     #
@@ -546,24 +357,26 @@ MAIN:
     if(($line =~ '<DATA:FILE:CSV>') or ($line =~ '<DATA:HEADER:.*>')){
       $cfg  = &parse_data_file($cfg, $line); }
 
+    #
+    # NONMEM specific options
+    #
     if($line =~ '<NONMEM:'){
       $cfg  = &parse_nonmem_options($cfg, $line); }
 
   }
 
-  #print Dumper $cfg->{iiv};
-  #print Dumper $cfg->{iiv_index};
-
   # creating the file:
   # system_help_reserved_words.txt
   &dump_reserved_words($cfg);
+
+
+  #checking the data file, column headers, etc
+  &data_check($cfg);
 
   # checking for name clashes and other
   # possible mistakes. 
   &system_check($cfg);
 
-  #checking the data file, column headers, etc
-  &data_check($cfg);
 
   # re ordering states according 
   # to user specifications
@@ -585,9 +398,237 @@ MAIN:
     &dump_nonmem($cfg           , $name);
   }
 
-
-
   exit 0;
+
+}
+
+sub fetch_cfg
+{
+
+my $cfg; 
+
+  $cfg->{files}->{system}                            = 'system.txt';
+
+  $cfg->{files}->{temp_directory}                    = 'transient';
+  # C files
+  $cfg->{files}->{initialize}                        = 'auto_initial_sizes.h';
+  $cfg->{files}->{common_block}                      = 'auto_common_block.h';
+  $cfg->{files}->{remap_odes}                        = 'auto_remap_odes.h';
+  $cfg->{files}->{odes}                              = 'auto_odes.h';
+  $cfg->{files}->{outputs}                           = 'auto_outputs.h';
+
+  # matlab files
+  $cfg->{files}->{fetch_system_information}          = 'auto_fetch_system_information.m';
+  $cfg->{files}->{map_simulation_output}             = 'auto_map_simulation_output.m';
+  $cfg->{files}->{simulation_driver}                 = 'auto_simulation_driver.m';
+  $cfg->{files}->{analysis_estimation}               = 'auto_analysis_estimation.m';
+
+  # used to run the ode in m format
+  $cfg->{files}->{sim_m}                             = 'auto_sim.m';
+  $cfg->{files}->{odes_m}                            = 'auto_odes.m';
+
+  # potterswheel output
+  $cfg->{files}->{potterswheel2}                     = 'target_pw_2.m';
+
+  # potterswheel output
+  $cfg->{files}->{potterswheel3}                     = 'target_pw_3';
+
+  # rproject
+  $cfg->{files}->{rproject}->{components}           = 'auto_rcomponents.r';
+  $cfg->{files}->{rproject}->{simulation_driver}    = 'auto_simulation_driver.r';
+  $cfg->{files}->{rproject}->{compiled}             = 'r_ode_model.c';
+  $cfg->{files}->{rproject}->{analysis_estimation}  = 'auto_analysis_estimation.r';
+
+  # berkeley_madonna output
+  $cfg->{files}->{berkeley_madonna}                  = 'target_berkeley_madonna';
+
+
+  # adapt 5 output
+  # This is the prefix for the
+  # different files generated 
+  # for adapt and extensions 
+  # will be added as appropriate
+  # (.for, .prm, etc)
+  $cfg->{files}->{adapt}                             = 'target_adapt_5';
+
+  $cfg->{files}->{nonmem}                            = 'target_nonmem';
+  $cfg->{files}->{monolix}                           = 'target_monolix';
+
+  # berkeley_madonna output
+  $cfg->{files}->{reserved_words}                    = 'system_help_reserved_words.txt';
+
+  # hash elements to hold system information
+  @{$cfg->{equations}}                                  = ();
+  $cfg->{parameters}                                 = {};
+  @{$cfg->{parameters_index}}                           = ();
+  $cfg->{parameter_sets}                             = {};
+  @{$cfg->{parameter_sets_index}}                       = ();
+  # making sure there is an entry for the 'default' parameter set.
+  $cfg = &initialize_parameter_set($cfg, 'default');
+  $cfg->{parameter_sets}->{default}->{name}          = 'default';
+
+  # these break the parameters down between system 
+  # and variance parameters
+  @{$cfg->{parameters_system_index}}                    = ();
+  @{$cfg->{parameters_variance_index}}                  = ();
+
+  $cfg->{static_secondary_parameters}                = {};
+  @{$cfg->{static_secondary_parameters_index}}          = ();
+  $cfg->{dynamic_secondary_parameters}               = {};
+  @{$cfg->{dynamic_secondary_parameters_index}}      = ();
+  $cfg->{initial_conditions}                         = {};
+  $cfg->{bolus_inputs}                               = {};
+  $cfg->{input_rates}                                = {};
+  @{$cfg->{input_rates_index}}                       = ();
+  $cfg->{covariates}                                 = {};
+  @{$cfg->{covariates_index}}                        = ();
+  $cfg->{iiv}                                        = {};
+  $cfg->{iiv_index}                                  = {};
+  $cfg->{species}                                    = {};
+  @{$cfg->{species_index}}                           = ();
+  $cfg->{outputs}                                    = {};
+  @{$cfg->{outputs_index}}                           = ();
+  $cfg->{guides}                                     = {};
+  $cfg->{options}                                    = {};
+  $cfg->{options}->{output_times}                    = 'SIMINT_SEQ[0][10][.1]';
+  $cfg->{options}->{nonmem}->{input}->{drop}         = {};
+  $cfg->{options}->{nonmem}->{input}->{rename}       = {};
+  $cfg->{options}->{nonmem}->{data}                  = '';
+  $cfg->{options}->{amtify}->{cmt_to_amt}            = {};
+  $cfg->{options}->{amtify}->{cmt_to_rel}            = {};
+  $cfg->{index}->{STATE}->{byname}                   = {};
+  $cfg->{index}->{STATE}->{byvalue}                  = {};
+  $cfg->{current_section}                            = '';
+  @{$cfg->{times_scales_index}}                      = ();
+  $cfg->{times_scales}                               = {};
+
+  $cfg->{variance}->{equations}                      = {};
+
+  $cfg->{sets}                                       = {};
+  
+  $cfg->{if_conditional}                             = {};
+
+  $cfg->{comments}                                   = "";
+
+  $cfg->{data}->{file}                               = '';
+  @{$cfg->{data}->{headers}->{values}}               = ();
+  $cfg->{data}->{headers}->{mode}                    = ''; #manual or automoatic
+                                                     
+  # formatting parameters
+  $cfg->{term_length}                                = 20;
+  $cfg->{inputs_length}                              = 10;
+  $cfg->{species_length}                             = 12;
+  $cfg->{outputs_length}                             = 12;
+  $cfg->{time_scales_length}                         = 12;
+  $cfg->{parameters_length}                          = 12;
+  $cfg->{parameter_values_length}                    = 10; 
+  $cfg->{parameter_text_length}                      = 15; 
+
+
+
+  #
+  # data structure containing reserved words and their
+  # associated programs
+  # 
+  # 
+  #  insensitive = full string; case insensitive
+  #  exact       = full string; case sensitive 
+  #  start       = strings begin with this; case sensitive
+  # 
+  # 
+  $cfg->{reserved} = {
+        'ADAPT 5'          => {
+                                IC         =>  'insensitive' ,
+                                P          =>  'insensitive' ,
+                                PS         =>  'insensitive' ,
+                                T          =>  'insensitive' ,
+                                Y          =>  'insensitive' ,
+                                V          =>  'insensitive' ,
+                                XP         =>  'insensitive' ,
+                                X          =>  'insensitive' 
+                              },
+        'Matlab'           => {
+                                x          =>  'exact' ,
+                                dx         =>  'exact' ,
+                                y          =>  'exact' ,
+                                tid        =>  'exact' ,
+                                S          =>  'exact' ,
+                                SIMINT_    =>  'start' 
+                              },
+        'Berkeley Madonna' => {
+                                STARTTIME  => 'insensitive' ,
+                                STOPTIME   => 'insensitive' ,
+                                DT         => 'insensitive' ,
+                                DTMIN      => 'insensitive' ,
+                                DTMAX      => 'insensitive' ,
+                                TOLERANCE  => 'insensitive' ,
+                                DTOUT      => 'insensitive' ,
+                                ROOTTOL    => 'insensitive' ,
+                                TIME       => 'insensitive' 
+                              },
+        'Monolix'          => {
+                                pop_       => 'start'       ,
+                              },
+        'Nonmem'           => {
+                                'S\d+'     => 'start'       ,
+                              },
+        'R-project'        => {
+                                'NA'            => 'exact',
+                                'if'            => 'exact',
+                                'else'          => 'exact',
+                                'repeat'        => 'exact',
+                                'while'         => 'exact',
+                                'funciton'      => 'exact',
+                                'for'           => 'exact',
+                                'next'          => 'exact',
+                                'break'         => 'exact',
+                                'TRUE'          => 'exact',
+                                'FALSE'         => 'exact',
+                                'Inf'           => 'exact',
+                                'NA_integer'    => 'start',
+                                'NA_real'       => 'start',
+                                'NA_complex'    => 'start',
+                                'NA_character'  => 'start'
+                              },
+        'C'                => {
+                               auto        => 'exact' ,
+                               else        => 'exact' ,
+                               long        => 'exact' ,
+                               switch      => 'exact' ,
+                               break       => 'exact' ,
+                               enum        => 'exact' ,
+                               register    => 'exact' ,
+                               typedef     => 'exact' ,
+                               case        => 'exact' ,
+                               extern      => 'exact' ,
+                               return      => 'exact' ,
+                               union       => 'exact' ,
+                               char        => 'exact' ,
+                               float       => 'exact' ,
+                               short       => 'exact' ,
+                               unsigned    => 'exact' ,
+                               const       => 'exact' ,
+                               for         => 'exact' ,
+                               signed      => 'exact' ,
+                               void        => 'exact' ,
+                               continue    => 'exact' ,
+                               goto        => 'exact' ,
+                               sizeof      => 'exact' ,
+                               volatile    => 'exact' ,
+                               default     => 'exact' ,
+                               if          => 'exact' ,
+                               static      => 'exact' ,
+                               while       => 'exact' ,
+                               do          => 'exact' ,
+                               int         => 'exact' ,
+                               struct      => 'exact' ,
+                               _Packed     => 'exact' ,
+                               double      => 'exact' 
+                              }
+  };
+
+
+return($cfg);
 
 }
 
@@ -670,25 +711,30 @@ sub dump_rproject
   my $output;
   my $oname      = '';
   my $field      = '';
+  my $field_times= '';
+  my $field_state= '';
   my @fields     = '';
   my $field_value= '';
 
 
   my $indent     = '   ';
   my $mc;
-  my $template_components = &fetch_rproject_components_template();
-
-
+  #my $template_components = &fetch_rproject_components_template();
+  my $template_components = &fetch_template_file('r_components.r');
   $mc->{COMMENTS}              = '';
   $mc->{FETCH_SYS_PARAMS}      = '';
   $mc->{FETCH_SYS_INDICES}     = '';
   $mc->{FETCH_SYS_IC}          = '';
   $mc->{FETCH_SYS_IIV}         = '';
+  $mc->{FETCH_SYS_VE}          = '';
   $mc->{FETCH_SYS_PSETS}       = '';
   $mc->{FETCH_SYS_TS}          = '';
+  $mc->{FETCH_SYS_DATA}        = '';
+  $mc->{FETCH_SYS_MISC}        = '';
   $mc->{FETCH_SYS_BOLUS}       = '';
   $mc->{FETCH_SYS_INFUSIONS}   = '';
   $mc->{FETCH_SYS_COVARIATES}  = '';
+  $mc->{COVARIATES_IC}         = '';
   $mc->{COVARIATES}            = '';
   $mc->{INFUSION_RATES}        = '';
   $mc->{SS_PARAM}              = '';
@@ -702,7 +748,8 @@ sub dump_rproject
   $mc->{SYSTEM_PARAM}          = '';
 
   my $md;
-  my $template_driver     = &fetch_rproject_simulation_driver_template();
+  #my $template_driver     = &fetch_rproject_simulation_driver_template();
+  my $template_driver     = &fetch_template_file('r_simulation_driver.r');
   $md->{PSETS}                 = '';
   $md->{BOLUS}                 = '';
   $md->{INFUSION_RATES}        = '';
@@ -713,7 +760,8 @@ sub dump_rproject
   
 
   my $mo;
-  my $template_compiled   = &fetch_rproject_compiled_template();
+  #my $template_compiled   = &fetch_rproject_compiled_template();
+  my $template_compiled   = &fetch_template_file('r_odes.c');
   $mo->{SYSTEM_PARAM}          = '';
   $mo->{VARIABLE_INIT}         = '';
   $mo->{STATES}                = '';
@@ -728,6 +776,13 @@ sub dump_rproject
   $mo->{FORCE_PARAM}           = '';
   $mo->{FORCEDECLARE}          = '';
 
+  my $ma;
+  my $template_analysis        = &fetch_template_file('r_analysis_estimation.r ');
+  $ma->{PSETS}                 = '';
+  $ma->{BOLUS}                 = '';
+  $ma->{INFUSION_RATES}        = '';
+  $ma->{COVARIATES}            = '';
+  $ma->{OUTPUT_TIMES}          = '';
 
 #
 # defining aspects of forcing functions in C
@@ -841,7 +896,7 @@ foreach $state     (@{$cfg->{species_index}}){
 
   if(defined($cfg->{initial_conditions}->{$sname})){
     $mc->{FETCH_SYS_IC}      .= 'cfg$options$initial_conditions$'."$sname".&fetch_padding($sname, $cfg->{species_length})." = '";
-    $mc->{FETCH_SYS_IC}      .= &apply_format($cfg->{initial_conditions}->{$sname}, 'rproject')."' \n";
+    $mc->{FETCH_SYS_IC}      .= &apply_format($cfg, $cfg->{initial_conditions}->{$sname}, 'rproject')."' \n";
   }
   
 
@@ -876,7 +931,7 @@ foreach $output    (@{$cfg->{outputs_index}}){
 
   # output definitions used in mapping simulation output
   $mc->{OUTPUTS}           .= $sname.&fetch_padding($sname, $cfg->{outputs_length})." = ";
-  $mc->{OUTPUTS}           .= &apply_format($cfg->{outputs}->{$sname}, 'rproject')."\n";
+  $mc->{OUTPUTS}           .= &apply_format($cfg, $cfg->{outputs}->{$sname}, 'rproject')."\n";
 
   # Compiled code level
   if($mo->{OUTPUTS} eq ""){
@@ -884,7 +939,7 @@ foreach $output    (@{$cfg->{outputs_index}}){
   }
   $mo->{VARIABLE_INIT}     .= "double $sname".&fetch_padding($sname, $cfg->{outputs_length})." = 0.0;\n";
   $mo->{OUTPUTS}           .= $sname.&fetch_padding($sname, $cfg->{outputs_length})." = ";
-  $mo->{OUTPUTS}           .= &apply_format($cfg->{outputs}->{$sname}, 'C').";\n";
+  $mo->{OUTPUTS}           .= &apply_format($cfg, $cfg->{outputs}->{$sname}, 'C').";\n";
 
   $mo->{OUTPUTS_REMAP}      .= "yout[".($counter-1)."] = $sname;\n";
 
@@ -893,41 +948,67 @@ foreach $output    (@{$cfg->{outputs_index}}){
 }
 
 # IIV
-if (defined(@{$cfg->{iiv_index}})){
-  $mc->{FETCH_SYS_INDICES} .= "# iiv \n";
-  $counter = 1;
-  # iiv indices
-  foreach $parameter    (@{$cfg->{iiv_index}}){
-    $iname = $parameter;
-    $mc->{FETCH_SYS_INDICES} .= 'cfg$options$mi$iiv$'."$iname".&fetch_padding($iname, $cfg->{outputs_length})." = $counter \n";
-    $counter = 1+$counter;
-  }
 
-  # listing the parameters the IIVs apply to
-  $counter = 1;
-  foreach $parameter    (@{$cfg->{iiv_index}}){
-    $iname = $parameter;
-    $mc->{FETCH_SYS_IIV}     .= 'cfg$iiv$iivs$'."$iname".'$parameters'.&fetch_padding($iname, $cfg->{parameters_length}).' =c("'.join('", "', @{$cfg->{iiv}->{iivs}->{$iname}->{parameters}}).'"'.")\n";
-    $counter = 1+$counter;
-  }
-  # defining the parameter specific information (distributions and reverse
-  # mapping to the IIV terms);
-  foreach $iname     (keys(%{$cfg->{iiv}->{parameters}})){
-    $mc->{FETCH_SYS_IIV}     .=    'cfg$iiv$parameters$'.$iname.'$iiv_name    '.&fetch_padding($iname, $cfg->{parameters_length})." = '".$cfg->{iiv}->{parameters}->{$iname}->{iiv_name}."'\n";
-    $mc->{FETCH_SYS_IIV}     .=    'cfg$iiv$parameters$'.$iname.'$distribution'.&fetch_padding($iname, $cfg->{parameters_length})." = '".$cfg->{iiv}->{parameters}->{$iname}->{distribution}."'\n";
-  }
-  $mc->{FETCH_SYS_IIV}     .= 'cfg$iiv$values = matrix(0,'.scalar(@{$cfg->{iiv_index}}).",".scalar(@{$cfg->{iiv_index}}).")\n";
-  $counter = 1;
-  foreach $iname     (@{$cfg->{iiv_index}}){
-    $counter2 = 1;
-    foreach $iname2    (@{$cfg->{iiv_index}}){
-      if(defined($cfg->{iiv}->{vcv}->{$iname}->{$iname2})){
-        $mc->{FETCH_SYS_IIV}     .=  'cfg$iiv$values['."$counter, $counter2] =  $cfg->{iiv}->{vcv}->{$iname}->{$iname2}\n";
-      }
-      $counter2 = $counter2+1;
+my $set_id ;
+
+
+if(keys(%{$cfg->{iiv}})){
+  $mc->{FETCH_SYS_INDICES} .= "# iiv \n";
+  foreach $set_id (keys %{$cfg->{iiv_index}}){
+    $counter = 1;
+    # iiv indices
+    foreach $parameter    (@{$cfg->{iiv_index}->{$set_id}}){
+      $iname = $parameter;
+      $mc->{FETCH_SYS_INDICES} .= 'cfg$options$mi$iiv_sets$'.$set_id.'$'."$iname".&fetch_padding($iname, $cfg->{outputs_length})." = $counter \n";
+      $counter = 1+$counter;
     }
-  $counter = $counter+1;
+    
+    # listing the parameters the IIVs apply to
+    $counter = 1;
+    foreach $parameter    (@{$cfg->{iiv_index}->{$set_id}}){
+      $iname = $parameter;
+      $mc->{FETCH_SYS_IIV}     .= 'cfg$iiv$sets$'.$set_id.'$iivs$'."$iname".'$parameters'.&fetch_padding($iname, $cfg->{parameters_length}).' =c("'.join('", "', @{$cfg->{iiv}->{$set_id}->{iivs}->{$iname}->{parameters}}).'"'.")\n";
+      $counter = 1+$counter;
+    }
+    # defining the parameter specific information (distributions and reverse
+    # mapping to the IIV terms);
+    foreach $iname     (keys(%{$cfg->{iiv}->{$set_id}->{parameters}})){
+      $mc->{FETCH_SYS_IIV}     .=    'cfg$iiv$sets$'.$set_id.'$parameters$'.$iname.'$iiv_name    '.&fetch_padding($iname, $cfg->{parameters_length})." = '".$cfg->{iiv}->{$set_id}->{parameters}->{$iname}->{iiv_name}."'\n";
+      $mc->{FETCH_SYS_IIV}     .=    'cfg$iiv$sets$'.$set_id.'$parameters$'.$iname.'$distribution'.&fetch_padding($iname, $cfg->{parameters_length})." = '".$cfg->{iiv}->{$set_id}->{parameters}->{$iname}->{distribution}."'\n";
+      $mc->{FETCH_SYS_IIV}     .=    'cfg$iiv$sets$'.$set_id.'$parameters$'.$iname.'$equation    '.&fetch_padding($iname, $cfg->{parameters_length})." = '".&make_iiv($cfg, $iname, 'rproject', $set_id)."'\n";
+    }
+    $mc->{FETCH_SYS_IIV}     .= 'cfg$iiv$sets$'.$set_id.'$values = matrix(0,'.scalar(@{$cfg->{iiv_index}->{$set_id}}).",".scalar(@{$cfg->{iiv_index}->{$set_id}}).")\n";
+    $counter = 1;
+    foreach $iname     (@{$cfg->{iiv_index}->{$set_id}}){
+      $counter2 = 1;
+      foreach $iname2    (@{$cfg->{iiv_index}->{$set_id}}){
+        if(defined($cfg->{iiv}->{$set_id}->{vcv}->{$iname}->{$iname2})){
+          $mc->{FETCH_SYS_IIV}     .=  'cfg$iiv$sets$'.$set_id.'$values['."$counter, $counter2] =  $cfg->{iiv}->{$set_id}->{vcv}->{$iname}->{$iname2}\n";
+        }
+        $counter2 = $counter2+1;
+      }
+    $counter = $counter+1;
+    }
+
   }
+  $mc->{FETCH_SYS_IIV}     .= "# Defaulting to the default set\n";
+  $mc->{FETCH_SYS_IIV}     .= 'cfg$iiv$current_set = "default"'."\n";
+  $mc->{FETCH_SYS_IIV}     .= 'cfg$iiv$iivs        = cfg$iiv$sets$default$iivs'."\n";
+  $mc->{FETCH_SYS_IIV}     .= 'cfg$iiv$parameters  = cfg$iiv$sets$default$parameters'."\n";
+  $mc->{FETCH_SYS_IIV}     .= 'cfg$iiv$values      = cfg$iiv$sets$default$values    '."\n";
+  $mc->{FETCH_SYS_INDICES} .= "# Defaulting to the default set\n";
+  $mc->{FETCH_SYS_INDICES} .= 'cfg$options$mi$iiv = cfg$options$mi$iiv_sets$default'."\n";
+
+  # adding variance equations
+  if ((keys(%{$cfg->{variance}->{equations}}))){
+     foreach $iname  (keys(%{$cfg->{variance}->{equations}})){
+        $mc->{FETCH_SYS_VE} .=  "cfg\$ve\$$iname = '".&apply_format($cfg, $cfg->{variance}->{equations}->{$iname}, 'rproject')."'\n";
+     }
+    }
+  else{
+    $mc->{FETCH_SYS_VE} .= "# No variance equations defined\n";
+    $mc->{FETCH_SYS_VE} .= "# See: <VE>\n";
+    $mc->{FETCH_SYS_VE} .= "cfg\$ve  = c()\n";}
 
 
 }
@@ -936,10 +1017,10 @@ if (defined(@{$cfg->{iiv_index}})){
 
 
 # infusion rates
-if(defined(@{$cfg->{input_rates_index}})){
+if((@{$cfg->{input_rates_index}})){
   # simulation driver
   $md->{INFUSION_RATES} .= "# To overwrite the default infusion \n";
-  $md->{INFUSION_RATES} .= "# inputs uncomment the 'cfg' lines below\n";
+  $md->{INFUSION_RATES} .= "# inputs uncomment the lines below\n";
 
 
   $mc->{FETCH_SYS_INFUSIONS} .= "# Infusion rates\n";
@@ -958,12 +1039,14 @@ if(defined(@{$cfg->{input_rates_index}})){
 
 
     # simulation driver
-    $md->{INFUSION_RATES} .= "# Rate name:  $rname \n";
-    $md->{INFUSION_RATES} .= '# Time units: '.$cfg->{input_rates}->{$rname}->{times}->{units}."\n";
-    $md->{INFUSION_RATES} .= '# Rate units: '.$cfg->{input_rates}->{$rname}->{levels}->{units}."\n";
-    $md->{INFUSION_RATES} .= '# cfg$options$inputs$infusion_rates$'.$rname.'$times$values  = '."c(".join(', ', &extract_elements($cfg->{input_rates}->{$rname}->{times}->{values})).")\n";
-    $md->{INFUSION_RATES} .= '# cfg$options$inputs$infusion_rates$'.$rname.'$levels$values = '."c(".join(', ', &extract_elements($cfg->{input_rates}->{$rname}->{levels}->{values})).")\n";
-    $md->{INFUSION_RATES} .= "\n";
+    $md->{INFUSION_RATES} .= "# cfg = system_set_rate(cfg, rate   = \"$rname\", \n";
+    $md->{INFUSION_RATES} .= "#                            times  = c(".join(', ', &extract_elements($cfg->{input_rates}->{$rname}->{times}->{values}))."),  # $cfg->{input_rates}->{$rname}->{times}->{units}  \n";
+    $md->{INFUSION_RATES} .= "#                            levels = c(".join(', ', &extract_elements($cfg->{input_rates}->{$rname}->{levels}->{values})).")) # $cfg->{input_rates}->{$rname}->{levels}->{units} \n";
+
+    # analysis estimation
+    $ma->{INFUSION_RATES} .= 'cohort$inputs$infusion_rates$'.$rname.'$TIME'.&fetch_padding($rname,10).'= c()'." # $cfg->{input_rates}->{$rname}->{times}->{units}  \n";
+    $ma->{INFUSION_RATES} .= 'cohort$inputs$infusion_rates$'.$rname.'$AMT'.&fetch_padding($rname,11).'= c()'." # $cfg->{input_rates}->{$rname}->{levels}->{units} \n";
+    
 
     #JMH this seems aberrant 2015.04.08
     # $mc->{INFUSION_RATES} .= $rname.&fetch_padding($rname, $cfg->{inputs_length})." = 0.0\n";
@@ -975,8 +1058,8 @@ if(defined(@{$cfg->{input_rates_index}})){
 }
 
 # infusion rates
-if(defined(@{$cfg->{covariates_index}})){
-  $md->{COVARIATES} .= "# Covariates are set using the select_set statement above.\n";
+if((@{$cfg->{covariates_index}})){
+  $md->{COVARIATES} .= "# Covariates are set using the system_set_covariate statement.\n";
   $md->{COVARIATES} .= "# The default values are listed here, and they may be \n";
   $md->{COVARIATES} .= "# different than the current values. Uncomment to change them.\n";
   $mc->{FETCH_SYS_COVARIATES} .= "#Covariates \n";
@@ -984,18 +1067,24 @@ if(defined(@{$cfg->{covariates_index}})){
     $cname = $covariate; 
 
     # simulation driver
-    $md->{COVARIATES} .= "# Covariate name:     $cname\n";
-    $md->{COVARIATES} .= "# Covariate time in:  ".$cfg->{covariates}->{$cname}->{times}->{units}."\n";
-    $md->{COVARIATES} .= "# Covariate value in: ".$cfg->{covariates}->{$cname}->{values}->{units}."\n";
-    $md->{COVARIATES} .= "# Covariate type:     ".$cfg->{covariates}->{$cname}->{cv_type}."\n";
-    $md->{COVARIATES} .= '# cfg$options$inputs$covariates$'.$cname.'$times$values  = '."c(".join(', ', &extract_elements($cfg->{covariates}->{$cname}->{parameter_sets}->{default}->{times})).")\n"; 
-    $md->{COVARIATES} .= '# cfg$options$inputs$covariates$'.$cname.'$values$values = '."c(".join(', ', &extract_elements($cfg->{covariates}->{$cname}->{parameter_sets}->{default}->{values})).")\n"; 
-    $md->{COVARIATES} .= "\n";
+    $md->{COVARIATES} .= "# cfg = system_set_covariate(cfg, \"$cname\",";
+    $md->{COVARIATES} .=  &fetch_padding(" $cname ,", 30)."# $cfg->{covariates}->{$cname}->{cv_type}\n";
+    $md->{COVARIATES} .= "#                                 times  = c(".join(', ', &extract_elements($cfg->{covariates}->{$cname}->{parameter_sets}->{default}->{times}))."),";
+    $md->{COVARIATES} .=  &fetch_padding("times  = c(".join(', ', &extract_elements($cfg->{covariates}->{$cname}->{parameter_sets}->{default}->{times}))."),", 30)."# $cfg->{covariates}->{$cname}->{times}->{units} \n";
+    $md->{COVARIATES} .= "#                                 values = c(".join(', ', &extract_elements($cfg->{covariates}->{$cname}->{parameter_sets}->{default}->{values}))."))";
+    $md->{COVARIATES} .=  &fetch_padding("values = c(".join(', ', &extract_elements($cfg->{covariates}->{$cname}->{parameter_sets}->{default}->{values}))."))", 30)."# $cfg->{covariates}->{$cname}->{values}->{units} \n";
+    
+    # analysis estimation
+    $ma->{COVARIATES}     .= 'cohort$inputs$covariates$'.$cname.'$TIME'.&fetch_padding($cname,14).'= c()'." # $cfg->{covariates}->{$cname}->{times}->{units} \n";
+    $ma->{COVARIATES}     .= 'cohort$inputs$covariates$'.$cname.'$AMT'.&fetch_padding($cname,15).'= c()'." # $cfg->{covariates}->{$cname}->{values}->{units} \n";
 
     # rcomponents
     $mc->{FETCH_SYS_COVARIATES} .= 'cfg$options$inputs$covariates$'.$cname.'$cv_type       = '."'".$cfg->{covariates}->{$cname}->{cv_type}."'\n";
     $mc->{FETCH_SYS_COVARIATES} .= 'cfg$options$inputs$covariates$'.$cname.'$times$units   = '."'".$cfg->{covariates}->{$cname}->{times}->{units}."'\n";
     $mc->{FETCH_SYS_COVARIATES} .= 'cfg$options$inputs$covariates$'.$cname.'$values$units  = '."'".$cfg->{covariates}->{$cname}->{values}->{units}."'\n";
+
+    $mc->{COVARIATES_IC} .= $cname.' = SIMINT_cfg$options$inputs$covariates$'.$cname.'$values$values[1]'."\n";
+
 
     # c target
     $mo->{FORCE_PARAM} .= "#define $cname".&fetch_padding($cname, $cfg->{inputs_length})." forc[$counter_ff_C]\n";
@@ -1013,12 +1102,12 @@ if(defined(@{$cfg->{covariates_index}})){
 }
 
 # static secondary parameters
-if (defined(@{$cfg->{static_secondary_parameters_index}})){
+if ((@{$cfg->{static_secondary_parameters_index}})){
   foreach $parameter    (@{$cfg->{static_secondary_parameters_index}}){
     $pname = $parameter;
     # R script
     $mc->{SS_PARAM} .= $pname.&fetch_padding($pname, $cfg->{parameters_length})." = ";
-    $mc->{SS_PARAM} .= &apply_format($cfg->{static_secondary_parameters}->{$pname}, 'rproject')." \n"; 
+    $mc->{SS_PARAM} .= &apply_format($cfg, $cfg->{static_secondary_parameters}->{$pname}, 'rproject')." \n"; 
     if(defined($cfg->{if_conditional}->{$pname})){
       $mc->{SS_PARAM} .= &extract_conditional($cfg, $pname, 'rproject');
     }
@@ -1032,7 +1121,7 @@ if (defined(@{$cfg->{static_secondary_parameters_index}})){
     }
     $mo->{VARIABLE_INIT} .= "double $pname ".&fetch_padding($pname, $cfg->{parameters_length})." = 0.0;\n";
     $mo->{SS_PARAM} .= $pname.&fetch_padding($pname, $cfg->{parameters_length})." = ";
-    $mo->{SS_PARAM} .= &apply_format($cfg->{static_secondary_parameters}->{$pname}, 'C')."; \n"; 
+    $mo->{SS_PARAM} .= &apply_format($cfg, $cfg->{static_secondary_parameters}->{$pname}, 'C')."; \n"; 
     if(defined($cfg->{if_conditional}->{$pname})){
       $mo->{SS_PARAM} .= &extract_conditional($cfg, $pname, 'C');
     }
@@ -1045,12 +1134,12 @@ if (defined(@{$cfg->{static_secondary_parameters_index}})){
 }
 
 # dynamic secondary parameters
-if (defined(@{$cfg->{dynamic_secondary_parameters_index}})){
+if ((@{$cfg->{dynamic_secondary_parameters_index}})){
   foreach $parameter    (@{$cfg->{dynamic_secondary_parameters_index}}){
     $pname = $parameter;
     # R script
     $mc->{DS_PARAM} .= $pname.&fetch_padding($pname, $cfg->{parameters_length})." = ";
-    $mc->{DS_PARAM} .= &apply_format($cfg->{dynamic_secondary_parameters}->{$pname}, 'rproject')." \n"; 
+    $mc->{DS_PARAM} .= &apply_format($cfg, $cfg->{dynamic_secondary_parameters}->{$pname}, 'rproject')." \n"; 
     if(defined($cfg->{if_conditional}->{$pname})){
       $mc->{DS_PARAM} .= &extract_conditional($cfg, $pname, 'rproject');
     }
@@ -1062,24 +1151,39 @@ if (defined(@{$cfg->{dynamic_secondary_parameters_index}})){
     }
     $mo->{VARIABLE_INIT} .= "double $pname ".&fetch_padding($pname, $cfg->{parameters_length})." = 0.0;\n";
     $mo->{DS_PARAM} .= $pname.&fetch_padding($pname, $cfg->{parameters_length})." = ";
-    $mo->{DS_PARAM} .= &apply_format($cfg->{dynamic_secondary_parameters}->{$pname}, 'C')."; \n"; 
+    $mo->{DS_PARAM} .= &apply_format($cfg, $cfg->{dynamic_secondary_parameters}->{$pname}, 'C')."; \n"; 
     if(defined($cfg->{if_conditional}->{$pname})){
       $mo->{DS_PARAM} .= &extract_conditional($cfg, $pname, 'C');
     }
   }
 }
 
+# dumping the miscellaneous options
+if(keys %{$cfg->{options}}){
+  foreach $option (keys %{$cfg->{options}}){
+    $mc->{FETCH_SYS_MISC} .= 'cfg$options$misc$'.$option.' = '."'".&apply_format($cfg, $cfg->{options}->{$option}, 'rproject')."' ;\n" 
+  }
+}
+
+
 # time scales
-if (defined(@{$cfg->{time_scales_index}})){
+$mc->{FETCH_SYS_TS} .= 'cfg$options$time_scales$time'.&fetch_padding("time", $cfg->{time_scales_length})." = 1.0\n";
+if ((@{$cfg->{time_scales_index}})){
   foreach $option       (@{$cfg->{time_scales_index}}){
     $mc->{FETCH_SYS_TS} .= 'cfg$options$time_scales$'.$option.&fetch_padding($option, $cfg->{time_scales_length})." = ";
     $mc->{FETCH_SYS_TS} .= $cfg->{time_scales}->{$option}."\n";
   }
 }
 
+if((@{$cfg->{data}->{headers}->{values}})){
+  $mc->{FETCH_SYS_DATA} .= 'cfg = system_load_data(cfg, dsname     = "default",'."\n";
+  $mc->{FETCH_SYS_DATA} .= '                            data_file  = "'.$cfg->{data}->{file}.'"'.")\n";
+}
+else{
+  $mc->{FETCH_SYS_DATA} .= "# No data file specified\n";}
 
-if (defined(@{$cfg->{parameter_sets_index}})){
-  $md->{PSETS} .= "# set name".fetch_padding("set name", 10)." | Description\n";
+if ((@{$cfg->{parameter_sets_index}})){
+  $md->{PSETS} .= "# set name".fetch_padding("set name", 25)." | Description\n";
   $md->{PSETS} .= "# -------------------------------------------------------\n";
   foreach $set (@{$cfg->{parameter_sets_index}}){
     # dumping the name
@@ -1094,61 +1198,70 @@ if (defined(@{$cfg->{parameter_sets_index}})){
 
     }
 
-    $md->{PSETS} .= "# $set".fetch_padding($set, 10)." | $cfg->{parameter_sets}->{$set}->{name}\n";
+    $md->{PSETS} .= "# $set".fetch_padding($set, 25)." | $cfg->{parameter_sets}->{$set}->{name}\n";
   }
+
+  $ma->{PSETS} = $md->{PSETS};
 }
 
 
 if (defined($cfg->{bolus_inputs}->{entries})){
   # Recording the bolus times
-  $field = $cfg->{bolus_inputs}->{times}->{values};
-  $field =~ s#\[##g; $field =~ s#\]##g; 
+  $field_times = $cfg->{bolus_inputs}->{times}->{values};
+  $field_times =~ s#\[##g; $field_times =~ s#\]##g; 
 
   # simulation driver
-  $md->{BOLUS} .= "# To overwrite the default dosing uncomment\n";
-  $md->{BOLUS} .= "# the 'cfg' lines below \n";
-  $md->{BOLUS} .= "# For every time there must be a corresponding dose \n";
-  $md->{BOLUS} .= '# cfg$options$inputs$bolus$times$values                  = c('.$field.') # '.$cfg->{bolus_inputs}->{times}->{units}."\n";
+  $md->{BOLUS} .= "# To overwrite the default dosing uncomment the following\n";
+  # $md->{BOLUS} .= '# cfg$options$inputs$bolus$times$values                  = c('.$field.') # '.$cfg->{bolus_inputs}->{times}->{units}."\n";
+  
+  $md->{BOLUS} .= "# Setting all dosing to zero\n";
+  $md->{BOLUS} .= "# cfg = system_zero_inputs(cfg) \n";
 
   # system information
-  $mc->{FETCH_SYS_BOLUS} .= 'cfg$options$inputs$bolus$times$values = c('.$field.")\n";
+  $mc->{FETCH_SYS_BOLUS} .= 'cfg$options$inputs$bolus$times$values = c('.join(', ', &extract_elements($field_times)).")\n";
   $mc->{FETCH_SYS_BOLUS} .= 'cfg$options$inputs$bolus$times$scale ='."'$cfg->{bolus_inputs}->{times}->{scale}'\n";
   $mc->{FETCH_SYS_BOLUS} .= 'cfg$options$inputs$bolus$times$units ='."'$cfg->{bolus_inputs}->{times}->{units}'\n";
   # for each state that gets a bolus we make three entries: values, scaling
   # information and the expected units
   foreach $state (keys(%{$cfg->{bolus_inputs}->{entries}})){
-  $field = $cfg->{bolus_inputs}->{entries}->{$state}->{values};
-  $field =~ s#\[##g; $field =~ s#\]##g; 
+  $field_state = $cfg->{bolus_inputs}->{entries}->{$state}->{values};
+  $field_state =~ s#\[##g; $field_state =~ s#\]##g; 
     # system information
-    $mc->{FETCH_SYS_BOLUS} .= 'cfg$options$inputs$bolus$species$'.$state.'$values = c('.$field.")\n";
+    $mc->{FETCH_SYS_BOLUS} .= 'cfg$options$inputs$bolus$species$'.$state.'$values = c('.join(', ', &extract_elements($field_state)).")\n";
     $mc->{FETCH_SYS_BOLUS} .= 'cfg$options$inputs$bolus$species$'.$state.'$scale  ='."'$cfg->{bolus_inputs}->{entries}->{$state}->{scale}'\n";
     $mc->{FETCH_SYS_BOLUS} .= 'cfg$options$inputs$bolus$species$'.$state.'$units  ='."'$cfg->{bolus_inputs}->{entries}->{$state}->{units}'\n";
 
     # simulation driver
-    $md->{BOLUS} .= '# cfg$options$inputs$bolus$species$'.$state.'$values'.&fetch_padding($state, 15).'= c('.$field.") # ".$cfg->{bolus_inputs}->{entries}->{$state}->{units}."\n";
+    $md->{BOLUS} .= '# cfg = system_set_bolus(cfg, state   ="'.$state.'", '."\n" ;
+    $md->{BOLUS} .= '#                             times   = c('.$field_times.'),  #  '.$cfg->{bolus_inputs}->{times}->{units}."\n";
+    $md->{BOLUS} .= '#                             values  = c('.$field_state.'))  #  '.$cfg->{bolus_inputs}->{entries}->{$state}->{units}."\n";
+    
+    # analysis estimation
+    $ma->{BOLUS}          .= 'cohort$inputs$bolus$'.$state.'$TIME'.&fetch_padding($state,19).'= c()'." # $cfg->{bolus_inputs}->{times}->{units} \n";
+    $ma->{BOLUS}          .= 'cohort$inputs$bolus$'.$state.'$AMT'.&fetch_padding($state,20).'= c()'." # $cfg->{bolus_inputs}->{entries}->{$state}->{units} \n";
   }
   $mc->{FETCH_SYS_BOLUS} .=  "\n\n\n";
 }
 # adding the comments to the top of the file
 $mc->{COMMENTS} .= &fetch_comments($cfg->{comments}, 'rproject');
 # $mc->{FETCH_SYS} .= 'cfg$parameters$sets$'.default.' = cfg$parameters$matrix$value'
-#print Dumper $cfg->{parameter_sets};
 
 
  foreach $field     (keys(%{$mc})){
      $template_components =~ s#<$field>#$mc->{$field}#g;
  }
+
  open(FH, '>', &ftf($cfg, $cfg->{files}->{rproject}->{components}));
  print FH $template_components;
  close(FH);
 
 
-  foreach $field     (keys(%{$md})){
-      $template_driver  =~ s#<$field>#$md->{$field}#g;
-  }
-  open(FH, '>', &ftf($cfg, $cfg->{files}->{rproject}->{simulation_driver}));
-  print FH $template_driver;
-  close(FH);
+ foreach $field     (keys(%{$md})){
+     $template_driver  =~ s#<$field>#$md->{$field}#g;
+ }
+ open(FH, '>', &ftf($cfg, $cfg->{files}->{rproject}->{simulation_driver}));
+ print FH $template_driver;
+ close(FH);
 
  foreach $field     (keys(%{$mo})){
      $template_compiled   =~ s#<$field>#$mo->{$field}#g;
@@ -1156,6 +1269,14 @@ $mc->{COMMENTS} .= &fetch_comments($cfg->{comments}, 'rproject');
  open(FH, '>', &ftf($cfg, $cfg->{files}->{rproject}->{compiled}));
  print FH $template_compiled;
  close(FH);
+
+ foreach $field     (keys(%{$ma})){
+     $template_analysis  =~ s#<$field>#$ma->{$field}#g;
+ }
+ open(FH, '>', &ftf($cfg, $cfg->{files}->{rproject}->{analysis_estimation}));
+ print FH $template_analysis;
+ close(FH);
+
 
 }
 
@@ -1174,31 +1295,30 @@ sub dump_adapt
 
   my $tmp_ode   = '';
 
-  my $template_fortran  = &fetch_adapt_template_fortran();
-  my $template_prm      = &fetch_adapt_template_prm();
-
+  my $template_fortran  = &fetch_template_file('adapt_system.for');
+  my $template_prm      = &fetch_template_file('adapt_parameters.prm');
   # hash to hold the model components
   my $mc = {};
 
 
   # the order here is important because prm_file expects a
   # specific order
-  if (defined(@{$cfg->{species_index}})){
+  if ((@{$cfg->{species_index}})){
     $mc->{SYMBOL_NDEqs}     = scalar(@{$cfg->{species_index}});}
   else{
     $mc->{SYMBOL_NDEqs}     = '0';}
 
-  if (defined(@{$cfg->{parameters_system_index}})){
+  if ((@{$cfg->{parameters_system_index}})){
     $mc->{SYMBOL_NSParam}   = scalar(@{$cfg->{parameters_system_index}});}
   else{
     $mc->{SYMBOL_NSParam}   = '0';}
 
-  if (defined(@{$cfg->{parameters_variance_index}})){
+  if ((@{$cfg->{parameters_variance_index}})){
     $mc->{SYMBOL_NVParam}   = scalar(@{$cfg->{parameters_variance_index}});}
   else{
     $mc->{SYMBOL_NVParam}   = '0';}
 
-  if (defined(@{$cfg->{static_secondary_parameters_index}})){
+  if ((@{$cfg->{static_secondary_parameters_index}})){
     $mc->{SYMBOL_NSecPar}   = scalar(@{$cfg->{static_secondary_parameters_index}});}
   else{
     $mc->{SYMBOL_NSecPar}   = '0';}
@@ -1254,7 +1374,7 @@ sub dump_adapt
   #
   # Processing system parameters
   #
-  if (defined(@{$cfg->{parameters_system_index}})){
+  if ((@{$cfg->{parameters_system_index}})){
     $mc->{COMMON_BLOCK_PARAMETERS}         .= "C---->System Parameters\n";
     $mc->{COMMON_BLOCK_DECLARE_PARAMETERS} .= "C---->Declaring System Parameters\n";
     $mc->{COMMON_BLOCK_DECLARE_PARAMETERS} .= &fortranify_line("Real*8 ".join(', ', @{$cfg->{parameters_system_index}}));
@@ -1281,7 +1401,7 @@ sub dump_adapt
   #
   # Processing static secondary parameters
   #
-  if (defined(@{$cfg->{static_secondary_parameters_index}})){
+  if ((@{$cfg->{static_secondary_parameters_index}})){
     $mc->{SECONDARY_PARAMETERS_ASSIGNMENT}                  .= "C---->Assigning Secondary Parameters\n";
     $mc->{SECONDARY_PARAMETERS_MAP}                         .= "C---->Mapping Secondary Parameters to PS variables\n";
     $mc->{COMMON_BLOCK_STATIC_SECONDARY_PARAMETERS}         .= "C---->Secondary Parameters\n";
@@ -1294,7 +1414,7 @@ sub dump_adapt
 
       $text_string = $cfg->{static_secondary_parameters}->{$name};
       # converting generic functions into fortran functions
-      $text_string = &apply_format($text_string, 'fortran');
+      $text_string = &apply_format($cfg, $text_string, 'fortran');
       if(defined($cfg->{if_conditional}->{$name})){
         $mc->{SECONDARY_PARAMETERS_ASSIGNMENT} .= &extract_conditional($cfg, $name, 'fortran');
         }
@@ -1334,7 +1454,7 @@ sub dump_adapt
   $mc->{COMMON_BLOCK_DYNAMIC_SECONDARY_PARAMETERS}         .= "C---->Dynamic Secondary Parameters\n";
   $mc->{COMMON_BLOCK_DYNAMIC_SECONDARY_PARAMETERS}         .= &fortranify_line("SIMINT_TIME ".&fetch_padding("SIMINT_TIME", $cfg->{parameters_length})."= T");
    
-  if (defined(@{$cfg->{dynamic_secondary_parameters_index}})){
+  if ((@{$cfg->{dynamic_secondary_parameters_index}})){
     $mc->{COMMON_BLOCK_DECLARE_DYNAMIC_SECONDARY_PARAMETERS} .= &fortranify_line("Real*8 ".join(', ', @{$cfg->{dynamic_secondary_parameters_index}}));
     $counter = 1;
     foreach $name (@{$cfg->{dynamic_secondary_parameters_index}}){
@@ -1342,7 +1462,7 @@ sub dump_adapt
 
       $text_string = $cfg->{dynamic_secondary_parameters}->{$name};
       # converting generic functions into fortran functions
-      $text_string = &apply_format($text_string, 'fortran');
+      $text_string = &apply_format($cfg, $text_string, 'fortran');
       $mc->{COMMON_BLOCK_DYNAMIC_SECONDARY_PARAMETERS} .= &fortranify_line("$name ".&fetch_padding($name, $cfg->{parameters_length})."= $text_string");
 
       if(defined($cfg->{if_conditional}->{$name})){
@@ -1355,7 +1475,7 @@ sub dump_adapt
   #
   # Processing states and odes 
   #
-  if (defined(@{$cfg->{species_index}})){
+  if ((@{$cfg->{species_index}})){
     $mc->{COMMON_BLOCK_STATE_DEFINITIONS}         .= "C---->States\n";
     $mc->{COMMON_BLOCK_DECLARE_STATE_DEFINITIONS} .= "C---->Declaring State and Derivative Names \n";
     $mc->{COMMON_BLOCK_DECLARE_STATE_DEFINITIONS} .= &fortranify_line("Real*8 ".join(', ', @{$cfg->{species_index}}));
@@ -1398,7 +1518,7 @@ sub dump_adapt
   #
   # Processing states and odes 
   #
-  if(defined(@{$cfg->{outputs_index}})){
+  if((@{$cfg->{outputs_index}})){
     $mc->{VARIANCE_MAP}                            .= "C---->Mapping Variance to V variables \n" ;
     $mc->{VARIANCE_ASSIGNMENT}                     .= "C---->Assigning Variances \n";
     $mc->{OUTPUTS_MAP}                             .= "C---->Mapping Outputs to Y variables \n" ;
@@ -1410,11 +1530,16 @@ sub dump_adapt
     @var_names = ();
 
 
+    # used to map PRED to actual values
+    my $nsmap;
+
     foreach $name ( &fetch_estimateable_outputs($cfg)){
       $mc->{COMMON_BLOCK_OUTPUT_DEFINITIONS} .= &fortranify_line("$name".&fetch_padding("$name", $cfg->{outputs_length})."= Y($counter)");
       $text_string = $cfg->{outputs}->{$name};
       # converting generic functions into fortran functions
-      $text_string = &apply_format($text_string, 'fortran');
+      $text_string = &apply_format($cfg, $text_string, 'fortran');
+
+
       $mc->{OUTPUTS_ASSIGNMENT}              .= &fortranify_line("$name".&fetch_padding("$name", $cfg->{outputs_length})."= $text_string");
       $mc->{OUTPUTS_MAP}                     .= &fortranify_line("Y($counter)".&fetch_padding("Y($counter)", 8)."= $name");
 
@@ -1424,10 +1549,15 @@ sub dump_adapt
       if(defined($cfg->{variance}->{equations}->{$name})){
          $text_string = $cfg->{variance}->{equations}->{$name};
          # converting generic functions into fortran functions
-         $text_string = &apply_format($text_string, 'fortran');
+         $text_string = &apply_format($cfg, $text_string, 'fortran');
+         # replacing PRED with the actual values
+         $nsmap->{PRED} = $name;
+         $text_string = &remap_namespace($text_string, $nsmap);
       }
       else{ $text_string = '1.0';}
-      $mc->{VARIANCE_ASSIGNMENT}             .= &fortranify_line("SIMINT_VAR_$name".&fetch_padding("SIMINT_VAR_$name", 20)."= $text_string");
+
+
+      $mc->{VARIANCE_ASSIGNMENT}             .= &fortranify_line("SIMINT_VAR_$name".&fetch_padding("SIMINT_VAR_$name", 20)."= ".$text_string);
       $mc->{VARIANCE_MAP}                    .= &fortranify_line("V($counter)".&fetch_padding("V($counter)", 8)."= SIMINT_VAR_$name");
 
       $counter = $counter + 1;
@@ -1441,7 +1571,7 @@ sub dump_adapt
   #
   # Processing variance parameters
   #
-  if (defined(@{$cfg->{parameters_variance_index}})){
+  if ((@{$cfg->{parameters_variance_index}})){
     $mc->{COMMON_BLOCK_VARIANCE_DEFINITIONS}         .= "C---->Variance Parameters\n";
     $mc->{COMMON_BLOCK_DECLARE_VARIANCE_DEFINITIONS} .= "C---->Declaring Variance Parameters\n";
     $mc->{COMMON_BLOCK_DECLARE_VARIANCE_DEFINITIONS} .= &fortranify_line("Real*8 ".join(', ', @{$cfg->{parameters_variance_index}}));
@@ -1508,7 +1638,7 @@ sub dump_monolix
   $mc->{OUTPUT}     = '';
 
   # dumping the system parameters
-  if (defined(@{$cfg->{parameters_system_index}})){
+  if ((@{$cfg->{parameters_system_index}})){
     $mc->{INPUT} .=  "parameter = {".join(', ', @{$cfg->{parameters_system_index}})."}\n";
     foreach $name (@{$cfg->{parameters_system_index}}){
       $mc->{POPULATION} .= "pop_{$name} ".&fetch_padding($name, $cfg->{parameters_length})."= {distribution=logNormal, median=";
@@ -1523,10 +1653,10 @@ sub dump_monolix
   #
   # STATIC SECONDARY PARAMTERS
   #
-  if (defined(@{$cfg->{static_secondary_parameters_index}})){
+  if ((@{$cfg->{static_secondary_parameters_index}})){
     $mc->{EQUATION} .=  "\n;-->Static Secondary Parameters \n";
     foreach $name (@{$cfg->{static_secondary_parameters_index}}){
-      $mc->{EQUATION} .= "$name ".&fetch_padding($name, $cfg->{parameters_length})."= ".&apply_format($cfg->{static_secondary_parameters}->{$name}, 'monolix')."\n";
+      $mc->{EQUATION} .= "$name ".&fetch_padding($name, $cfg->{parameters_length})."= ".&apply_format($cfg, $cfg->{static_secondary_parameters}->{$name}, 'monolix')."\n";
     }
   }
 
@@ -1537,7 +1667,7 @@ sub dump_monolix
     $mc->{EQUATION} .=  "\n;-->Nonzero Initial Conditions  \n";
     $mc->{EQUATION} .=  "t0 " .&fetch_padding("t0", $cfg->{species_length})."= 0 \n";
     foreach $species (keys(%{$cfg->{initial_conditions}})){
-      $mc->{EQUATION} .=  $species."_0 ".&fetch_padding("$species  ", $cfg->{species_length})."= ".&apply_format($cfg->{initial_conditions}->{$species}, 'monolix')." \n";     
+      $mc->{EQUATION} .=  $species."_0 ".&fetch_padding("$species  ", $cfg->{species_length})."= ".&apply_format($cfg, $cfg->{initial_conditions}->{$species}, 'monolix')." \n";     
     }
   }
 
@@ -1548,43 +1678,43 @@ sub dump_monolix
   #
   $mc->{EQUATION} .=  "\n;-->Dynamic Secondary Parameters \n";
   $mc->{EQUATION} .=  "SIMINT_TIME " .&fetch_padding("SIMINT_TIME", $cfg->{species_length})."= t \n";
-  if (defined(@{$cfg->{dynamic_secondary_parameters_index}})){
+  if ((@{$cfg->{dynamic_secondary_parameters_index}})){
     foreach $name (@{$cfg->{dynamic_secondary_parameters_index}}){
       # if the parameter is defined by a conditional then
       # we extract that here otherwise, we just use a simple assignment
       if(defined($cfg->{if_conditional}->{$name})){
         $mc->{EQUATION} .= &extract_conditional($cfg, $name, 'monolix'); }
       else{
-      $mc->{EQUATION} .= "$name ".&fetch_padding($name, $cfg->{parameters_length})."= ".&apply_format($cfg->{dynamic_secondary_parameters}->{$name}, 'monolix')."\n"; }
+      $mc->{EQUATION} .= "$name ".&fetch_padding($name, $cfg->{parameters_length})."= ".&apply_format($cfg, $cfg->{dynamic_secondary_parameters}->{$name}, 'monolix')."\n"; }
     }
   }
 
   #
   # ODES                        
   #
-  if (defined(@{$cfg->{species_index}})){
+  if ((@{$cfg->{species_index}})){
     $mc->{EQUATION} .=  "\n;-->ODEs \n";
     foreach $name (@{$cfg->{species_index}}){
       $tmp_ode   = "";
-      if(defined(@{$cfg->{species}->{$name}->{odes}})){
+      if((@{$cfg->{species}->{$name}->{odes}})){
         if($tmp_ode eq ""){
           $tmp_ode .= join('+', @{$cfg->{species}->{$name}->{odes}}); }
         else{
           $tmp_ode .= "+".join('+', @{$cfg->{species}->{$name}->{odes}}); }
        }
 
-      if(defined(@{$cfg->{species}->{$name}->{production}})){
+      if((@{$cfg->{species}->{$name}->{production}})){
        if($tmp_ode eq ""){
          $tmp_ode .= join('+', @{$cfg->{species}->{$name}->{production}}); }
        else{
          $tmp_ode .= "+".join('+', @{$cfg->{species}->{$name}->{production}}); }
       }
 
-      if(defined(@{$cfg->{species}->{$name}->{consumption}})){
+      if((@{$cfg->{species}->{$name}->{consumption}})){
          $tmp_ode .= "-(".join('+', @{$cfg->{species}->{$name}->{consumption}}).")"; }
 
       # converting generic functions into fortran functions
-      $tmp_ode   = &apply_format($tmp_ode, 'monolix');
+      $tmp_ode   = &apply_format($cfg, $tmp_ode, 'monolix');
        
       # prepending the assignment portion of the ODE
       $tmp_ode   = "ddt_$name".&fetch_padding("ddt_$name ", $cfg->{species_length})."= ".$tmp_ode;
@@ -1594,10 +1724,10 @@ sub dump_monolix
   }
 
 
-  if(defined(@{$cfg->{outputs_index}})){
+  if((@{$cfg->{outputs_index}})){
     $mc->{EQUATION} .=  "\n;-->Outputs \n";
     foreach $name (@{$cfg->{outputs_index}}){
-      $mc->{EQUATION} .= "$name ".&fetch_padding("$name ", $cfg->{species_length})."= ".&apply_format($cfg->{outputs}->{$name}, 'monolix')."\n";
+      $mc->{EQUATION} .= "$name ".&fetch_padding("$name ", $cfg->{species_length})."= ".&apply_format($cfg, $cfg->{outputs}->{$name}, 'monolix')."\n";
     }
     $mc->{OUTPUT}   .= "Y = {".join(', ', @{$cfg->{outputs_index}})."} \n";
   }
@@ -1629,6 +1759,11 @@ sub dump_nonmem
   my $upper_bound = '';
   my $value       = '';
 
+  my $iiv_set     = 'default';
+  if($cfg->{iiv_index}->{$parameter_set}){
+     $iiv_set = $parameter_set; 
+  }
+
 
   # The names used in the error block of NONMEM the must be different from
   # those used in the DES block. However it may outputs can be defined in
@@ -1639,7 +1774,7 @@ sub dump_nonmem
   my $namespace_map;
   $namespace_map->{SIMINT_TIME} = 'SIEB_TIME';
 
-  my $template = &fetch_nonmem_template;
+  my $template = &fetch_template_file('nonmem.ctl');
   # hash to hold the model components
 
   $mc->{INPUT}                             = '';
@@ -1649,7 +1784,6 @@ sub dump_nonmem
   $mc->{IIV_MAP}                           = '';
   $mc->{IIV_ON_PARAMETERS}                 = '';
   $mc->{STATIC_SECONDARY_PARAMETERS}       = '';
-  $mc->{BOLUS_SCALING}                     = '';
   $mc->{DYNAMIC_SECONDARY_PARAMETERS}      = '';
   $mc->{DYNAMIC_SECONDARY_PARAMETERS_NMEB} = '';
   $mc->{INITIAL_CONDITIONS}                = '';
@@ -1660,6 +1794,9 @@ sub dump_nonmem
   $mc->{ODES_MAPS}                         = '';
   $mc->{VARIANCE_ASSIGNMENT}               = '';
   $mc->{VARIANCE_PARAMETER_VALUES}         = '';
+
+  $mc->{INFUSION_RATES}                    = '';
+
 
 
 
@@ -1674,7 +1811,7 @@ sub dump_nonmem
     $mc->{DATA}  .= $cfg->{options}->{nonmem}->{data};
     # if we have header information then we put that 
     # into the INPUT block
-    if(defined(@{$cfg->{data}->{headers}->{values}})){
+    if((@{$cfg->{data}->{headers}->{values}})){
       $counter = 1;
       foreach $name (@{$cfg->{data}->{headers}->{values}}){
         #dropping and renameing the specified columns
@@ -1704,16 +1841,19 @@ sub dump_nonmem
   #
   # Processing system parameters
   #
-  if (defined(@{$cfg->{parameters_system_index}})){
+  if ((@{$cfg->{parameters_system_index}})){
     $counter = 1;
     foreach $name (@{$cfg->{parameters_system_index}}){
       # mapping THETAs to actual names 
-      if(defined($cfg->{iiv}->{parameters}->{$name})){
+      if(defined($cfg->{iiv}->{$iiv_set}->{parameters}->{$name})){
         $mc->{PARAMETERS_MAP}       .= "SIMINT_TV_$name ".&fetch_padding("SIMINT_TV_$name", $cfg->{parameters_length})." = THETA($counter)\n";
-        if($cfg->{iiv}->{parameters}->{$name}->{distribution} eq 'N'){
-          $mc->{IIV_ON_PARAMETERS} .= "$name ".&fetch_padding("$name", $cfg->{parameters_length})." = SIMINT_TV_$name*(1+$cfg->{iiv}->{parameters}->{$name}->{iiv_name})\n"; }
-        elsif($cfg->{iiv}->{parameters}->{$name}->{distribution} eq 'LN'){
-          $mc->{IIV_ON_PARAMETERS} .= "$name ".&fetch_padding("$name", $cfg->{parameters_length})." = SIMINT_TV_$name*EXP($cfg->{iiv}->{parameters}->{$name}->{iiv_name})\n"; }
+        # pulling out the string defining the left hand side of the IIV term
+        $text_string = &make_iiv($cfg, $name, 'nonmem', $iiv_set) ;
+        # substituting the placeholders
+        $text_string =~ s#SIMINT_PARAMETER_TV#SIMINT_TV_$name#g;
+        $text_string =~ s#SIMINT_IIV_VALUE#$cfg->{iiv}->{$iiv_set}->{parameters}->{$name}->{iiv_name}#g;
+        # constructing the definition
+        $mc->{IIV_ON_PARAMETERS} .= "$name ".&fetch_padding("$name", $cfg->{parameters_length})." = $text_string\n";
       }
       else{
         $mc->{PARAMETERS_MAP}       .= "$name ".&fetch_padding($name, $cfg->{parameters_length})." = THETA($counter)\n";
@@ -1762,36 +1902,57 @@ sub dump_nonmem
     }
   }
 
+  #
+  # Processing infusion rate information
+  #
+  if((@{$cfg->{input_rates_index}})){
+    $mc->{INFUSION_RATES} .= "\n; Infusion rates should be specified in the dataset\n";
+    $mc->{INFUSION_RATES} .= "; placeholders for other targets will be disabled  \n";
+    $mc->{INFUSION_RATES} .= "; by setting those values to zero here             \n";
+    foreach $name (@{$cfg->{input_rates_index}}){
+      $mc->{INFUSION_RATES} .= $name.&fetch_padding($name, $cfg->{inputs_length})."= 0.0\n"
+    }
+  }
   
   #
   # Processing iiv information
   #
-  if (defined(@{$cfg->{iiv_index}})){
+  if(keys(%{$cfg->{iiv}})){
 
     # mapping ETA()'s to IIV names and creating the header for the OMEGA block
     $mc->{IIV_MAP} = "; Defining the iiv variables\n";
     $counter = 1;
-    foreach $name (@{$cfg->{iiv_index}}){
+    foreach $name (@{$cfg->{iiv_index}->{$iiv_set}}){
       $mc->{IIV_MAP}       .= "$name ".&fetch_padding($name, $cfg->{parameters_length})." = ETA($counter)\n";
       $counter = $counter+1; }
 
     # creating the OMEGA BLOCK() line:
-    $mc->{IIV_VALUES} = '$OMEGA BLOCK('.scalar(@{$cfg->{iiv_index}}).")\n"; 
+    $mc->{IIV_VALUES} = '$OMEGA BLOCK('.scalar(@{$cfg->{iiv_index}->{$iiv_set}}).")\n"; 
 
     # creating the  variance/covariance matrix
     $counter = 1;
-    foreach $name (@{$cfg->{iiv_index}}){
+
+    foreach $name (@{$cfg->{iiv_index}->{$iiv_set}}){
       $counter2 = 1;
-      foreach $name2 (@{$cfg->{iiv_index}}){
+      foreach $name2 (@{$cfg->{iiv_index}->{$iiv_set}}){
       if($counter2 le $counter){
-        if(defined($cfg->{iiv}->{vcv}->{$name}->{$name2})){
-          $mc->{IIV_VALUES}       .= $cfg->{iiv}->{vcv}->{$name}->{$name2}.&fetch_padding($cfg->{iiv}->{vcv}->{$name}->{$name2}, $cfg->{parameters_length}); }
+        if(defined($cfg->{iiv}->{$iiv_set}->{vcv}->{$name}->{$name2})){
+          $mc->{IIV_VALUES}       .= $cfg->{iiv}->{$iiv_set}->{vcv}->{$name}->{$name2}.&fetch_padding($cfg->{iiv}->{$iiv_set}->{vcv}->{$name}->{$name2}, $cfg->{parameters_length}); }
         else{
-          $mc->{IIV_VALUES}       .= '0 FIX'.&fetch_padding('0 FIX', $cfg->{parameters_length}); }
-        if($name eq $name2){
-          $mc->{IIV_VALUES}       .= "; Var: $name\n"; }
-        else{
-          $mc->{IIV_VALUES}       .= "; Cov: $name-$name2\n"; }
+          $mc->{IIV_VALUES}       .= '0'.&fetch_padding('0', $cfg->{parameters_length}); }
+
+
+
+          if($counter2 == $counter){
+             $mc->{IIV_VALUES}       .= &fetch_padding('',$cfg->{parameters_length})x(@{$cfg->{iiv_index}->{$iiv_set}} - $counter);
+             $mc->{IIV_VALUES}       .= "; $name\n"; }
+          
+
+
+       #if($name eq $name2){
+       #  $mc->{IIV_VALUES}       .= "; Var: $name\n"; }
+       #else{
+       #  $mc->{IIV_VALUES}       .= "; Cov: $name-$name2\n"; }
         $counter2 = $counter2 + 1; 
         }
       }
@@ -1805,7 +1966,7 @@ sub dump_nonmem
   #
   # Processing variance parameters
   #
-  if (defined(@{$cfg->{parameters_variance_index}})){
+  if ((@{$cfg->{parameters_variance_index}})){
     $counter = 1;
     foreach $name (@{$cfg->{parameters_variance_index}}){
       $mc->{VARIANCE_ASSIGNMENT} .= "$name".&fetch_padding($name,$cfg->{parameters_length})." = SIGMA($counter)\n";
@@ -1823,10 +1984,10 @@ sub dump_nonmem
   #
   # Processing static secondary parameters
   #
-  if (defined(@{$cfg->{static_secondary_parameters_index}})){
+  if ((@{$cfg->{static_secondary_parameters_index}})){
     foreach $name (@{$cfg->{static_secondary_parameters_index}}){
       $text_string = $cfg->{static_secondary_parameters}->{$name};
-      $text_string = &apply_format($text_string, 'nonmem');
+      $text_string = &apply_format($cfg, $text_string, 'nonmem');
       $mc->{STATIC_SECONDARY_PARAMETERS}     .= "$name ".&fetch_padding($name, $cfg->{parameters_length})." = $text_string\n";
     }
   }
@@ -1835,10 +1996,10 @@ sub dump_nonmem
   #
   # Dynamic secondary parameters
   #
-  if (defined(@{$cfg->{dynamic_secondary_parameters_index}})){
+  if ((@{$cfg->{dynamic_secondary_parameters_index}})){
     foreach $name (@{$cfg->{dynamic_secondary_parameters_index}}){
       $value  = $cfg->{dynamic_secondary_parameters}->{$name};
-      $value  = &apply_format($value, 'nonmem');
+      $value  = &apply_format($cfg, $value, 'nonmem');
       $mc->{DYNAMIC_SECONDARY_PARAMETERS}  .= $name.&fetch_padding($name, $cfg->{parameters_length})." = ".$value."\n";
 
       if(defined($cfg->{if_conditional}->{$name})){
@@ -1854,50 +2015,51 @@ sub dump_nonmem
   # states and ODES
   #
 
-  if (defined(@{$cfg->{species_index}})){
+  if ((@{$cfg->{species_index}})){
     $counter = 1;
 
     foreach $name (@{$cfg->{species_index}}){
+      # name2 will store the state name if no amtify has been defined,
+      # otherwise it will store the amtify name 
       # defining the states themselves
-      if(defined($cfg->{bolus_inputs}->{entries}->{$name}) and 
-       not($mc->{COMP_ASSIGNMENT} =~ m#DEFDOSE#)) {
-        $mc->{COMP_ASSIGNMENT} .= "COMP=($name, DEFDOSE) ".&fetch_padding("COMP=($name, DEFDOSE) ", 30)."; # $counter \n"; }
-      else{
-        $mc->{COMP_ASSIGNMENT} .= "COMP=($name) ".&fetch_padding("COMP=($name) ", 30)."; # $counter \n"; }
-
-      
-     
-      $mc->{STATES_ASSIGNMENT} .= "$name".&fetch_padding("$name", $cfg->{species_length})."=  A($counter) \n";
-
-      # appending the state naming information in to the namespace map
-      $namespace_map->{$name} = "SIEB_$name";
-
-      # Dumping the bolus scaling information 
-      if(defined($cfg->{bolus_inputs}->{entries}->{$name})){
-        $mc->{BOLUS_SCALING} .= ";$name\n";
-        $mc->{BOLUS_SCALING} .= "S$counter = 1/(".$cfg->{bolus_inputs}->{entries}->{$name}->{scale}.")\n";
+      # if the current state has been amtified we stick that into the amtify map
+      $name2 = $name;
+      if(defined($cfg->{options}->{amtify}->{cmt_to_amt}->{$name})){ 
+        $name2 = $cfg->{options}->{amtify}->{cmt_to_amt}->{$name};
       }
 
+
+      
+      $mc->{COMP_ASSIGNMENT} .= "COMP=($name2) ".&fetch_padding("COMP=($name2) ", 30)."; # $counter \n"; 
+     
+      $mc->{STATES_ASSIGNMENT} .= "$name2".&fetch_padding("$name", $cfg->{species_length})."=  A($counter) \n";
+
+      # appending the state naming information in to the namespace map
+      $namespace_map->{$name2} = "SIEB_$name2";
 
       # Dumping the initial conditions here
       if(defined($cfg->{initial_conditions}->{$name})){
         $text_string = $cfg->{initial_conditions}->{$name};
-        $text_string = &apply_format($text_string, 'nonmem');
+        $text_string = &apply_format($cfg, $text_string, 'nonmem');
 
-        $mc->{INITIAL_CONDITIONS} .= "A_0($counter) = $text_string ".&fetch_padding($text_string, $cfg->{species_length})."; $name \n" ;}
+        $mc->{INITIAL_CONDITIONS} .= "A_0($counter) = $text_string ".&fetch_padding($text_string, $cfg->{species_length})."; $name2 \n" ;}
       else{
-        $mc->{INITIAL_CONDITIONS} .= "A_0($counter) = 0.0 ".&fetch_padding("0.0", $cfg->{species_length})."; $name \n" ;}
+        $mc->{INITIAL_CONDITIONS} .= "A_0($counter) = 0.0 ".&fetch_padding("0.0", $cfg->{species_length})."; $name2 \n" ;}
 
       # defining the ODES a human readable format
-      $mc->{ODES_ASSIGNMENT}   .= "SIMINT_d$name ".&fetch_padding($name, $cfg->{species_length})." = ";
+      $mc->{ODES_ASSIGNMENT}   .= "SIMINT_d$name2 ".&fetch_padding($name, $cfg->{species_length})." = ";
       $mc->{ODES_ASSIGNMENT}   .= &make_ode($cfg, $name, 'nonmem');
       $mc->{ODES_ASSIGNMENT}   .= "\n";
 
       # mapping those odes back to their DADT counterparts
-      $mc->{ODES_MAP}          .= "DADT($counter) = SIMINT_d$name \n" ;
+      $mc->{ODES_MAP}          .= "DADT($counter) = SIMINT_d$name2 \n" ;
+
+
+
 
     $counter = $counter + 1;
     }
+
 
   }
 
@@ -1977,6 +2139,9 @@ sub dump_berkeley_madonna
   my $name      = '';
   my $cvpset    = '';
 
+  my $tmp_text  = '';
+
+  my $cv_namespace_map;
 
  #my $name      = '';
  #my $term      = '';
@@ -1999,7 +2164,7 @@ sub dump_berkeley_madonna
   $bmfile_output .= "\n\n\n{INITIAL VALUES}\n";
   foreach $species (@{$cfg->{species_index}}){
     if(exists($cfg->{initial_conditions}->{$species})){
-      $bmfile_output .= "INIT $species".&fetch_padding($species, $cfg->{species_length})." = ".&apply_format($cfg->{initial_conditions}->{$species}, 'bm')."\n";     
+      $bmfile_output .= "INIT $species".&fetch_padding($species, $cfg->{species_length})." = ".&apply_format($cfg, $cfg->{initial_conditions}->{$species}, 'bm')."\n";     
     }
     else{
       $bmfile_output .= "INIT $species".&fetch_padding($species, $cfg->{species_length})." = 0.0 \n";     
@@ -2011,7 +2176,7 @@ sub dump_berkeley_madonna
 
 
   # parameter initializing 
-  if (defined(@{$cfg->{parameters_index}})){
+  if ((@{$cfg->{parameters_index}})){
     $bmfile_output .= "; parameters\n";
     foreach $parameter (@{$cfg->{parameters_index}}){
       if(exists($cfg->{parameter_sets}->{$parameter_set}->{values}->{$parameter})){
@@ -2023,22 +2188,56 @@ sub dump_berkeley_madonna
     }
   }
 
+  if((@{$cfg->{covariates_index}})){
+    $bmfile_output .= "\n;---------------------------------------- \n";
+    $bmfile_output .= "; Placeholder for covariates             \n";
+    $bmfile_output .= "; You need to edit this to reflect the   \n";
+    $bmfile_output .= "; covariates you're trying to test       \n";
+    $bmfile_output .= "; The prefix SIMINT_CVCIC indicates the  \n";
+    $bmfile_output .= "; inital value of the covariate which    \n";
+    $bmfile_output .= "; can be used in defining static         \n";
+    $bmfile_output .= "; secondary parameters  \n \n";
+
+    # fit the covariate hasn't been specified for this parameter set 
+    # then we revert to the default
+    foreach $name (@{$cfg->{covariates_index}}){
+      if(defined($cfg->{covariates}->{$name}->{parameter_sets}->{$parameter_set})){
+        $cvpset = $parameter_set; }
+      else{
+        $cvpset = 'default'; }
+      $bmfile_output .="; covariate: $name \n";
+      $bmfile_output .="; type:      ".$cfg->{covariates}->{$name}->{cv_type}."\n";
+      $bmfile_output .="; times:     ".$cfg->{covariates}->{$name}->{parameter_sets}->{$cvpset}->{times};
+      $bmfile_output .=         "  (".$cfg->{covariates}->{$name}->{times}->{units}.")  \n";
+      $bmfile_output .="; values:    ".$cfg->{covariates}->{$name}->{parameter_sets}->{$cvpset}->{values};
+      $bmfile_output .=         "  (".$cfg->{covariates}->{$name}->{values}->{units}.") \n";
+      $bmfile_output .= $name.&fetch_padding($name, $cfg->{inputs_length})."= 0.0". ";\n";
+      $bmfile_output .= "SIMINT_CVIC_$name".&fetch_padding("SIMINT_CVIC_$name", $cfg->{inputs_length})."= 0.0". ";\n\n";
+      $cv_namespace_map->{$name} = "SIMINT_CVIC_$name";
+    }
+    $bmfile_output .= ";---------------------------------------- \n";
+  }
+
+
+
 
   # static secondary parameter initializing 
-  if (defined(@{$cfg->{static_secondary_parameters_index}})){
+  if ((@{$cfg->{static_secondary_parameters_index}})){
     $bmfile_output .= "\n\n; static secondary parameters\n";
     foreach $parameter (@{$cfg->{static_secondary_parameters_index}}){
       if(defined($cfg->{if_conditional}->{$parameter})){
-        $bmfile_output .=  "$parameter".&fetch_padding($parameter, $cfg->{parameters_length})." = ".&extract_conditional($cfg, $parameter, 'bm')."\n";
+        $tmp_text =  "$parameter".&fetch_padding($parameter, $cfg->{parameters_length})." = ".&extract_conditional($cfg, $parameter, 'bm')."\n";
         }
       else{
-        $bmfile_output .=  "$parameter".&fetch_padding($parameter, $cfg->{parameters_length})." = ".&apply_format($cfg->{static_secondary_parameters}->{$parameter}, 'bm')." \n";     
+        $tmp_text =  "$parameter".&fetch_padding($parameter, $cfg->{parameters_length})." = ".&apply_format($cfg, $cfg->{static_secondary_parameters}->{$parameter}, 'bm')." \n";     
         }
+ 
+        $bmfile_output .= &remap_namespace($tmp_text, $cv_namespace_map); 
     }
   }
 
 
-  if(defined(@{$cfg->{input_rates_index}})){
+  if((@{$cfg->{input_rates_index}})){
     $bmfile_output .= "\n\n; Placeholder for infuion rates \n";
     $bmfile_output .= "; You need to edit this to reflect the \n";
     $bmfile_output .= "; the infusions for this system \n";
@@ -2049,30 +2248,8 @@ sub dump_berkeley_madonna
     }
   }
 
-  if(defined(@{$cfg->{covariates_index}})){
-    $bmfile_output .= "\n\n; Placeholder for covariates \n";
-    $bmfile_output .= "; You need to edit this to reflect the \n";
-    $bmfile_output .= "; covariates you're trying to test\n";
-
-    # fit the covariate hasn't been specified for this parameter set 
-    # then we revert to the default
-    foreach $name (@{$cfg->{covariates_index}}){
-      if(defined($cfg->{covariates}->{$name}->{parameter_sets}->{$parameter_set})){
-        $cvpset = $parameter_set; }
-      else{
-        $cvpset = 'default'; }
-      $bmfile_output .="; times:    ".$cfg->{covariates}->{$name}->{parameter_sets}->{$cvpset}->{times};
-      $bmfile_output .=         "  (".$cfg->{covariates}->{$name}->{times}->{units}.")  \n";
-      $bmfile_output .="; values:   ".$cfg->{covariates}->{$name}->{parameter_sets}->{$cvpset}->{values};
-      $bmfile_output .=         "  (".$cfg->{covariates}->{$name}->{values}->{units}.") \n";
-  #   $bmfile_output .="; values:  ".$cfg->{input_rates}->{$name}->{levels}->{scale}." units: (".$cfg->{input_rates}->{$name}->{levels}->{units}.") \n"; ;
-      $bmfile_output .= $name.&fetch_padding($name, $cfg->{inputs_length})."= 0.0". ";\n\n"
-    }
-  }
-
-
   # static secondary parameter initializing 
-  if (defined(@{$cfg->{dynamic_secondary_parameters_index}})){
+  if ((@{$cfg->{dynamic_secondary_parameters_index}})){
     $bmfile_output .= "\n\n; dynamic secondary parameters\n";
     foreach $parameter (@{$cfg->{dynamic_secondary_parameters_index}}){
       if(defined($cfg->{if_conditional}->{$parameter})){
@@ -2082,7 +2259,7 @@ sub dump_berkeley_madonna
       }
       else{
         #otherwise we use the value specified in the <Ad> call
-        $bmfile_output .=  "$parameter".&fetch_padding($parameter, $cfg->{parameters_length})." = ".&apply_format($cfg->{dynamic_secondary_parameters}->{$parameter}, 'bm')." \n";     
+        $bmfile_output .=  "$parameter".&fetch_padding($parameter, $cfg->{parameters_length})." = ".&apply_format($cfg, $cfg->{dynamic_secondary_parameters}->{$parameter}, 'bm')." \n";     
       }
     }
   }
@@ -2093,19 +2270,19 @@ sub dump_berkeley_madonna
 
   foreach $species (@{$cfg->{species_index}}){
     $bmfile_output .=   "d/dt($species)".&fetch_padding($species, ($cfg->{species_length}))." = ";     
-    if(defined(@{$cfg->{species}->{$species}->{production}})){
-    $bmfile_output .=   &apply_format(join(' + ', @{$cfg->{species}->{$species}->{production}}), 'bm');
+    if((@{$cfg->{species}->{$species}->{production}})){
+    $bmfile_output .=   &apply_format($cfg, join(' + ', @{$cfg->{species}->{$species}->{production}}), 'bm');
      }
-    if(defined(@{$cfg->{species}->{$species}->{consumption}})){
+    if((@{$cfg->{species}->{$species}->{consumption}})){
     $bmfile_output .=   " - ";
-    $bmfile_output .=   &apply_format(join(' - ', @{$cfg->{species}->{$species}->{consumption}}), 'bm');
+    $bmfile_output .=   &apply_format($cfg, join(' - ', @{$cfg->{species}->{$species}->{consumption}}), 'bm');
     }
-   if(defined(@{$cfg->{species}->{$species}->{odes}})){
+   if((@{$cfg->{species}->{$species}->{odes}})){
      if((scalar(@{$cfg->{species}->{$species}->{production}}) > 0) or 
         (scalar(@{$cfg->{species}->{$species}->{consumption}}) > 0)){
         $bmfile_output .=   " + ";
       }
-      $bmfile_output .=   &apply_format(join(' + ', @{$cfg->{species}->{$species}->{odes}}), 'bm');
+      $bmfile_output .=   &apply_format($cfg, join(' + ', @{$cfg->{species}->{$species}->{odes}}), 'bm');
     }
     $bmfile_output .=   " \n";
   }
@@ -2113,9 +2290,9 @@ sub dump_berkeley_madonna
   $bmfile_output .= "\n\n\n{OUTPUTS}\n";
 
 
- if(defined(@{$cfg->{outputs_index}})){
+ if((@{$cfg->{outputs_index}})){
    foreach $output (@{$cfg->{outputs_index}}){
-     $bmfile_output .=   $output.&fetch_padding($output, ($cfg->{outputs_length}))." = ".&apply_format($cfg->{outputs}->{$output}, 'bm')."\n";     
+     $bmfile_output .=   $output.&fetch_padding($output, ($cfg->{outputs_length}))." = ".&apply_format($cfg, $cfg->{outputs}->{$output}, 'bm')."\n";     
 
    }
   }
@@ -2142,6 +2319,20 @@ sub dump_matlab
   my $term      = '';
   my $counter   = 0;
   my $counter2  = 0;
+
+  my $field; 
+
+  my $production_rates; 
+  my $consumption_rates;
+
+  
+  my $ae;
+  my $ae_template =  &fetch_matlab_auto_analysis_estimation();
+  $ae->{PSETS}                 = '';
+  $ae->{BOLUS}                 = ''; 
+  $ae->{INFUSION_RATES}        = ''; 
+  $ae->{COVARIATES}            = ''; 
+  $ae->{OUTPUT_TIMES}          = ''; 
 
 
   # variables to hold components of the system
@@ -2196,7 +2387,7 @@ sub dump_matlab
     }
 
     # Infusion rates
-    if(defined(@{$cfg->{input_rates_index}})){
+    if((@{$cfg->{input_rates_index}})){
       print FHCOMMON_BLOCK        "\n\n\n/* Initializing infusion rates */\n"; 
       foreach $name (@{$cfg->{input_rates_index}}){
       print FHCOMMON_BLOCK      "double $name".&fetch_padding($name, $cfg->{parameters_length})."= 0.0; \n";     
@@ -2205,7 +2396,7 @@ sub dump_matlab
     }
 
     # Covariates     
-    if(defined(@{$cfg->{covariates_index}}) ){
+    if((@{$cfg->{covariates_index}}) ){
       print FHCOMMON_BLOCK        "\n\n\n/* Initializing covariates*/\n"; 
       foreach $name (@{$cfg->{covariates_index}}){
       print FHCOMMON_BLOCK      "double $name".&fetch_padding($name, $cfg->{parameters_length})."= 0.0; \n";     
@@ -2225,7 +2416,7 @@ sub dump_matlab
     }
 
     # static secondary parameter initializing 
-    if (defined(@{$cfg->{static_secondary_parameters_index}})){
+    if ((@{$cfg->{static_secondary_parameters_index}})){
       print FHCOMMON_BLOCK        "\n\n\n /* Initializing dynamic secondary paramters */\n"; 
       foreach $parameter (@{$cfg->{static_secondary_parameters_index}}){
           print FHCOMMON_BLOCK          "double $parameter".&fetch_padding($parameter, $cfg->{parameters_length})."= 0.0; \n";     
@@ -2241,7 +2432,7 @@ sub dump_matlab
     }
 
     # dynamic secondary parameter initializing 
-    if (defined(@{$cfg->{dynamic_secondary_parameters_index}})){
+    if (@{$cfg->{dynamic_secondary_parameters_index}}){
       print FHCOMMON_BLOCK        "\n\n\n /* Defining dynamic secondary paramters */\n"; 
       foreach $parameter (@{$cfg->{dynamic_secondary_parameters_index}}){
           print FHCOMMON_BLOCK          "double $parameter".&fetch_padding($parameter, $cfg->{parameters_length})."= 0.0;\n";     
@@ -2283,8 +2474,8 @@ sub dump_matlab
       print FHCOMMON_BLOCK        "\n\n\n/* Defining infusion rates */\n"; 
       $m_common_block .= "\n\n\n% Defining infusion rates \n";
       foreach $name (@{$cfg->{input_rates_index}}){
-      print FHCOMMON_BLOCK      "$name".&fetch_padding($name, $cfg->{parameters_length})."= u[$counter]; \n";     
-      $m_common_block .=        "$name".&fetch_padding($name, $cfg->{parameters_length})."= u(".($counter+1)."); \n";     
+        print FHCOMMON_BLOCK      "$name".&fetch_padding($name, $cfg->{parameters_length})."= u[$counter]; \n";     
+        $m_common_block .=        "$name".&fetch_padding($name, $cfg->{parameters_length})."= u(".($counter+1)."); \n";     
       $counter = $counter + 1;
       }
     }
@@ -2306,7 +2497,7 @@ sub dump_matlab
     }
 
     # static secondary parameter initializing 
-    if (defined(@{$cfg->{static_secondary_parameters_index}})){
+    if ((@{$cfg->{static_secondary_parameters_index}})){
       print FHCOMMON_BLOCK        "\n\n\n /* Defining static secondary paramters */\n"; 
       print FHCOMMON_BLOCK &extract_conditional($cfg, 'not defined', 'C');
       $m_common_block .= "\n\n\n% Defining static secondary parameters\n";
@@ -2314,10 +2505,10 @@ sub dump_matlab
           # we have to remap the covariate parameters so they take on the
           # initial condition (SIMINT_CVIC_CVNAME) instead of the timeseries
           # CVNAME
-          $tmp_text  = "$parameter".&fetch_padding($parameter, $cfg->{parameters_length})."=".&apply_format($cfg->{static_secondary_parameters}->{$parameter}, 'C')."; \n";     
+          $tmp_text  = "$parameter".&fetch_padding($parameter, $cfg->{parameters_length})."=".&apply_format($cfg, $cfg->{static_secondary_parameters}->{$parameter}, 'C')."; \n";     
           $tmp_text .= &extract_conditional($cfg, $parameter, 'C');
           print FHCOMMON_BLOCK &remap_namespace($tmp_text, $cv_namespace_map);
-          $tmp_text  = "$parameter".&fetch_padding($parameter, $cfg->{parameters_length})."=".&apply_format($cfg->{static_secondary_parameters}->{$parameter}, 'matlab')."; \n";     
+          $tmp_text  = "$parameter".&fetch_padding($parameter, $cfg->{parameters_length})."=".&apply_format($cfg, $cfg->{static_secondary_parameters}->{$parameter}, 'matlab')."; \n";     
           $tmp_text .= &extract_conditional($cfg, $parameter, 'matlab')."\n";
           $m_common_block  .=   &remap_namespace($tmp_text, $cv_namespace_map); 
       }
@@ -2334,17 +2525,17 @@ sub dump_matlab
     }
 
     # dynamic secondary parameter initializing 
-    if (defined(@{$cfg->{dynamic_secondary_parameters_index}})){
+    if ((@{$cfg->{dynamic_secondary_parameters_index}})){
       print FHCOMMON_BLOCK        "\n\n\n /* Defining dynamic secondary paramters */\n"; 
       print FHCOMMON_BLOCK &extract_conditional($cfg, 'not defined', 'C');
       $m_common_block .=    "\n\n\n% Defining dynamic secondary paramters \n"; 
       $m_common_block .=  &extract_conditional($cfg, 'not defined', 'matlab')."\n";
 
       foreach $parameter (@{$cfg->{dynamic_secondary_parameters_index}}){
-          print FHCOMMON_BLOCK          "$parameter".&fetch_padding($parameter, $cfg->{parameters_length})."= ".&apply_format($cfg->{dynamic_secondary_parameters}->{$parameter}, 'C').";\n";     
+          print FHCOMMON_BLOCK          "$parameter".&fetch_padding($parameter, $cfg->{parameters_length})."= ".&apply_format($cfg, $cfg->{dynamic_secondary_parameters}->{$parameter}, 'C').";\n";     
           print FHCOMMON_BLOCK &extract_conditional($cfg, $parameter, 'C');
 
-          $m_common_block .=  "$parameter".&fetch_padding($parameter, $cfg->{parameters_length})."= ".&apply_format($cfg->{dynamic_secondary_parameters}->{$parameter}, 'matlab').";\n";     
+          $m_common_block .=  "$parameter".&fetch_padding($parameter, $cfg->{parameters_length})."= ".&apply_format($cfg, $cfg->{dynamic_secondary_parameters}->{$parameter}, 'matlab').";\n";     
           $m_common_block .=  &extract_conditional($cfg, $parameter, 'matlab')."\n";
 
       }
@@ -2354,8 +2545,8 @@ sub dump_matlab
     foreach $species (@{$cfg->{species_index}}){
 
       # padding production and consumption terms to make the output pretty
-      my $production_rates  = undef;
-      my $consumption_rates = undef;
+      @{$production_rates}  = ();
+      @{$consumption_rates} = ();
       $counter = 0;
       foreach $term (@{$cfg->{species}->{$species}->{production}}){
         #$cfg->{species}->{$species}->{production}->[$counter] = $term.&fetch_padding($term, $cfg->{term_length});
@@ -2379,30 +2570,30 @@ sub dump_matlab
       #
       # only dumping production terms if they exist
       #
-      if(defined(@{$production_rates})){
-        print FHODES &apply_format(join(' + ', @{$production_rates}), 'C');
-        $m_odes .=   &apply_format(join(' + ', @{$production_rates}), 'matlab');
+      if((@{$production_rates})){
+        print FHODES &apply_format($cfg, join(' + ', @{$production_rates}), 'C');
+        $m_odes .=   &apply_format($cfg, join(' + ', @{$production_rates}), 'matlab');
       }
 
       #
       # only dumping consumption terms if they exist
       #
-      if(defined(@{$consumption_rates})){
+      if((@{$consumption_rates})){
         # if there were production terms, we wrap to the next line
         if(scalar(@{$production_rates}) > 0){
              print FHODES "\n".&fetch_padding('', ($cfg->{species_length}+1));
         $m_odes .=   " ... \n".&fetch_padding('', ($cfg->{species_length}+1));
         }
         print FHODES " - ";
-        print FHODES &apply_format(join(' - ', @{$consumption_rates}), 'C');
+        print FHODES &apply_format($cfg, join(' - ', @{$consumption_rates}), 'C');
         $m_odes .=   " - ";
-        $m_odes .=   &apply_format(join(' - ', @{$consumption_rates}), 'matlab');
+        $m_odes .=   &apply_format($cfg, join(' - ', @{$consumption_rates}), 'matlab');
       }
 
       #
       # only dumping the ode terms if they exist
       #
-      if(defined(@{$cfg->{species}->{$species}->{odes}})){
+      if((@{$cfg->{species}->{$species}->{odes}})){
 
         # wrapping to the next line if production or consumption terms have been specified
         if((scalar(@{$cfg->{species}->{$species}->{production}}) > 0) or 
@@ -2410,8 +2601,8 @@ sub dump_matlab
                 print FHODES "\n".&fetch_padding('+ ', ($cfg->{species_length}+1))."+ ";
            $m_odes .=   " ... \n".&fetch_padding('+ ', ($cfg->{species_length}+1))."+ ";
          }
-         print FHODES &apply_format(join(' + ', @{$cfg->{species}->{$species}->{odes}}), 'C');
-         $m_odes .=   &apply_format(join(' + ', @{$cfg->{species}->{$species}->{odes}}), 'matlab');
+         print FHODES &apply_format($cfg, join(' + ', @{$cfg->{species}->{$species}->{odes}}), 'C');
+         $m_odes .=   &apply_format($cfg, join(' + ', @{$cfg->{species}->{$species}->{odes}}), 'matlab');
        }
 
       # ending the definition
@@ -2431,8 +2622,8 @@ sub dump_matlab
     # dumping output assignments
     $counter = 0;
     foreach $output (@{$cfg->{outputs_index}}){
-      print FHOUTPUTS    " y[".int($counter  )."] =".&apply_format($cfg->{outputs}->{$output}, 'C').";\n";     
-      $m_outputs .=      " y(SIMINT_TIMEIDX,".int($counter+1).") = ".&apply_format($cfg->{outputs}->{$output}, 'matlab').";\n";     
+      print FHOUTPUTS    " y[".int($counter  )."] =".&apply_format($cfg, $cfg->{outputs}->{$output}, 'C').";\n";     
+      $m_outputs .=      " y(SIMINT_TIMEIDX,".int($counter+1).") = ".&apply_format($cfg, $cfg->{outputs}->{$output}, 'matlab').";\n";     
       $counter = $counter+1;
     }
 
@@ -2557,11 +2748,18 @@ ssSetNumPWork(         S, 0);
       $counter = $counter+1;
     }
 
-    $counter = 1;
-    foreach $name  (@{$cfg->{iiv_index}}){
-      print FHFETCH_SYSINFO  " m.iivs.$name".&fetch_padding($name, $cfg->{parameters_length})."= $counter; \n";     
-      $counter = $counter+1;
+   # if there are IIV terms we dump the indices
+   if(keys(%{$cfg->{iiv}})){
+    foreach $set_id (keys %{$cfg->{iiv_index}}){
+      $counter = 1;
+      foreach $name  (@{$cfg->{iiv_index}->{$set_id}}){
+        #print FHFETCH_SYSINFO  " m.iivs.$name".&fetch_padding($name, $cfg->{parameters_length})."= $counter; \n";     
+        print FHFETCH_SYSINFO  " m.iiv.sets.$set_id.$name".&fetch_padding($name, $cfg->{parameters_length})."= $counter; \n";     
+        $counter = $counter+1;
+      }
     }
+    print FHFETCH_SYSINFO  " m.iivs = m.iiv.sets.default; \n";
+   }
 
 
     print FHFETCH_SYSINFO  "\n\n\n %mapping output indices\n";
@@ -2607,20 +2805,20 @@ ssSetNumPWork(         S, 0);
       print FHFETCH_SYSINFO  "\n\n% Defining infusion rates\n"; 
       print FHFETCH_SYSINFO   "inputs.infusion_rate_names = [{'".join("'}, {'", @{$cfg->{input_rates_index}})."'}];\n";
       foreach $name (@{$cfg->{input_rates_index}}){
-      print FHFETCH_SYSINFO   "inputs.infusion_rates.$name.times.values  =  $cfg->{input_rates}->{$name}->{times}->{values};\n";
-      print FHFETCH_SYSINFO   "inputs.infusion_rates.$name.times.scale   = '$cfg->{input_rates}->{$name}->{times}->{scale}';\n";
-      print FHFETCH_SYSINFO   "inputs.infusion_rates.$name.times.units   = '$cfg->{input_rates}->{$name}->{times}->{units}';\n";
+        print FHFETCH_SYSINFO   "inputs.infusion_rates.$name.times.values  =  $cfg->{input_rates}->{$name}->{times}->{values};\n";
+        print FHFETCH_SYSINFO   "inputs.infusion_rates.$name.times.scale   = '$cfg->{input_rates}->{$name}->{times}->{scale}';\n";
+        print FHFETCH_SYSINFO   "inputs.infusion_rates.$name.times.units   = '$cfg->{input_rates}->{$name}->{times}->{units}';\n";
 
-      print FHFETCH_SYSINFO   "inputs.infusion_rates.$name.levels.values = $cfg->{input_rates}->{$name}->{levels}->{values};\n";
-      print FHFETCH_SYSINFO   "inputs.infusion_rates.$name.levels.scale  = '$cfg->{input_rates}->{$name}->{levels}->{scale}';\n";
-      print FHFETCH_SYSINFO   "inputs.infusion_rates.$name.levels.units  = '$cfg->{input_rates}->{$name}->{levels}->{units}';\n";
+        print FHFETCH_SYSINFO   "inputs.infusion_rates.$name.levels.values = $cfg->{input_rates}->{$name}->{levels}->{values};\n";
+        print FHFETCH_SYSINFO   "inputs.infusion_rates.$name.levels.scale  = '$cfg->{input_rates}->{$name}->{levels}->{scale}';\n";
+        print FHFETCH_SYSINFO   "inputs.infusion_rates.$name.levels.units  = '$cfg->{input_rates}->{$name}->{levels}->{units}';\n";
 
       }
     }
     else{ print FHFETCH_SYSINFO  "\n\n% No infusion rates were specified\n"; }
 
     # defining time varying inputs
-    if(defined(@{$cfg->{covariates_index}})){
+    if((@{$cfg->{covariates_index}})){
       print FHFETCH_SYSINFO  "\n\n% Defining the covariates \n"; 
       print FHFETCH_SYSINFO   "inputs.covariate_names = [{'".join("'}, {'", @{$cfg->{covariates_index}})."'}];\n";
       foreach $name (@{$cfg->{covariates_index}}){
@@ -2638,17 +2836,22 @@ ssSetNumPWork(         S, 0);
     # dumping the miscellaneous options
     if(keys %{$cfg->{options}}){
       foreach $name (keys %{$cfg->{options}}){
-         print FHFETCH_SYSINFO   "misc.$name = '$cfg->{options}->{$name}' ;\n";
+         print FHFETCH_SYSINFO   "misc.$name = '".&apply_format($cfg, $cfg->{options}->{$name}, 'matlab')."' ;\n";
       }
     }
 
     foreach $parameter (@{$cfg->{static_secondary_parameters_index}}){
-      print FHFETCH_SYSINFO "misc.static_secondary_parameters.$parameter".&fetch_padding($parameter, $cfg->{parameters_length})."= '".&apply_format($cfg->{static_secondary_parameters}->{$parameter}, 'matlab')."';\n";     
+      print FHFETCH_SYSINFO "misc.static_secondary_parameters.$parameter".&fetch_padding($parameter, $cfg->{parameters_length})."= '".&apply_format($cfg, $cfg->{static_secondary_parameters}->{$parameter}, 'matlab')."';\n";     
       if(defined($cfg->{if_conditional}->{$parameter})){
         print FHFETCH_SYSINFO "misc.static_secondary_parameters_conditional.$parameter = '".&extract_conditional($cfg, $parameter, 'matlab')."';\n";
       }
-      
+    }
 
+    foreach $parameter (@{$cfg->{dynamic_secondary_parameters_index}}){
+      print FHFETCH_SYSINFO "misc.dynamic_secondary_parameters.$parameter".&fetch_padding($parameter, $cfg->{parameters_length})."= '".&apply_format($cfg, $cfg->{dynamic_secondary_parameters}->{$parameter}, 'matlab')."';\n";     
+      if(defined($cfg->{if_conditional}->{$parameter})){
+        print FHFETCH_SYSINFO "misc.dynamic_secondary_parameters_conditional.$parameter = '".&extract_conditional($cfg, $parameter, 'matlab')."';\n";
+      }
     }
 
 
@@ -2665,7 +2868,7 @@ ssSetNumPWork(         S, 0);
     if(keys %{$cfg->{initial_conditions}}){
       print FHFETCH_SYSINFO "\n\n\n%Dumping non zero initial condition information\n";
       foreach $species (keys(%{$cfg->{initial_conditions}})){
-        print FHFETCH_SYSINFO "initial_conditions.$species".&fetch_padding($species, $cfg->{species_length})."= '".&apply_format($cfg->{initial_conditions}->{$species}, 'matlab')."'; \n";     
+        print FHFETCH_SYSINFO "initial_conditions.$species".&fetch_padding($species, $cfg->{species_length})."= '".&apply_format($cfg, $cfg->{initial_conditions}->{$species}, 'matlab')."'; \n";     
       }
     }
 
@@ -2678,7 +2881,7 @@ ssSetNumPWork(         S, 0);
       }
     }
 
-    if(($cfg->{data}->{headers}->{values})){
+    if((@{$cfg->{data}->{headers}->{values}})){
       print FHFETCH_SYSINFO "\n\n\n%loading the data file \n";
       print FHFETCH_SYSINFO "data.data_file.name ".&fetch_padding("name"  , $cfg->{parameters_length})." = ";
       print FHFETCH_SYSINFO "'".$cfg->{data}->{file}."';\n";
@@ -2715,51 +2918,118 @@ ssSetNumPWork(         S, 0);
     
     print FHFETCH_SYSINFO "\n\n\n%Defining IIV information\n";     
 
-    if(($cfg->{iiv_index})){
-      foreach $name     (@{$cfg->{iiv_index}}){
-        print FHFETCH_SYSINFO "iiv.iivs.$name.parameters ".&fetch_padding($name, $cfg->{parameters_length})." =['{".join("}', '{", @{$cfg->{iiv}->{iivs}->{$name}->{parameters}})."}'];\n";
-      }
-      foreach $name     (keys(%{$cfg->{iiv}->{parameters}})){
-        print FHFETCH_SYSINFO "iiv.parameters.$name.iiv_name    ".&fetch_padding($name, $cfg->{parameters_length})." = '".$cfg->{iiv}->{parameters}->{$name}->{iiv_name}."';\n";
-        print FHFETCH_SYSINFO "iiv.parameters.$name.distribution".&fetch_padding($name, $cfg->{parameters_length})." = '".$cfg->{iiv}->{parameters}->{$name}->{distribution}."';\n";
-      }
-
-      print FHFETCH_SYSINFO "iiv.values = zeros(".scalar(@{$cfg->{iiv_index}}).",".scalar(@{$cfg->{iiv_index}}).");\n";
-      $counter = 1;
-      foreach $name     (@{$cfg->{iiv_index}}){
-        $counter2 = 1;
-        foreach $name2    (@{$cfg->{iiv_index}}){
-          if(defined($cfg->{iiv}->{vcv}->{$name}->{$name2})){
-            print FHFETCH_SYSINFO "iiv.values($counter, $counter2) =  $cfg->{iiv}->{vcv}->{$name}->{$name2};\n";
-          }
-          $counter2 = $counter2+1;
+   if(keys(%{$cfg->{iiv}})){
+     # If we have IIV information we dump it based on the 
+     # parameter sets. There should be at least a 'default' 
+     # set of parameters (set_id)
+     foreach $set_id (keys %{$cfg->{iiv_index}}){
+       if(($cfg->{iiv_index}->{$set_id})){
+         foreach $name     (@{$cfg->{iiv_index}->{$set_id}}){
+           print FHFETCH_SYSINFO "iiv.sets.$set_id.iivs.$name.parameters ".&fetch_padding($name, $cfg->{parameters_length})." =['{".join("}', '{", @{$cfg->{iiv}->{$set_id}->{iivs}->{$name}->{parameters}})."}'];\n";
+         }
+         foreach $name     (keys(%{$cfg->{iiv}->{$set_id}->{parameters}})){
+           print FHFETCH_SYSINFO "iiv.sets.$set_id.parameters.$name.iiv_name    ".&fetch_padding($name, $cfg->{parameters_length})." = '".$cfg->{iiv}->{$set_id}->{parameters}->{$name}->{iiv_name}."';\n";
+           print FHFETCH_SYSINFO "iiv.sets.$set_id.parameters.$name.distribution".&fetch_padding($name, $cfg->{parameters_length})." = '".$cfg->{iiv}->{$set_id}->{parameters}->{$name}->{distribution}."';\n";
+           print FHFETCH_SYSINFO "iiv.sets.$set_id.parameters.$name.equation    ".&fetch_padding($name, $cfg->{parameters_length})." = '".&make_iiv($cfg, $name, 'matlab', $set_id)."';\n";
+         }
+       
+         print FHFETCH_SYSINFO "iiv.sets.$set_id.values = zeros(".scalar(@{$cfg->{iiv_index}->{$set_id}}).",".scalar(@{$cfg->{iiv_index}->{$set_id}}).");\n";
+         $counter = 1;
+         foreach $name     (@{$cfg->{iiv_index}->{$set_id}}){
+           $counter2 = 1;
+           foreach $name2    (@{$cfg->{iiv_index}->{$set_id}}){
+             if(defined($cfg->{iiv}->{$set_id}->{vcv}->{$name}->{$name2})){
+               print FHFETCH_SYSINFO "iiv.sets.$set_id.values($counter, $counter2) =  $cfg->{iiv}->{$set_id}->{vcv}->{$name}->{$name2};\n";
+             }
+             $counter2 = $counter2+1;
+           }
+         $counter = $counter+1;
+         }
+       
+         print FHFETCH_SYSINFO "% Checking to make sure the variance/covariance  \n";
+         print FHFETCH_SYSINFO "% information makes sense \n";
+         print FHFETCH_SYSINFO "if(min(eig((iiv.sets.$set_id.values + iiv.sets.$set_id.values')./2)) <=0)\n";
+         print FHFETCH_SYSINFO "  disp('Warning: IIV variance/covariance matrix is not')\n";
+         print FHFETCH_SYSINFO "  disp('positive semi-definiate, so it will not be possible')\n";
+         print FHFETCH_SYSINFO "  disp('to perform stochastic simulations with interaction')\n";
+         print FHFETCH_SYSINFO "  disp('for Parmaeter set $set_id')\n";
+         print FHFETCH_SYSINFO "end\n";
+       
         }
-      $counter = $counter+1;
       }
-
-      print FHFETCH_SYSINFO "% Checking to make sure the variance/covariance  \n";
-      print FHFETCH_SYSINFO "% information makes sense \n";
-      print FHFETCH_SYSINFO "if(min(eig((iiv.values + iiv.values')./2)) <=0)\n";
-      print FHFETCH_SYSINFO "  disp('Warning: IIV variance/covariance matrix is not')\n";
-      print FHFETCH_SYSINFO "  disp('positive semi-definiate, so it will not be possible')\n";
-      print FHFETCH_SYSINFO "  disp('to perform stochastic simulations with interaction.')\n";
-      print FHFETCH_SYSINFO "end\n";
-
+      print FHFETCH_SYSINFO "iiv.current_set = 'default'                  ;\n";
+      print FHFETCH_SYSINFO "iiv.iivs        = iiv.sets.default.iivs      ;\n";
+      print FHFETCH_SYSINFO "iiv.parameters  = iiv.sets.default.parameters;\n";
+      print FHFETCH_SYSINFO "iiv.values      = iiv.sets.default.values    ;\n";
     }
     else{
-      print FHFETCH_SYSINFO "iiv = struct(); \n"; }
+      print FHFETCH_SYSINFO "iiv      = struct(); \n"; }
+
+    print FHFETCH_SYSINFO "\n\n\n%Defining variance equations\n";     
+
+
+
+  if ((keys(%{$cfg->{variance}->{equations}}))){
+     foreach $name  (keys(%{$cfg->{variance}->{equations}})){
+        print FHFETCH_SYSINFO "ve.$name = '".&apply_format($cfg, $cfg->{variance}->{equations}->{$name},'matlab')."';\n";
+     }
+    }
+  else{
+    print FHFETCH_SYSINFO "% No variance equations defined\n";
+    print FHFETCH_SYSINFO "% See: <VE>\n";
+    print FHFETCH_SYSINFO "ve      = struct(); \n"; }
 
 
 $tmp_file_chunk    = "\n\n\n% Creating the cfg data structures
 % basically pulling it all together
-cfg.parameters = p;
-cfg.options.mi = m; 
-cfg.iiv        = iiv;
-cfg.data       = data; 
+cfg.parameters      = p;
+cfg.options.mi      = m; 
+cfg.iiv             = iiv;
+cfg.ve              = ve; 
+cfg.data.default    = data; 
 cfg.options.verbose = 'yes'; %defaulting to displaying information
 if(exist('inputs', 'var'))
   cfg.options.inputs = inputs;
 end
+
+% default simulation options:
+cfg.options.simulation_options.model_name             = 'ode_simulation';
+cfg.options.simulation_options.default_simopts.Solver = 'ode23s';
+cfg.options.simulation_options.output_times           = linspace(0,10,1000)';
+cfg.options.simulation_options.integrate_with                  = 'm-file';
+cfg.options.simulation_options.include_important_output_times  = 'yes';
+
+% hidden option to control printing in simulations
+cfg.options.simulation_options.logging  = 'yes';
+
+cfg.options.logging.enabled   = 'yes';
+cfg.options.logging.file      = sprintf('transient%subiquity_log.txt', filesep);
+cfg.options.logging.timestamp = 'yes';
+cfg.options.logging.ts_str    = 'yyyy-mm-dd HH:MM:SS';
+
+
+%Defining the default stochastic options
+cfg.options.stochastic.nsub    = 100;
+cfg.options.stochastic.seed    = 8675309;
+cfg.options.stochastic.ci      = 95;
+cfg.options.stochastic.ponly   = false ;
+
+% By default all states and outputs will be included
+cfg.options.stochastic.states  = fieldnames(cfg.options.mi.states);
+cfg.options.stochastic.outputs = fieldnames(cfg.options.mi.outputs);
+
+% Defining an empty cohort data structure:
+cfg.cohorts                  = struct();
+
+% Defining the default estimation options
+cfg.estimation.observation_function           = 'system_od_general';
+cfg.estimation.effort                         = 1;
+cfg.estimation.optimizer                      = 'fminsearch';
+cfg.estimation.monitor.status_function        = 'estimation_status';
+cfg.estimation.monitor.exit_when_stable       = 'no';
+cfg.estimation.monitor.iteration_history      = 100;
+cfg.estimation.monitor.slope_tolerance        = 0.001;
+cfg = system_select_set(cfg, 'default');
 
 if(exist('misc', 'var'))
   cfg.options.misc = misc;
@@ -2915,7 +3185,7 @@ my $simulation_driver_ph = {
 my $simulation_driver_template = "clear; close all;
 % compiling the system to make sure the 
 % latest changes have been committed. 
-% build_system
+build_system
 
 % setting up paths
 provision_workspace;
@@ -2925,13 +3195,11 @@ cfg  = auto_fetch_system_information();
 
 <PSETS>
 % selecting the default parameter set:
-cfg  = select_set(cfg, 'default');
+cfg  = system_select_set(cfg, 'default');
 
-%cfg.estimation.observation_function = 'observation_details';
-%cfg.estimation.objective_type       = 'wls';
 
 % fetching the parameter values
-parameters = cfg.parameters.values;
+parameters = system_fetch_parameters(cfg);
 
 % The previous statement sets 'parameters' to the values 
 % in the currently selected parameter set. To overwrite 
@@ -2939,7 +3207,7 @@ parameters = cfg.parameters.values;
 % and replace PNAME with the name of the parameter 
 % and VALUE with the desired value:
 %
-% parameters(cfg.options.mi.parameters.PNAME) = VALUE;
+% parameters = system_set_parameter(cfg, parameters, 'PNAME', VALUE);
 
 <BOLUS>
 
@@ -2950,16 +3218,15 @@ parameters = cfg.parameters.values;
 <OUTPUT_TIMES>
 
 % Options to control simulation execution and outputs are defined here.
+% To see a list of options type:
+% help system_set_option
 %
+% Here are a few useful options:
 % To force matlab to use simulink uncomment the following line:
-% cfg.options.simulation_options.integrate_with = 'simulink';
+% cfg = system_set_option(cfg, 'simulation', 'integrate_with', 'simulink');
 %
-% To include things like bolus times in the sampled output uncomment
-% the following line:
-% cfg.options.simulation_options.include_important_output_times = 'yes';
-%
-% To change the ODE sovler that is used:
-% cfg.options.simulation_options.default_simopts.Solver = 'ode23s';
+% To change the ODE solver that is used:
+% cfg = system_set_option(cfg, 'solver', 'solver', 'ode23s');
 
 
 % -----------------------------------------------------------------------
@@ -2987,8 +3254,7 @@ prepare_figure('present');
 
 % -----------------------------------------------------------------------
 % Stochastic Simulation
-% options.nsub  = 10;
-% predictions = simulate_subjects(parameters, options, cfg)
+% predictions = simulate_subjects(parameters, cfg)
 % mc = fetch_color_codes;
 
 <PLOT_OUTPUT_STOCHASTIC>
@@ -3000,14 +3266,14 @@ prepare_figure('present');
     # BOLUS INPUTS 
     # 
     if(keys %{$cfg->{bolus_inputs}}){
-      # defining the bolus times
-      $simulation_driver_ph->{BOLUS} .= "% Setting up bolus events\n"; 
-      $simulation_driver_ph->{BOLUS} .= "cfg.options.inputs.bolus.times.values".&fetch_padding("times", 20)."= $cfg->{bolus_inputs}->{times}->{values}; \% $cfg->{bolus_inputs}->{times}->{units} \n";
-
-      # now dumping bolus information for each state specified
-      $counter = 2;
+      $simulation_driver_ph->{BOLUS} .= "% %cfg=system_zero_inputs(cfg);\n";
       foreach $species (keys %{$cfg->{bolus_inputs}->{entries}}){
-        $simulation_driver_ph->{BOLUS} .= "cfg.options.inputs.bolus.species.$species.values".&fetch_padding("species.$species", 20)."= $cfg->{bolus_inputs}->{entries}->{$species}->{values}; \% $cfg->{bolus_inputs}->{entries}->{$species}->{units} \n";
+        $simulation_driver_ph->{BOLUS} .= "% cfg=system_set_bolus(cfg, '$species', ...  % \n";
+        $simulation_driver_ph->{BOLUS} .= "%                            $cfg->{bolus_inputs}->{times}->{values}, ...  % $cfg->{bolus_inputs}->{times}->{units}\n";
+        $simulation_driver_ph->{BOLUS} .= "%                            $cfg->{bolus_inputs}->{entries}->{$species}->{values});     % $cfg->{bolus_inputs}->{entries}->{$species}->{units} \n \n"; 
+        $ae->{BOLUS}.= "cohort.inputs.bolus.$species.TIME".&fetch_padding($species, 19)."= [];\n";
+        $ae->{BOLUS}.= "cohort.inputs.bolus.$species.AMT ".&fetch_padding($species, 19)."= [];\n";
+
         $counter = $counter + 1;
       }
     }
@@ -3019,10 +3285,11 @@ prepare_figure('present');
     if(keys %{$cfg->{input_rates}}){
       $simulation_driver_ph->{INFUSION_RATES} .= "% Defining infusion rates\n"; 
       foreach $name (@{$cfg->{input_rates_index}}){
-        $simulation_driver_ph->{INFUSION_RATES} .="cfg.options.inputs.infusion_rates.$name.times.values  ".&fetch_padding("$name.times", 10);
-        $simulation_driver_ph->{INFUSION_RATES} .=" = $cfg->{input_rates}->{$name}->{times}->{values} ;% $cfg->{input_rates}->{$name}->{times}->{units} \n";
-        $simulation_driver_ph->{INFUSION_RATES} .="cfg.options.inputs.infusion_rates.$name.levels.values ".&fetch_padding("$name.levels", 10);
-        $simulation_driver_ph->{INFUSION_RATES} .=" = $cfg->{input_rates}->{$name}->{levels}->{values} ;% $cfg->{input_rates}->{$name}->{levels}->{units} \n";
+        $simulation_driver_ph->{INFUSION_RATES} .="%  cfg = system_set_rate(cfg, '$name', ...\n";
+        $simulation_driver_ph->{INFUSION_RATES} .="%                              $cfg->{input_rates}->{$name}->{times}->{values}, ... % $cfg->{input_rates}->{$name}->{times}->{units}  \n";
+        $simulation_driver_ph->{INFUSION_RATES} .="%                              $cfg->{input_rates}->{$name}->{levels}->{values});   % $cfg->{input_rates}->{$name}->{levels}->{units} \n";
+        $ae->{INFUSION_RATES}.= "cohort.inputs.infusion_rates.$name.TIME".&fetch_padding($name,   10)."= [];\n";
+        $ae->{INFUSION_RATES}.= "cohort.inputs.infusion_rates.$name.AMT ".&fetch_padding($name,   10)."= [];\n";
       }
     }
     else{ $simulation_driver_ph->{INFUSION_RATES} .= "% No infusion rates defined\n"; }
@@ -3032,14 +3299,17 @@ prepare_figure('present');
     if(keys %{$cfg->{covariates}}){
       $simulation_driver_ph->{COVARIATES} .= "% Covariates can change with parameter sets. What's shown here \n";
       $simulation_driver_ph->{COVARIATES} .= "% are the default values. Uncomment these to overwrite the values \n";
-      $simulation_driver_ph->{COVARIATES} .= "% specified by the select_set command above. \n";
+      $simulation_driver_ph->{COVARIATES} .= "% specified by the system_select_set command above. \n";
       foreach $name (@{$cfg->{covariates_index}}){
-      $simulation_driver_ph->{COVARIATES} .= "% Covariate $name \n";
-      $simulation_driver_ph->{COVARIATES} .= "% Type:       $cfg->{covariates}->{$name}->{cv_type}  \n";
-      $simulation_driver_ph->{COVARIATES} .= "% Time units: $cfg->{covariates}->{$name}->{times}->{units}\n";
-      $simulation_driver_ph->{COVARIATES} .= "% Cov units:  $cfg->{covariates}->{$name}->{values}->{units}\n";
-      $simulation_driver_ph->{COVARIATES} .= "% cfg.options.inputs.covariates.$name.times  = $cfg->{covariates}->{$name}->{parameter_sets}->{default}->{times};\n";
-      $simulation_driver_ph->{COVARIATES} .= "% cfg.options.inputs.covariates.$name.values = $cfg->{covariates}->{$name}->{parameter_sets}->{default}->{values};\n\n";
+        $simulation_driver_ph->{COVARIATES} .= "% Covariate $name \n";
+        $simulation_driver_ph->{COVARIATES} .= "% Type:       $cfg->{covariates}->{$name}->{cv_type}  \n";
+        $simulation_driver_ph->{COVARIATES} .= "% Time units: $cfg->{covariates}->{$name}->{times}->{units}\n";
+        $simulation_driver_ph->{COVARIATES} .= "% Cov units:  $cfg->{covariates}->{$name}->{values}->{units}\n";
+        $simulation_driver_ph->{COVARIATES} .= "% cfg = system_set_covariate(cfg, '$name', ... \n";
+        $simulation_driver_ph->{COVARIATES} .= "%                                  $cfg->{covariates}->{$name}->{parameter_sets}->{default}->{times}, ...\n";
+        $simulation_driver_ph->{COVARIATES} .= "%                                  $cfg->{covariates}->{$name}->{parameter_sets}->{default}->{values});\n\n";
+        $ae->{COVARIATES}.= "cohort.inputs.covariates.$name.TIME".&fetch_padding($name,   14)."= [];\n";
+        $ae->{COVARIATES}.= "cohort.inputs.covariates.$name.AMT ".&fetch_padding($name,   14)."= [];\n";
       }
     }
     else{ $simulation_driver_ph->{COVARIATES} .= "% No covariates found\n"; }
@@ -3049,11 +3319,15 @@ prepare_figure('present');
     # Parameter sets
     # 
     if(keys %{$cfg->{parameter_sets}}){
-      $simulation_driver_ph->{PSETS} .= "% set name".fetch_padding("set name", 10)." | Description\n";
+      $simulation_driver_ph->{PSETS} .= "% set name".fetch_padding("set name", 25)." | Description\n";
       $simulation_driver_ph->{PSETS} .= "% -------------------------------------------------------\n";
       foreach $name (@{$cfg->{parameter_sets_index}}){
-        $simulation_driver_ph->{PSETS} .= "% $name".fetch_padding($name, 10)." | $cfg->{parameter_sets}->{$name}->{name}\n";
+        $simulation_driver_ph->{PSETS} .= "% $name".fetch_padding($name, 25)." | $cfg->{parameter_sets}->{$name}->{name}\n";
       }
+
+      # this block is the same in simulation driver and the analysis
+      # estimation template 
+      $ae->{PSETS} = $simulation_driver_ph->{PSETS}
     }
 
     # 
@@ -3061,9 +3335,11 @@ prepare_figure('present');
     # 
     $simulation_driver_ph->{OUTPUT_TIMES} .= "\n% Evaluate system at the following output times\n";
     if(defined($cfg->{options}->{output_times})){
-       $simulation_driver_ph->{OUTPUT_TIMES} .= "cfg.options.simulation_options.output_times = $cfg->{options}->{output_times}';\n";}
+       $ae->{OUTPUT_TIMES} = &apply_format($cfg, $cfg->{options}->{output_times}, 'matlab')."'";
+       $simulation_driver_ph->{OUTPUT_TIMES} .= "cfg = system_set_option(cfg, 'simulation', 'output_times', ".&apply_format($cfg, $cfg->{options}->{output_times}, 'matlab')."');\n";}
     else{
-       $simulation_driver_ph->{OUTPUT_TIMES} .= "cfg.options.simulation_options.output_times = linspace(0,100,1000)';\n";}
+       $ae->{OUTPUT_TIMES} = 'linspace(0,100,1000)\'';
+       $simulation_driver_ph->{OUTPUT_TIMES} .= "cfg = system_set_option(cfg, 'simulation', 'output_times', linspace(0,100,1000)');\n";}
 
     if(defined($cfg->{outputs_index})){
      $simulation_driver_ph->{PLOT_OUTPUT}.="% You can access different parts of the\n% simulation using the som variable.\n";
@@ -3115,9 +3391,14 @@ prepare_figure('present');
     close(FHSIMM);                
 
     # JMH update the estimation script to reflect changes
-    #open(FHESTIMATION,            '>', &ftf($cfg, $cfg->{files}->{analysis_estimation}));
-    #print FHESTIMATION &fetch_matlab_auto_analysis_estimation();
-    #close(FHESTIMATION);
+
+    foreach $field     (keys(%{$ae})){
+        $ae_template =~ s#<$field>#$ae->{$field}#g;
+    }
+
+    open(FHESTIMATION,            '>', &ftf($cfg, $cfg->{files}->{analysis_estimation}));
+    print FHESTIMATION $ae_template;
+    close(FHESTIMATION);
 
 }
 
@@ -3165,7 +3446,7 @@ sub dump_potterswheel3
       $tmpstr = $entry_template->{output};
 
       # formatting to language
-      $tmpvalue =  &apply_format($cfg->{outputs}->{$name}, 'pw');
+      $tmpvalue =  &apply_format($cfg, $cfg->{outputs}->{$name}, 'pw');
 
       $tmpstr =~ s#<RHS>#$tmpvalue#; 
       $tmpstr =~ s#<OUTPUT>#$name#; 
@@ -3206,7 +3487,7 @@ sub dump_potterswheel3
      if(defined($cfg->{static_secondary_parameters}->{$name})){
        $tmpstr                       = $entry_template->{secondary_parameter};
        # formatting to language
-       $tmpvalue =  &apply_format($cfg->{static_secondary_parameters}->{$name}, 'pw');
+       $tmpvalue =  &apply_format($cfg, $cfg->{static_secondary_parameters}->{$name}, 'pw');
        $paddedstr = "'".$name."'".&fetch_padding($name, $cfg->{parameters_length});
        $tmpstr                                      =~ s#<NAME>#$paddedstr#;
        $tmpstr                                      =~ s#<VALUE>#$tmpvalue#;
@@ -3228,7 +3509,7 @@ sub dump_potterswheel3
        }
        else{
          # formatting to language
-         $tmpvalue  =  &apply_format($cfg->{dynamic_secondary_parameters}->{$name}, 'pw');
+         $tmpvalue  =  &apply_format($cfg, $cfg->{dynamic_secondary_parameters}->{$name}, 'pw');
          $tmpstr    =~ s#<VALUE>#$tmpvalue#;
        }
        $data->{secondary_parameters}                =  $data->{secondary_parameters}.$tmpstr."\n";
@@ -3250,15 +3531,15 @@ sub dump_potterswheel3
      if(defined($cfg->{species}->{$name})){
        $tmprhs = '';
        $tmpstr    = '';
-       if(defined(@{$cfg->{species}->{$name}->{production}})){
+       if((@{$cfg->{species}->{$name}->{production}})){
          # formatting to language
-         $tmprhs = $tmprhs.&apply_format(join(' + ',@{$cfg->{species}->{$name}->{production}}), 'pw');}
+         $tmprhs = $tmprhs.&apply_format($cfg, join(' + ',@{$cfg->{species}->{$name}->{production}}), 'pw');}
            
-       if(defined(@{$cfg->{species}->{$name}->{consumption}})){
+       if((@{$cfg->{species}->{$name}->{consumption}})){
           # formatting to language
-          $tmprhs = $tmprhs."-(".&apply_format(join(' + ',@{$cfg->{species}->{$name}->{consumption}}), 'pw').")";}
-       if(defined(@{$cfg->{species}->{$name}->{odes}})){
-           $tmprhs = $tmprhs."+".&apply_format(join(' + ',@{$cfg->{species}->{$name}->{odes}}), 'pw'); }
+          $tmprhs = $tmprhs."-(".&apply_format($cfg, join(' + ',@{$cfg->{species}->{$name}->{consumption}}), 'pw').")";}
+       if((@{$cfg->{species}->{$name}->{odes}})){
+           $tmprhs = $tmprhs."+".&apply_format($cfg, join(' + ',@{$cfg->{species}->{$name}->{odes}}), 'pw'); }
 
 
        # adding the line to the 'odes' hash
@@ -3273,7 +3554,7 @@ sub dump_potterswheel3
      if(defined($cfg->{initial_conditions}->{$name})){
        $tmpstr                             = $entry_template->{initial_condition};
        # language specific formatting
-       $tmpvalue                           = &apply_format($cfg->{initial_conditions}->{$name}, 'pw');
+       $tmpvalue                           = &apply_format($cfg, $cfg->{initial_conditions}->{$name}, 'pw');
        $paddedstr = "'TE_".$name."'".&fetch_padding("TE_$name", $cfg->{parameters_length});
        $tmpstr                             =~ s#<TE_STATE>#$paddedstr#;
        $paddedstr = "'".$name."'".&fetch_padding($name, $cfg->{parameters_length});
@@ -3466,7 +3747,8 @@ sub extract_elements
 
 sub apply_format
 {
- my ($string, $format) = @_;
+ my ($cfg, $string, $format) = @_;
+
 
  my $patterns;
  my $pattern;
@@ -3535,6 +3817,18 @@ sub apply_format
  $patterns->{exp}->{monolix}                    =  'exp(SIMINT_ARG_0)';
  $patterns->{exp}->{nonmem}                     =  'exp(SIMINT_ARG_0)';
  $patterns->{exp}->{rproject}                   =  'exp(SIMINT_ARG_0)';
+
+
+ $patterns->{SEQ}->{pattern}                    =  'SIMINT_SEQ[';
+ $patterns->{SEQ}->{number_arguments}           =  3;
+ $patterns->{SEQ}->{C}                          =  'NO_FUNC(SIMINT_ARG_0, SIMINT_ARG_1, SIMINT_ARG_2)';
+ $patterns->{SEQ}->{matlab}                     =  'linspace(SIMINT_ARG_0, SIMINT_ARG_1, (SIMINT_ARG_1-SIMINT_ARG_0)/SIMINT_ARG_2)';
+ $patterns->{SEQ}->{pw}                         =  'linspace(SIMINT_ARG_0, SIMINT_ARG_1, (SIMINT_ARG_1-SIMINT_ARG_0)/SIMINT_ARG_2)';
+ $patterns->{SEQ}->{bm}                         =  'NO_FUNC(SIMINT_ARG_0, SIMINT_ARG_1, SIMINT_ARG_2)';
+ $patterns->{SEQ}->{fortran}                    =  'NO_FUNC(SIMINT_ARG_0, SIMINT_ARG_1, SIMINT_ARG_2)';
+ $patterns->{SEQ}->{monolix}                    =  'linspace(SIMINT_ARG_0, SIMINT_ARG_1, (SIMINT_ARG_1-SIMINT_ARG_0)/SIMINT_ARG_2)';
+ $patterns->{SEQ}->{nonmem}                     =  'NO_FUNC(SIMINT_ARG_0, SIMINT_ARG_1, SIMINT_ARG_2)';
+ $patterns->{SEQ}->{rproject}                   =  'seq(SIMINT_ARG_0, SIMINT_ARG_1, SIMINT_ARG_2)';
 
 #$patterns->{?}->{pattern}                  =  ;# 'SIMINT_[';
 #$patterns->{?}->{number_arguments}         =  ;# 2;
@@ -3649,6 +3943,15 @@ sub apply_format
  $patterns->{NOT}->{matlab}                   =  '(!SIMINT_ARG_0)';
 
 
+ # if we're working with nonmem we need to first amtify 
+ # any states that need amtifying 
+ if($format eq 'nonmem'){
+   # so we check to see if any amtify states have been specified
+   if(scalar(keys(%{$cfg->{options}->{amtify}->{cmt_to_rel}}))>0){
+     $string = &remap_namespace($string , 
+                                $cfg->{options}->{amtify}->{cmt_to_rel});
+   }
+ }
 
  foreach $pattern (keys(%{$patterns})){
    while(index($string, $patterns->{$pattern}->{pattern})>-1){
@@ -3659,7 +3962,6 @@ sub apply_format
 
    }
  }
-
 
  return $string;
 
@@ -3692,6 +3994,35 @@ sub parse_nonmem_options
   return $cfg;
 }
 
+sub parse_amtify
+{
+  my ($cfg, $line) = @_;
+
+  my $value;
+
+  $value = $line;
+  $value =~ s#\s##g;
+
+  my ($conc, $amt, $rel);
+
+  if($line =~ m#<AMTIFY>#){
+     # Stripping off the delimiter
+     $value =~ s#<AMTIFY>##;
+     # pulling out the different components
+     if(scalar(split(';', $value)) == 3){
+       ($conc, $amt, $rel) = split(';', $value);
+       $cfg->{options}->{amtify}->{cmt_to_amt}->{$conc} = $amt;
+       $cfg->{options}->{amtify}->{cmt_to_rel}->{$conc} = "($rel)";
+     }
+     else{
+       &mywarn("AMTIFY: Unable to parse");
+       &mywarn($line); 
+       }
+  }
+  return $cfg;
+}
+
+
 sub parse_data_file
 {
   my ($cfg, $line) = @_;
@@ -3715,7 +4046,6 @@ sub parse_data_file
   }
 
 
-    #print Dumper $cfg->{data};
 
   return $cfg;
 }
@@ -3769,7 +4099,7 @@ sub update_order
 
     # if there are indices specified for the 
     # current $type then we process those
-    if(defined(%{$cfg->{index}->{$type}->{byname}})){
+    if((%{$cfg->{index}->{$type}->{byname}})){
       @new_index = ();
       @old_index = @{$cfg->{$index_string}};
 
@@ -4180,44 +4510,82 @@ sub parse_interindivudal_varability
 
     # removing any spaces
     $line =~ s#\s+##g;
+    # The default IIVSET is 'default'
+    my $IIV_SET                = 'default'; 
+    # if an alternative has been specified then we 
+    # pull it out and reduce the line to a normal iiv 
+    # call
+    if($line=~ m#^<IIVSET#){
+     #print Dumper $line;
+      $IIV_SET      = $line;
+      $IIV_SET      =~ s#<IIVSET:(\S+?):.*#$1#g; 
+      $line         =~ s#SET:$IIV_SET##g; 
+    }
+    if($line=~ m#^<IIVCORSET#){
+     #print Dumper $line;
+      $IIV_SET      = $line;
+      $IIV_SET      =~ s#<IIVCORSET:(\S+?):.*#$1#g; 
+      $line         =~ s#SET:$IIV_SET##g; 
+    }
 
     # these will be trimmed down below according to the 
     # <IIV descriptor used
-    my $IIV_NAME         = $line;
-    my $IIV_NAME2        = $line;
-    my $IIV_VALUE        = $line;
-    my $IIV_PARAMETER    = $line;
-    my $IIV_DISTRIBUTION = $line;
+    my $IIV_NAME               = $line;
+    my $IIV_NAME2              = $line;
+    my $IIV_VALUE              = $line;
+    my $IIV_PARAMETER          = $line;
+    my $IIV_PARAMETER_OTHER    = $line;
+    my $IIV_DISTRIBUTION       = $line;
 
-
-    
     # IIV parameter association
     if($line=~ m#<IIV:\S+:\S+>\S*#){
       $IIV_NAME         =~ s#<IIV:(\S+):\S+>\S*#$1#g; 
       $IIV_PARAMETER    =~ s#<IIV:\S+:\S+>(\S*)#$1#g; 
       $IIV_DISTRIBUTION =~ s#<IIV:\S+:(\S+)>\S*#$1#g; 
+      $cfg = &initialize_iiv($IIV_NAME, $cfg, $IIV_SET);
 
-      $cfg = &initialize_iiv($IIV_NAME, $cfg);
-      $cfg->{iiv}->{parameters}->{$IIV_PARAMETER}->{iiv_name}     = $IIV_NAME;
-      $cfg->{iiv}->{parameters}->{$IIV_PARAMETER}->{distribution} = $IIV_DISTRIBUTION;
-      push @{$cfg->{iiv}->{iivs}->{$IIV_NAME}->{parameters}}, $IIV_PARAMETER;
+      if($IIV_DISTRIBUTION eq 'WB'){
+         $IIV_PARAMETER_OTHER    =~ s#<IIV:\S+:\S+>(\S*)#$1#g; 
+         $IIV_PARAMETER_OTHER    =~ s#\S+;(\S+;\S+)#$1#;
+         $IIV_PARAMETER          =~ s#(\S);\S*#$1#;
+         #
+         # IIV_PARAMETER_OTHER contains the Weibull parameters
+         #  - First entry:  K - Shape parameter  (>0)
+         #  - Second entry: L - Scale parameter  (>0)
+         @{$cfg->{iiv}->{$IIV_SET}->{parameters}->{$IIV_PARAMETER}->{other_parameters}}  = split(';', $IIV_PARAMETER_OTHER);
+      }
+      if($IIV_DISTRIBUTION eq 'BC'){
+         $IIV_PARAMETER_OTHER    =~ s#<IIV:\S+:\S+>(\S*)#$1#g; 
+         $IIV_PARAMETER_OTHER    =~ s#\S+;(\S+;\S+)#$1#;
+         $IIV_PARAMETER          =~ s#(\S);\S*#$1#;
+         #
+         # IIV_PARAMETER_OTHER contains the Weibull parameters
+         #  - First entry:  K - Shape parameter  (>0)
+         #  - Second entry: L - Scale parameter  (>0)
+         @{$cfg->{iiv}->{$IIV_SET}->{parameters}->{$IIV_PARAMETER}->{other_parameters}}  = split(';', $IIV_PARAMETER_OTHER);
+      }
+
+
+      $cfg->{iiv}->{$IIV_SET}->{parameters}->{$IIV_PARAMETER}->{iiv_name}     = $IIV_NAME;
+      $cfg->{iiv}->{$IIV_SET}->{parameters}->{$IIV_PARAMETER}->{distribution} = $IIV_DISTRIBUTION;
+      push @{$cfg->{iiv}->{$IIV_SET}->{iivs}->{$IIV_NAME}->{parameters}}, $IIV_PARAMETER;
     }
     # IIV value declaration
     elsif($line=~ m#<IIV:\S+>\S#){
       $IIV_NAME      =~ s#<IIV:(\S+)>\S*#$1#g; 
       $IIV_VALUE     =~ s#<IIV:\S+>(\S*)#$1#g; 
-      $cfg = &initialize_iiv($IIV_NAME, $cfg);
-      $cfg->{iiv}->{vcv}->{$IIV_NAME}->{$IIV_NAME} = $IIV_VALUE;
+      $cfg = &initialize_iiv($IIV_NAME, $cfg, $IIV_SET);
+      $cfg->{iiv}->{$IIV_SET}->{vcv}->{$IIV_NAME}->{$IIV_NAME} = $IIV_VALUE;
     }
     # IIV value declaration
     elsif($line=~ m#<IIVCOR:\S+:\S+>\S+#){
       $IIV_NAME      =~ s#<IIVCOR:(\S+):\S+>\S+#$1#g; 
       $IIV_NAME2     =~ s#<IIVCOR:\S+:(\S+)>\S+#$1#g; 
       $IIV_VALUE     =~ s#<IIVCOR:\S+:\S+>(\S+)#$1#g; 
-      $cfg = &initialize_iiv($IIV_NAME, $cfg);
-      $cfg = &initialize_iiv($IIV_NAME2, $cfg);
-      $cfg->{iiv}->{vcv}->{$IIV_NAME}->{$IIV_NAME2} = $IIV_VALUE;
-      $cfg->{iiv}->{vcv}->{$IIV_NAME2}->{$IIV_NAME} = $IIV_VALUE;
+      $cfg = &initialize_iiv($IIV_NAME, $cfg, $IIV_SET);
+      $cfg = &initialize_iiv($IIV_NAME2, $cfg, $IIV_SET);
+      $cfg->{iiv}->{$IIV_SET}->{vcv}->{$IIV_NAME}->{$IIV_NAME2} = $IIV_VALUE;
+      $cfg->{iiv}->{$IIV_SET}->{vcv}->{$IIV_NAME2}->{$IIV_NAME} = $IIV_VALUE;
     }
     else{
      &mywarn("Unable to parse the following IIV declaration: ");
@@ -4228,12 +4596,12 @@ sub parse_interindivudal_varability
 
 sub initialize_iiv
 {
-    my ($iiv_name, $cfg) = @_;
+    my ($iiv_name, $cfg, $iiv_set) = @_;
     # if the IIV hasn't been defined below we construct an
     # empty data structure for it
-    if(not(defined( $cfg->{iiv}->{iivs}->{$iiv_name}))){
-      $cfg->{iiv}->{iivs}->{$iiv_name}->{parameters} = ();
-      push @{$cfg->{iiv_index}}, $iiv_name; 
+    if(not(defined( $cfg->{iiv}->{$iiv_set}->{iivs}->{$iiv_name}))){
+      $cfg->{iiv}->{$iiv_set}->{iivs}->{$iiv_name}->{parameters} = ();
+      push @{$cfg->{iiv_index}->{$iiv_set}}, $iiv_name; 
     }
 
     return $cfg;
@@ -4334,9 +4702,9 @@ sub initialize_species
 
     if(not(defined($cfg->{species}->{$species}))){
       push @{$cfg->{species_index}}, $species;
-      $cfg->{species}->{$species}->{production}   = undef;
-      $cfg->{species}->{$species}->{consumption}  = undef;
-      $cfg->{species}->{$species}->{odes}         = undef;
+      @{$cfg->{species}->{$species}->{production}}   = ();
+      @{$cfg->{species}->{$species}->{consumption}}  = ();
+      @{$cfg->{species}->{$species}->{odes}}         = ();
     }
 
     return $cfg;
@@ -4938,7 +5306,11 @@ sub fetch_estimateable_outputs {
 sub fetch_padding {
    my ($string, $max_length) = @_;
 
-   my $padding = ' 'x($max_length-length($string));
+  
+   my $padding = '';
+
+   if($max_length > length($string)){
+     $padding = ' 'x($max_length-length($string)); }
 
    return  $padding;
 
@@ -4979,8 +5351,8 @@ sub extract_conditional{
          $tmp_value       = $cfg->{if_conditional}->{$parameter}->{value}->[$tmp_cond_idx]; 
    
          # performing substitutions for language specific functions
-         $tmp_cond  = &apply_format($tmp_cond, $output_type);
-         $tmp_value = &apply_format($tmp_value,$output_type);
+         $tmp_cond  = &apply_format($cfg, $tmp_cond, $output_type);
+         $tmp_value = &apply_format($cfg, $tmp_value,$output_type);
          
          #
          # defining the conditional and true statements
@@ -5043,7 +5415,7 @@ sub extract_conditional{
        # defining the else condition
        #
        $tmp_value = $cfg->{if_conditional}->{$parameter}->{else};
-       $tmp_value = &apply_format($tmp_value,$output_type);
+       $tmp_value = &apply_format($cfg, $tmp_value,$output_type);
    
        if($output_type eq 'C'){
          $return_text .= "else{\n  $parameter = $tmp_value;} \n"; }
@@ -5066,7 +5438,7 @@ sub extract_conditional{
          $return_text .= "END IF \n" ;
         }
        elsif($output_type eq 'rproject'){
-         $return_text .= "}else{ \n  $parameter = $tmp_value;\n}\n"; }
+         $return_text .= "}else{ \n  $parameter = $tmp_value \n}\n"; }
      }
 
    return $return_text;
@@ -5119,9 +5491,11 @@ sub data_check{
 sub system_check{
   my ($cfg) = @_;
 
-  my $name      = '';
-  my $set_name  = '';
-  my $cond_name      = '';
+  my $name       = '';
+  my $set_name   = '';
+  my $cond_name  = '';
+  my @nmdatacols = ();
+  my $tmpstring  = '';
 
    
   # checking to make sure at least one
@@ -5152,8 +5526,12 @@ sub system_check{
     &namespace_check($cfg, $name, 'parameters');
   }
 
-  foreach $name (keys %{$cfg->{iiv}->{iivs}}){
-    &namespace_check($cfg, $name, 'iiv');
+  if(keys(%{$cfg->{iiv_index}})){
+    foreach $set_name (keys(%{$cfg->{iiv_index}})){
+      foreach $name (keys %{$cfg->{iiv}->{$set_name}->{iivs}}){
+        &namespace_check($cfg, $name, 'iiv');
+      }
+    }
   }
 
   foreach $name (keys %{$cfg->{species}}){
@@ -5173,21 +5551,37 @@ sub system_check{
     &namespace_check($cfg, $name, 'input_rates');
   }
 
-  #print Dumper $cfg->{iiv};
 
-  foreach $name (keys %{$cfg->{iiv}->{iivs}}){
-    # making sure the variance has been specified for each IIV term
-    if(not(defined($cfg->{iiv}->{vcv}->{$name}->{$name}))){
-      &mywarn("The IIV $name was defined but no covariance");
-      &mywarn('value was specified:');
-      &mywarn("<IIV:$name> 0.1");
+  if(keys(%{$cfg->{iiv_index}})){
+    foreach $set_name (keys(%{$cfg->{iiv_index}})){
+      foreach $name (keys %{$cfg->{iiv}->{$set_name}->{iivs}}){
+        # making sure the variance has been specified for each IIV term
+        if(not(defined($cfg->{iiv}->{$set_name}->{vcv}->{$name}->{$name}))){
+          &mywarn("The IIV $name was defined but no covariance");
+          &mywarn('value was specified:');
+          &mywarn("<IIV:$name> 0.1");
+        }
+      }
+    }
+  }
+
+  if(keys(%{$cfg->{iiv_index}})){
+    foreach $set_name (keys(%{$cfg->{iiv_index}})){
+      foreach $name (keys %{$cfg->{iiv}->{$set_name}->{parameters}}){
+        # making sure the variance has been specified for each IIV term
+        if(not(defined($cfg->{parameters}->{$name}))){
+          &mywarn("The IIV was applied to the system parameter $name,");
+          &mywarn("but this parameter has not been defined");
+          &mywarn("<P> bob value lb ub units yes grouping ");
+        }
+      }
     }
   }
    
   # Checking conditional statements for 'else' condition:
   foreach $cond_name (keys(%{$cfg->{if_conditional}})){
     if($cfg->{if_conditional}->{$cond_name}->{else} eq ''){
-      &mywarn('The dynamic secondary parameter '.$cond_name.'');
+      &mywarn('The secondary parameter '.$cond_name.'');
       &mywarn('has a specified conditional statemnet.');
       &mywarn('However it lacks a default "else" condition.');
       &mywarn('This can be specified in the following way:');
@@ -5207,6 +5601,39 @@ sub system_check{
       }
     }
   }
+
+
+  # If both a data set and covariates are specified we check to see if the
+  # columns in the dataset have those covariates specified
+
+  if((@{$cfg->{covariates_index}})
+    and ($cfg->{data}->{file} ne "")){
+  
+    # first we get a list of all the columns that are being used in NONMEM. We
+    # iterate through all of the columns in the data file
+    foreach $name  (@{$cfg->{data}->{headers}->{values}}){
+    #Checking first to see if the column has been renamed
+    if(defined($cfg->{options}->{nonmem}->{input}->{rename}->{$name})){
+      # we put the renamed column on the list of data columns
+      push @nmdatacols, $cfg->{options}->{nonmem}->{input}->{rename}->{$name};
+    }
+    else{
+      #otherwise we just add the column name
+      push  @nmdatacols, $name; }
+    }
+
+    my $tmpstring = ":::".join(':::', @nmdatacols).":::";
+
+    # next we loop through each covariate and see if it's in the list of
+    # nonmem data columns
+    foreach $name  (@{$cfg->{covariates_index}}){
+      if(not($tmpstring =~ m#:::${name}:::#)){
+       &mywarn("The covariate: $name was specified but not defined in dataset"); }
+    }
+    }
+
+
+
 }
 
 #----------------------------------------------------------------------------------
@@ -5219,6 +5646,8 @@ sub namespace_check{
 
   #my $element;
   my $isgood = '';
+
+  my $set_name;
 
   my $program;
   my $word   ;
@@ -5283,12 +5712,48 @@ sub namespace_check{
     $conflict = 'yes';
     &mywarn("Conflict: The $self name ($name) conflicts with an input_rates"); }
 
-  if(exists($cfg->{iiv}->{iivs}->{$name}) and ($self ne 'iiv')){
-    $conflict = 'yes';
-    &mywarn("Conflict: The $self name ($name) conflicts with an iiv"); }
+  if(keys(%{$cfg->{iiv_index}})){
+    foreach $set_name (keys(%{$cfg->{iiv_index}})){
+      if(exists($cfg->{iiv}->{$set_name}->{iivs}->{$name}) and ($self ne 'iiv')){
+        $conflict = 'yes';
+        &mywarn("Conflict: The $self name ($name) conflicts with an iiv in $set_name"); }
+    }
+  }
 
   return $conflict;
 
+}
+
+sub make_iiv{
+   my ($cfg, $name, $format, $set_id) = @_;
+   # this function returns the equation used to calculate add variability to a
+   # parameter $name based on the language 'format'
+
+   my $distribution = $cfg->{iiv}->{$set_id}->{parameters}->{$name}->{distribution};
+   my $calc_string  = '';
+
+
+   if($distribution eq 'LN'){
+        $calc_string = 'SIMINT_PARAMETER_TV*SIMINT_EXP[SIMINT_IIV_VALUE]'; }
+   elsif($distribution eq 'N'){
+        $calc_string = 'SIMINT_PARAMETER_TV*(1.0 + SIMINT_IIV_VALUE)'; }
+   elsif($distribution eq 'WB'){
+        my $OPK = @{$cfg->{iiv}->{$set_id}->{parameters}->{$name}->{other_parameters}}[0];
+        my $OPL = @{$cfg->{iiv}->{$set_id}->{parameters}->{$name}->{other_parameters}}[1];
+        $calc_string = 'TODO';} #"($OPK/$OPL)*SIMINT_POWER[SIMINT_IIV_VALUE/$OPL][$OPK-1]*SIMINT_EXP[-SIMINT_POWER[SIMINT_IIV/$OPL][$OPK]]";}
+   elsif($distribution eq 'BC'){
+        my $OPL1 = @{$cfg->{iiv}->{$set_id}->{parameters}->{$name}->{other_parameters}}[0];
+        my $OPL2 = @{$cfg->{iiv}->{$set_id}->{parameters}->{$name}->{other_parameters}}[1];
+        $calc_string = 'TODO';}
+   else{
+    &mywarn("Distribution $distribution for IIV on $name not found"); }
+
+
+
+   # applying language specific format
+   $calc_string = &apply_format($cfg, $calc_string, $format);
+
+   return  $calc_string;
 }
 
 sub make_ode{
@@ -5297,25 +5762,25 @@ sub make_ode{
  # with the format (e.g., 'fortran') applied 
 
   my $tmp_ode   = "";
-  if(defined(@{$cfg->{species}->{$species_name}->{odes}})){
+  if((@{$cfg->{species}->{$species_name}->{odes}})){
     if($tmp_ode eq ""){
       $tmp_ode .= join('+', @{$cfg->{species}->{$species_name}->{odes}}); }
     else{
       $tmp_ode .= "+".join('+', @{$cfg->{species}->{$species_name}->{odes}}); }
    }
   
-  if(defined(@{$cfg->{species}->{$species_name}->{production}})){
+  if((@{$cfg->{species}->{$species_name}->{production}})){
    if($tmp_ode eq ""){
      $tmp_ode .= join('+', @{$cfg->{species}->{$species_name}->{production}}); }
    else{
      $tmp_ode .= "+".join('+', @{$cfg->{species}->{$species_name}->{production}}); }
   }
   
-  if(defined(@{$cfg->{species}->{$species_name}->{consumption}})){
+  if((@{$cfg->{species}->{$species_name}->{consumption}})){
      $tmp_ode .= "-(".join('+', @{$cfg->{species}->{$species_name}->{consumption}}).")"; }
   
   # converting generic functions into fortran functions
-  $tmp_ode   = &apply_format($tmp_ode, $format);
+  $tmp_ode   = &apply_format($cfg, $tmp_ode, $format);
 
   return $tmp_ode;
 
@@ -5384,1800 +5849,252 @@ POPULATION:
 return $template;
 }
 
-sub fetch_nonmem_template{
-my $template ='$PROBLEM problem placeholder
-; Currently the NONMEM target is being developed
-; and it is not considered usable.
 
-$INPUT
-<INPUT>
+#
+# Reads in template file with placeholders to be populated 
+#
+sub fetch_template_file{
 
-$DATA <DATA>
+  my ($file_name) = @_;
+  my $template = '';
 
-$SUB ADVAN13 TOL=4 
+  
+  # fetching the relative path
+  $file_name = &catfile('library', 'templates', $file_name);
 
-$MODEL 
+  # reading the contents into template
+  local $/ = undef;
+  open FILE, $file_name or die "Couldn't open file: $!";
+  binmode FILE;
+  $template = <FILE>;
+  close FILE;
 
-; Defining the compartment names
-<COMP_ASSIGNMENT>
-
-
-$PK
-; Defining the system parameters
-<PARAMETERS_MAP> 
-<IIV_MAP> 
-<IIV_ON_PARAMETERS>   
-
-; Defining the static 
-; secondary parmaeters
-<STATIC_SECONDARY_PARAMETERS>
-
-
-; Scaling for bolus inputs
-<BOLUS_SCALING>
-
-; Initial conditions
-<INITIAL_CONDITIONS>
-
-
-$DES 
-
-; creating the default internal time variable
-SIMINT_TIME = TIME
-; Mapping the amounts to meaningful names
-<STATES_ASSIGNMENT>
-
-; Defining secondary paraemters that can
-; change with time
-<DYNAMIC_SECONDARY_PARAMETERS>
-
-; Differential equations for each compartment
-<ODES_ASSIGNMENT>
-
-; Mapping thes named ODEs above back to the 
-; appropriate DADT variables
-<ODES_MAP>
-
-$ERROR
-; The SIEB (Simulation Internal Error Block) prefix
-; is added to variables that are used in both
-; the DES and ERROR blocks
-
-; creating the default internal time variable
-SIEB_TIME = TIME
-
-: Mapping the states to their names
-<STATES_ASSIGNMENT_NMEB>
-
-; Defining the dynamic
-; secondary parameters
-<DYNAMIC_SECONDARY_PARAMETERS_NMEB>
-
-;mapping variance parameters to named values
-<VARIANCE_ASSIGNMENT>
-
-$THETA
-<PARAMETER_VALUES>
-
-
-<IIV_VALUES>
-
-$SIGMA
-<VARIANCE_PARAMETER_VALUES>';
-
-return $template;
+ return $template;
 }
+
 
 sub fetch_matlab_auto_analysis_estimation
 {
 my $template ='clear; close all;
 
-% setting up paths
+% flowctl - Controls the flow of the analysis script
+%{
+flowctl = \'estimate\';
+flowctl = \'plot previous estimate\';
+flowctl = \'previous estimate as guess\';
+%}
+flowctl = \'plot guess\';
+analysis_name = \'ANAME\';
+
+% Compiling the system to make sure the 
+% latest changes have been committed. 
+build_system
+
+% Setting up paths
 provision_workspace;
 
-build_auto_targets;
-% pulling out the system information
-cfg = auto_fetch_system_information();
+% Defining color codes to be used 
+% in plotting below
+mc = fetch_color_codes;
 
-% This script was automatically generated.
-% you should make a copy of it and edit that copy
-% to customize your analysis
-% 
-% You must also create an observation_details.m file
-% 
+% Pulling out the system information
+cfg = auto_fetch_system_information;
 
-% These enable or disable certain aspects of 
-% the estimation script
-%cfg.options.output_type = \'data\';
-cfg.options.estimate    = \'no\';
-cfg.options.plot        = \'no\';
+<PSETS>
+% Select the parameter set and the parameters to estimate:
+%{
+% The following will estimate a subset of the parameters:
+pnames ={ \'PNAME1\'
+          \'PNAME2\' 
+          \'PNAME3\' }; 
+cfg  = system_select_set(cfg, \'default\', pnames);
 
-cfg.estimation.observation_function = \'observation_details\';
-cfg.estimation.objective_type       = \'wls\';
+% This will estimate all of the parameters:
+cfg  = system_select_set(cfg, \'default\');
+%}
 
 
-% creating a full version of the parameters data structure
-% so it is available in the objective function
-cfg.options.parameters_full = cfg.parameters;
+%{
+% To overwrite the initial guess at the scripting level for the parameter
+% PNAME with the value VALUE use the following:
+cfg = system_set_guess(cfg, \'PNAME\', VALUE);
+%}
 
-% defaulting to estimating all parameters
-cfg.options.to_estimate = [1:length(cfg.parameters.values)]\';
-
-% to estimate just a couple, (say named p1, p2 and p3)
-% we would use the following:
+% Specifying Simulation and Estimation options
 %
-% cfg.options.to_estimate = [cfg.options.mi.parameters.p1
-%                            cfg.options.mi.parameters.p2
-%                            cfg.options.mi.parameters.p3];
+% help system_set_option
+%{
+
+% Simulation options:
+% If you have simulink you should use it:
+cfg = system_set_option(cfg, \'simulation\', \'integrate_with\', \'simulink\');
+
+% Set the output times for smooth profiles when plotting. This will be the
+% default output times unless overwritten at the cohort level:
+cfg = system_set_option(cfg, \'simulation\', ...
+                             \'output_times\', ...
+                              <OUTPUT_TIMES>);
+% Solver options
+cfg = system_set_option(cfg, \'solver\',     \'RelTol\',  1e-5);
+cfg = system_set_option(cfg, \'solver\',     \'AbsTol\',  1e-9);
+cfg = system_set_option(cfg, \'solver\',     \'solver\', \'ode23s\');
+
+% Estimation options:
+% % Monitoring the estimation process:
+cfg = system_set_option(cfg, \'estimation\', \'monitor_iteration_history\', 100);
+cfg = system_set_option(cfg, \'estimation\', \'monitor_slope_tolerance\',   0.001);
+cfg = system_set_option(cfg, \'estimation\', \'monitor_exit_when_stable\', \'yes\');
+
+% To disable the monitoring set the status function to \'\'
+% cfg = system_set_option(cfg, \'estimation\', \'monitor_status_function\', \'\');
 %
-
-
+% % This disables the monitoring and performs a sort of simulated annealing:
+cfg = system_set_option(cfg, \'estimation\', \'effort\', 100);
 %
-% creating structure containing reduced parameter set
-% (basically those in the to_estimate vector)
+% % Overwrite optimization options:
+% To use the Nelder-Mead method:
+cfg = system_set_option(cfg, \'estimation\', \'optimizer\', \'fminsearch\');
+cfg = system_set_option(cfg, \'estimation\', \'optimization_options\', ...
+              optimset(\'Display\',   \'iter\', ...
+                       \'TolFun\',     1e-3,  ...
+                       \'MaxIter\',    3000,  ...
+                       \'MaxFunEval\', 3000));
+
+% If you have the Global Optimization Toolbox:
+% To use the Genetic Algorithm
+cfg = system_set_option(cfg, \'estimation\', \'optimizer\', \'ga\');
+cfg = system_set_option(cfg, \'estimation\', \'optimization_options\', ...
+             gaoptimset(\'Display\',      \'iter\', ...
+                        \'MaxGenerations\', 500)); 
+
+%}
+
+% Loading datasets   
 %
-cfg.parameters.matrix        =  cfg.options.parameters_full.matrix     (cfg.options.to_estimate, :);
-cfg.parameters.names         =  cfg.options.parameters_full.names      (cfg.options.to_estimate, :);
-cfg.parameters.lower_bound   =  cfg.options.parameters_full.lower_bound(cfg.options.to_estimate, :);
-cfg.parameters.upper_bound   =  cfg.options.parameters_full.upper_bound(cfg.options.to_estimate, :);
-cfg.parameters.units         =  cfg.options.parameters_full.units      (cfg.options.to_estimate, :);
-cfg.parameters.editable      =  cfg.options.parameters_full.editable   (cfg.options.to_estimate, :);
-cfg.parameters.type          =  cfg.options.parameters_full.type       (cfg.options.to_estimate, :);
-cfg.parameters.values        =  cfg.options.parameters_full.values     (cfg.options.to_estimate, :);
+% help system_load_dataset
+%{
+% From Excel sheet
+cfg = system_load_dataset(cfg, \'DSNAME\'     , ...
+                         sprintf(\'data%sDSFILE.xls\', filesep), ...
+                         \'SHEETNAME\');
+% From csv        
+cfg = system_load_dataset(cfg, \'DSNAME\'     , ...
+                         sprintf(\'data%sDSFILE.csv\', filesep))
+% From tab        
+cfg = system_load_dataset(cfg, \'DSNAME\'     , ...
+                         sprintf(\'data%sDSFILE.tab\', filesep))
+%}
 
-% initial guess --> required for estimation routines
-cfg.parameters.guess         =  cfg.options.parameters_full.values     (cfg.options.to_estimate, :);
 
+% Defining the cohorts
+%
+% Clearing all of the cohorts
+cfg = system_clear_cohorts(cfg);
+ 
+% One entry for each cohort:
+% For more information type:
+%
+% help system_define_cohort
+%
+% It is necessary to replace the following compontents:
+%
+% CHNAME    - cohort name
+% COLNAME   - column name in dataset
+% ONAME     - output name
+% TIMECOL   - column name in dataset with the observation times
+% TS        - model timescale corresponding to TIMECOL
+% OBSCOL    - column name in dataset with the observation values
+% MODOUTPUT - model output corresponding to OBSCOL
+%
+% Only specify inputs that are non-zero. Simply ignore inputs that do not
+% exist for the given cohort.
+%{
+clear cohort;
+cohort.name                                 = \'CHNAME\';
+cohort.cf.COLNAME                           = [];
+cohort.cf.COLNAME                           = [];
+cohort.dataset                              = \'DSNAME\';
+<BOLUS><INFUSION_RATES><COVARIATES> 
+cohort.outputs.ONAME.of.COLNAME             = [];
+cohort.outputs.ONAME.of.COLNAME             = [];
+cohort.outputs.ONAME.obs.time               = \'TIMECOL\'; 
+cohort.outputs.ONAME.obs.value              = \'OBSCOL\';
+cohort.outputs.ONAME.model.time             = \'TS\';        
+cohort.outputs.ONAME.model.value            = \'MODOUTPUT\';  
+cohort.outputs.ONAME.model.variance         = \'1\';  
+% Optional
+cohort.outputs.ONAME.options.marker_color   = \'r\';
+cohort.outputs.ONAME.options.marker_shape   = \'o\';
+cohort.outputs.ONAME.options.marker_line    = \'-\'; 
 
-% to test your observation details file, uncomment the following:
-% od         = observation_details(cfg.parameters.guess, cfg)
-% obj        = calculate_objective(cfg.parameters.guess, cfg)
+% Adding the cohort:
+cfg = system_define_cohort(cfg, cohort);
+%}
 
-% now to perform the estimation you need to change the value in the
-% variable above cfg.options.estimate from \'no\' to \'yes\'
+% Getting the parameters either by estimation, loading the previous estimation
+% results, or pulling out the initial guess
+%
+% The variable pest will be defined here and used below for running
+% simulations:
+pnames_est = cfg.estimation.parameters.names;
+if(strcmp(flowctl , \'estimate\') | strcmp(flowctl, \'previous estimate as guess\'))
 
-if(strcmp(cfg.options.estimate, \'yes\'))
-  options = optimset(\'display\', \'iter\', \'MaxFunEvals\', 10000);
-  [parameters] = fminsearch(@calculate_objective, ...
-                             cfg.parameters.guess, ...
-                             options, ...
-                             cfg);
-  
-  [parameters] = bound_parameters(parameters, ...
-                              cfg.parameters.lower_bound, ...
-                              cfg.parameters.upper_bound);
-  
-  %
-  % calculating solution statistics
-  %
-  solution_stats = solution_statistics(parameters,cfg);
-  eval(sprintf(\'save output%sestimation_solution.mat parameters solution_stats cfg\', filesep));
+  % Loading the previous estimate
+  if(strcmp(flowctl, \'previous estimate as guess\'))
+    eval(sprintf(\'load output%sanalysis_%s.mat pest ss pnames_est\',filesep, analysis_name))
+    cfg.estimation.parameters.guess = pest;
+  end
 
+  % Performing the parameter estimation: 
+  [pest, ss] = estimate_parameters(cfg);
+
+  % Saving the results:
+  eval(sprintf(\'save output%sanalysis_%s.mat pest ss pnames_est\',filesep, analysis_name))
+  archive_estimation(analysis_name, cfg);
+elseif(strcmp(flowctl , \'plot guess\'))
+  pest   = system_fetch_guess(cfg);
+else 
+  % Loading the previously saved results:
+  eval(sprintf(\'load output%sanalysis_%s.mat pest ss pnames_est\',filesep, analysis_name))
 end
 
-';
 
-return $template;
+% Cohorts defined here will be plotted 
+% but not used during the estimation
 
-}
+% Running simulation for plotting
+%
+[erp] = system_simulate_estimation_results(pest, cfg);
 
-sub fetch_rproject_simulation_driver_template
-{
-my $template ='#clearing the workspace
-rm(list=ls())
-# This gets rid of that weird grepl warning message:
-Sys.setlocale(locale="C")
-library("deSolve")
-library("ggplot2")
+% Plotting the observations and predictions
+%
+plot_opts = [];
+%{
+% save figures to file with analysis_name prefix
+plot_opts.save_figs = analysis_name;
 
-# Uncomment to force the system to be recompiled
-# each time the script is run
-# system("perl build_system.pl")
-
-# If you wish to use the compiled version of the model uncomment the following
-# to compile the generated C code and load the model library. Note you will
-# also need to uncomment the simulation option below to specify "c-file"
-# system("cp transient/r_ode_model.c  .")
-# system("R CMD SHLIB r_ode_model.c")
-# dyn.load(paste("r_ode_model", .Platform$dynlib.ext, sep = ""))
-
-
-# loading the different functions
-source(\'transient/auto_rcomponents.r\');
-
-# Loading the system information
-cfg = system_fetch_cfg()
-<PSETS>
-cfg = system_select_set(cfg, \'default\')
-
-# fetching the parameter values
-parameters = cfg$parameters$values
-
-# The previous statement sets \'parameters\' to the values 
-# in the currently selected parameter set. To overwrite 
-# a specific parameter uncomment the following statement 
-# and replace PNAME with the name of the parameter 
-# and VALUE with the desired value:
-#
-# parameters$PNAME = VALUE;
-
-<BOLUS>
-<INFUSION_RATES>
-<COVARIATES>
-<OUTPUT_TIMES>
-
-
-# The following applies to both individual and stochastic simulations:
-# Define the solver to use
-cfg$options$simulation_options$solver$method                  = "ode23"
-# Specify the output times 
-cfg$options$simulation_options$output_times                   = seq(0,100,1)
-# Uncomment to include important times in the simulation output
-# e.g., bolus times, sampling before and after rate switches, etc.
-#cfg$options$simulation_options$include_important_output_times = "yes"
-# Uncomment to use compiled code
-#cfg$options$simulation_options$integrate_with                 = "c-file"
-
-# -------------------------------------------------------------------------
-# Individual Simulation:
-som = run_simulation_ubiquity(parameters, cfg)
-# # replace TS with a timescale (i.e. days) and 
-# # OUTPUT with a named output  (i.e. Cp)
-#plot(som$simout$TS,        som$simout$OUTPUT)
-# -------------------------------------------------------------------------
-
-
-# -------------------------------------------------------------------------
-# # Stochastic Simulation:
-# # To use this you need to have specified variability 
-# # in your model using the <IIV:?>, <IIV:?:?>, and <IIVCOR:?:?> 
-# # delimiters see examples/system-iiv.txt
-#
-# subopts = list();
-# subopts$nsub = 10
-# p     = simulate_subjects(parameters, subopts, cfg)
-#
-# # replace TS with a timescale (i.e. days) and 
-# # OUTPUT with a named output  (i.e. Cp)
-#
-# myfig = ggplot(p$tcsummary, aes(x=ts.TS, y=o.OUTPUT.mean)) +
-#                geom_ribbon(aes(ymin=o.OUTPUT.lb_ci, 
-#                                ymax=o.OUTPUT.ub_ci), 
-#                                border="",
-#                                fill="lightblue", 
-#                                alpha=0.6) +
-#                geom_line(linetype="solid", size=0.7, color="blue")  +
-#                geom_line(aes(x=ts.TS, y=o.OUTPUT.ub_ci), linetype="dashed", size=0.2, color="blue")  +
-#                geom_line(aes(x=ts.TS, y=o.OUTPUT.lb_ci), linetype="dashed", size=0.2, color="blue")  +
-#                xlab("Time (TS)")+
-#                ylab("OUTPUT (units)")+
-#                guides(fill=FALSE) 
-# myfig = prepare_figure("print", myfig)
-# print(myfig)
-# 
-# -------------------------------------------------------------------------
+% For each output the following can be defined
+% to control plotting.  See help system_plot_cohorts 
+% for more options and details.
+plot_opts.outputs.ONAME.panels   = \'no\';
+plot_opts.outputs.ONAME.rows     = 1;
+plot_opts.outputs.ONAME.cols     = 2;
+plot_opts.outputs.ONAME.yscale   = \'log\';
+plot_opts.outputs.ONAME.ylim     = [1,    100];
+plot_opts.outputs.ONAME.xlim     = [0,    100];
+plot_opts.outputs.ONAME.ylabel   = \'Output (units)\';
+plot_opts.outputs.ONAME.xlabel   = \'Time (units)\';
+plot_opts.outputs.ONAME.datatype = \'all\';
+%}
 
 
 
-';
-return $template;
-}
-
-sub fetch_rproject_compiled_template
-{
-my $template ='#include <R.h>
-
-static double parms[<NPARAMS>];<FORCEDECLARE>
-
-<SYSTEM_PARAM>
-
-<FORCE_PARAM>
-
-/* initializing the parameters and forcing functions  */
-void initparams(void (* odeparms)(int *, double *))
-{
-    int N=<NPARAMS>;
-    odeparms(&N, parms);
-}
-
-<FORCEFUNC>
-
-/* Derivatives and outputs  */
-void derivs (int *neq, 
-             double *t, 
-             double *y, 
-             double *ydot,
-             double *yout, 
-             int *ip)
-{
-
-if (ip[0] <1) error("nout should be at least 1");
-
-/* Start Initializing variables 
-*/
-double SIMINT_TIME = 0.0;
-
-<VARIABLE_INIT>
-/* Done Initializing variables */
-
-/* 
-*/
-SIMINT_TIME = *t; 
-
-<SS_PARAM>
-
-/* Mapping states to named variables */
-<STATES>
-
-<DS_PARAM>
-
-/* Defining the ODEs*/
-<ODES>
-
-/* Mapping back to ydot variables */
-<ODES_REMAP>
-
-/* Defining the outputs*/
-<OUTPUTS>
-
-/* Mapping back to yout variables */
-<OUTPUTS_REMAP>
-}
+close all;
+system_plot_cohorts(erp, plot_opts, cfg);
 
 ';
 
 return $template;
-}
-
-
-
-sub fetch_rproject_components_template
-{
-my $template ='<COMMENTS>
-
-system_fetch_cfg = function(){
-#
-# This function stores all of the information about the system including
-# parameter values, system indices used, iniital condition assignments, etc.
-#
-
-# System parameter information
-<FETCH_SYS_PARAMS>
-
-
-# Indices mapping state, parameter, etc. names
-# to their index in the different vectors
-<FETCH_SYS_INDICES>
-
-# Parameter Sets
-<FETCH_SYS_PSETS>
-
-# Interindiviudal Varability Information
-<FETCH_SYS_IIV>
-
-<FETCH_SYS_INFUSIONS>
-
-<FETCH_SYS_COVARIATES>
-
-
-# identifying that the current set is the default
-cfg$parameters$current_set = \'default\';
-
-# Nonzero initial conditions
-<FETCH_SYS_IC>   
-
-# timescale information
-<FETCH_SYS_TS>       
-
-# bolus inputs
-<FETCH_SYS_BOLUS>
-
-
-return(cfg);
-}
-
-system_prepare_inputs = function(SIMINT_cfg, SIMINT_p){
-# System parameters
-<SYSTEM_PARAM>
-
-for(SIMINT_cov_name in names(SIMINT_cfg$options$inputs$covariates)){
-# Looping through each covariate and creating a variable in the current
-# function with the covariate name 
-
-  # plucking out the covariate
-  SIMINT_my_cov = SIMINT_cfg$options$inputs$covariates[[SIMINT_cov_name]]
-
-  # This is an initialization function, and these should only use covariates
-  # that are constant (like gender or race), so we just use the first value
-  SIMINT_cov_value = SIMINT_cfg$options$inputs$covariates[[SIMINT_cov_name]]$values$values[1]
-  
-  # creating the named value for the covariate
-  # at the current time
-  eval(parse(text=paste(sprintf("%s = SIMINT_cov_value",SIMINT_cov_name))))
-}
-
-# Static secondary parameters
-<SS_PARAM>
-
-
-
-
-if(is.null(SIMINT_cfg$options$inputs$bolus)){ 
-  eventdata = NULL }
-else{
-  SIMINT_var    = c()
-  SIMINT_time   = c()
-  SIMINT_value  = c()
-  SIMINT_method = c()
-
-  # turning the time scale from a string
-  # into a numeric value:
-  SIMINT_time_scale = eval(parse(text=SIMINT_cfg$options$inputs$bolus$times$scale))
-  for(SIMINT_name in names(SIMINT_cfg$options$inputs$bolus$species)){
-    SIMINT_dose_scale = eval(parse(text=SIMINT_cfg$options$inputs$bolus$species[[SIMINT_name]]$scale))
-    SIMINT_var    = c(SIMINT_var,     rep(SIMINT_name,length(SIMINT_cfg$options$inputs$bolus$times$values)))
-    SIMINT_method = c(SIMINT_method,  rep(\'add\',length(SIMINT_cfg$options$inputs$bolus$times$values)))
-    SIMINT_time   = c(SIMINT_time,             SIMINT_cfg$options$inputs$bolus$times$values*SIMINT_time_scale)
-    SIMINT_value  = c(SIMINT_value,            SIMINT_cfg$options$inputs$bolus$species[[SIMINT_name]]$values*SIMINT_dose_scale)
-  }
-
-  SIMINT_events = data.frame(
-     var    = SIMINT_var, 
-     time   = SIMINT_time,
-     value  = SIMINT_value,
-     method = SIMINT_method);
-  }
-
-
-return(SIMINT_events)
-}
-
-system_IC = function(SIMINT_cfg, SIMINT_p){
-#
-# Returns initial condition information based on information stored in the cfg
-# variable and an parameter vector. 
-#
-# Example usage:
-#  cfg = system_fetch_cfg()
-#  cfg = system_select_set(cfg, \'default\')
-#  parameters = cfg$parameters$values
-#  IC = system_IC(cfg, parameters)
-#
-
-# System parameters
-<SYSTEM_PARAM>
-
-for(SIMINT_cov_name in names(SIMINT_cfg$options$inputs$covariates)){
-# Looping through each covariate and creating a variable in the current
-# function with the covariate name 
-
-  # plucking out the covariate
-  SIMINT_my_cov = SIMINT_cfg$options$inputs$covariates[[SIMINT_cov_name]]
-
-  # This is an initialization function, and these should only use covariates
-  # that are constant (like gender or race), so we just use the first value
-  SIMINT_cov_value = SIMINT_cfg$options$inputs$covariates[[SIMINT_cov_name]]$values$values[1]
-  
-  # creating the named value for the covariate
-  # at the current time
-  eval(parse(text=paste(sprintf("%s = SIMINT_cov_value",SIMINT_cov_name))))
-}
-
-# Static secondary parameters
-<SS_PARAM>
-
-
-
-#
-# Assigning initial conditions
-#
-# Looping through each state to see if there 
-# is an entry in cfg for the initial condition.
-# If If there isnt well default to zero, if there
-# is an entry we will evaluate that assignment:
-for (SIMINT_sname in names(cfg$options$mi$states)){
-  if(is.null(cfg$options$initial_conditions[[SIMINT_sname]])){
-    # Here there is no initial condition specified for this state
-    SIMINT_tmp_assignment = sprintf(\'SIMINT_%s_IC = 0.0\', SIMINT_sname) }
-  else{
-    # Here the initial condition has been specified
-    SIMINT_tmp_assignment = sprintf(\'SIMINT_%s_IC = %s\', SIMINT_sname, cfg$options$initial_conditions[[SIMINT_sname]]) }
-  eval(parse(text=SIMINT_tmp_assignment))
-}
-
-# Remapping state ICs into vector form
-SIMINT_all_ICs = c(
-<STATE_ICS_REMAP>)
-return(SIMINT_all_ICs);
-
-}
-
-system_DYDT = function(SIMINT_TIME,SIMINT_x,SIMINT_cfg){
-#
-# Evalutates the derivatives of the ODEs at time SIMINT_TIME
-#
-
-SIMINT_p = SIMINT_cfg$parameters$values
-
-# System parameters
-<SYSTEM_PARAM>
-
-for(SIMINT_rate_name in names(SIMINT_cfg$options$inputs$infusion_rates)){
-# Looping through each infusion rate and creating a variable in the current
-# function with the rate at the value for the current time
-
-
-  # plucking out the rate name
-  SIMINT_my_rate = SIMINT_cfg$options$inputs$infusion_rates[[SIMINT_rate_name]]
-
-  # scaling the times
-  eval(parse(text=sprintf(\'SIMINT_my_rate$times$values = SIMINT_my_rate$times$values*%s\',SIMINT_my_rate$times$scale)))
-
-  # getting the covariate value at the given time
-  SIMINT_rate_value = system_evaluate_input(SIMINT_my_rate$times$values,
-                                            SIMINT_my_rate$levels$values,
-                                            SIMINT_TIME, 
-                                            \'step\')
-  
-  # creating the named value for the covariate
-  # at the current time
-  eval(parse(text=paste(sprintf("%s = SIMINT_rate_value*%s",SIMINT_rate_name, SIMINT_my_rate$levels$scale))))
-}
-
-for(SIMINT_cov_name in names(SIMINT_cfg$options$inputs$covariates)){
-# Looping through each covariate and creating a variable in the current
-# function with the covariate name at the value for the current time
-
-  # plucking out the covariate
-  SIMINT_my_cov = SIMINT_cfg$options$inputs$covariates[[SIMINT_cov_name]]
-
-  # getting the covariate value at the given time
-  SIMINT_cov_value = system_evaluate_input(SIMINT_my_cov$times$values,
-                                           SIMINT_my_cov$values$values,
-                                           SIMINT_TIME, 
-                                           SIMINT_my_cov$cv_type)
-                                        
-  # creating the named value for the covariate
-  # at the current time
-  eval(parse(text=paste(sprintf("%s = SIMINT_cov_value",SIMINT_cov_name))))
-}
-
-
-# States
-<STATES> 
-
-# Static secondary parameters
-<SS_PARAM>
-
-# Dynamic secondary parameters
-<DS_PARAM>
-
-# ODEs
-<ODES>
-
-# ODE
-SIMINT_DYDT = c(
-<ODES_REMAP>)
-
-#return(SIMINT_DYDT)
-
-list(dy=SIMINT_DYDT,global=c())
-
-}
-
-
-system_map_output = function(SIMINT_cfg, SIMINT_simout, SIMINT_p, SIMINT_ODE_func_type){
-
-
-# States
-# Checking the 
-SIMINT_tts     = SIMINT_simout[,\'time\']
-SIMINT_som     = list();
-SIMINT_outputs = list();  
-SIMINT_meta    = list();
-SIMINT_som$simout = data.frame(time = SIMINT_simout[,\'time\'])
-
-
-# System parameters
-<SYSTEM_PARAM>
-SIMINT_meta$parameters = SIMINT_p
-
-for(SIMINT_cov_name in names(SIMINT_cfg$options$inputs$covariates)){
-# Looping through each covariate and creating a variable in the current
-# function with the covariate name 
-
-  # plucking out the covariate
-  SIMINT_my_cov = SIMINT_cfg$options$inputs$covariates[[SIMINT_cov_name]]
-
-  # This is an initialization step, and these should only use covariates
-  # that are constant (like gender or race), so we just use the first value
-  SIMINT_cov_value = SIMINT_cfg$options$inputs$covariates[[SIMINT_cov_name]]$values$values[1]
-  
-  # creating the named value for the covariate
-  # at the current time
-  eval(parse(text=paste(sprintf("%s = SIMINT_cov_value",SIMINT_cov_name))))
-}
-
-# Static secondary parameters
-<SS_PARAM>
-
-# storing the secondary parameters
-<SS_PARAM_META>
-
-
-for (SIMINT_tidx in seq(1,length(SIMINT_tts))){
-  SIMINT_TIME = SIMINT_tts[SIMINT_tidx]
-
-  # Creating the states here at a given time
-  # (above a vector was created)
-  for (SIMINT_sname in names(SIMINT_cfg$options$mi$states)){
-    SIMINT_tmp_assignment = sprintf(\'%s =  SIMINT_simout[[SIMINT_tidx, SIMINT_sname]]\', SIMINT_sname)  #JMH modify
-    eval(parse(text=SIMINT_tmp_assignment))
-  }
-
-
-  for(SIMINT_rate_name in names(SIMINT_cfg$options$inputs$infusion_rates)){
-  # Looping through each infusion rate and creating a variable in the current
-  # function with the rate at the value for the current time
-  
-  
-    # plucking out the rate name
-    SIMINT_my_rate = SIMINT_cfg$options$inputs$infusion_rates[[SIMINT_rate_name]]
-  
-    # scaling the times
-    eval(parse(text=sprintf(\'SIMINT_my_rate$times$values = SIMINT_my_rate$times$values*%s\',SIMINT_my_rate$times$scale)))
-  
-    # getting the covariate value at the given time
-    SIMINT_rate_value = system_evaluate_input(SIMINT_my_rate$times$values,
-                                              SIMINT_my_rate$levels$values,
-                                              SIMINT_TIME, 
-                                              \'step\')
-    
-    # creating the named value for the covariate
-    # at the current time
-    eval(parse(text=paste(sprintf("%s = SIMINT_rate_value*%s",SIMINT_rate_name, SIMINT_my_rate$levels$scale))))
-  }
-  
-  for(SIMINT_cov_name in names(SIMINT_cfg$options$inputs$covariates)){
-  # Looping through each covariate and creating a variable in the current
-  # function with the covariate name at the value for the current time
-  
-    # plucking out the covariate
-    SIMINT_my_cov = SIMINT_cfg$options$inputs$covariates[[SIMINT_cov_name]]
-  
-    # getting the covariate value at the given time
-    SIMINT_cov_value = system_evaluate_input(SIMINT_my_cov$times$values,
-                                             SIMINT_my_cov$values$values,
-                                             SIMINT_TIME, 
-                                             SIMINT_my_cov$cv_type)
-                                          
-    # creating the named value for the covariate
-    # at the current time
-    eval(parse(text=paste(sprintf("%s = SIMINT_cov_value",SIMINT_cov_name))))
-  }
-
-  # we only calculate the dynamic secondary parameters and the outputs if the
-  # \'r\' function was used. If the \'c\' function was used then these are not
-  # needed because they were calculated and returned from the simulation.
-  if(\'r\' == SIMINT_ODE_func_type){
-
-  # Dynamic secondary parameters
-  <DS_PARAM>
-  
-  # Outputs
-  <OUTPUTS>  
-  
-    for (SIMINT_oname in names(SIMINT_cfg$options$mi$outputs)){
-      SIMINT_tmp_assignment = sprintf(\'SIMINT_outputs$%s[SIMINT_tidx] = %s\', SIMINT_oname, SIMINT_oname) 
-      eval(parse(text=SIMINT_tmp_assignment))
-      }
-    }
-
-}
-
-# Storing the time scales, appending ts. to the 
-# beginning to prevent any namespace issues
-for (SIMINT_name   in names(cfg$options$time_scales)){
-  eval(parse(text=sprintf(\'SIMINT_som$simout["ts.%s"] =  SIMINT_cfg$options$time_scales[[SIMINT_name]]*SIMINT_tts\', SIMINT_name))) 
-}
-
-# storing the states
-for (SIMINT_name in names(cfg$options$mi$states)){
-     SIMINT_som$simout[SIMINT_name] =  SIMINT_simout[,SIMINT_name]
-   }
-# Storing the outputs
-# this is done differently depending on whether the R script or compiled C
-# code was used. 
-if(\'r\' == SIMINT_ODE_func_type){
-  # here we are returning the outputs calculated in this funciton
-  for(SIMINT_name   in names(SIMINT_outputs)){
-    SIMINT_som$simout[SIMINT_name] =SIMINT_outputs[SIMINT_name] 
-    }
-  } else if(\'c\' == SIMINT_ODE_func_type){
-  # otherwise we return those calculated in the compiled c code.
-  for (SIMINT_name in names(cfg$options$mi$outputs)){
-       SIMINT_som$simout[SIMINT_name] =  SIMINT_simout[,SIMINT_name]
-     }
-}
-
-# storing the meta data to be returned
-SIMINT_som$meta     = SIMINT_meta
-
-return(SIMINT_som)
-
-}
-
-system_select_set = function(cfg, set_name){
-#
-# takes the system information variable cfg and makes the values in the string
-# \'set name\'  the active values
-#
-
-# defining parameters for the current set
-if(is.null(cfg$parameters$sets[[set_name]])){
-  print(sprintf(\'Could not find set: %s\', set_name));
-  print(sprintf(\'Returning the default set instead\')); 
-  cfg$parameters$matrix$value = cfg$parameters$sets$default$values;
-  cfg$parameters$current_set  = \'default\';
-  }
-else{
-  cfg$parameters$matrix$value  = cfg$parameters$sets[[set_name]]$values;
-  cfg$parameters$current_set   = set_name;
-  cfg$parameters$values = data.frame(
-<SELECT_PARAMS>)
-  }
-
-# defining covariates
-for(cov_name in names(cfg$options$inputs$covariates)){
-  # checking to see if the current covariate (cov_name) has a value specified
-  # for the current parameter set (set_name). If it doesn\'t then the default
-  # is used. If it does then these parameter set specific values are used
-  if(is.null(cfg$options$inputs$covariates[[cov_name]]$parameter_sets[[set_name]])){
-    cfg$options$inputs$covariates[[cov_name]]$times$values  = cfg$options$inputs$covariates[[cov_name]]$parameter_sets$default$times
-    cfg$options$inputs$covariates[[cov_name]]$values$values = cfg$options$inputs$covariates[[cov_name]]$parameter_sets$default$values
-  }
-  else{
-    cfg$options$inputs$covariates[[cov_name]]$times$values  = cfg$options$inputs$covariates[[cov_name]]$parameter_sets[[set_name]]$times
-    cfg$options$inputs$covariates[[cov_name]]$values$values = cfg$options$inputs$covariates[[cov_name]]$parameter_sets[[set_name]]$values
-  }
-}
-
-return(cfg)
-}
-
-
-system_evaluate_input = function(tvals, lvals, etime, type){
-#
-# system_evaluate_input --- used to evaluate infusion rates and 
-# covariates at etime
-#  
-#   tvals - time values where time-series is defined
-#   lvals - corresponding values where the of the time series 
-#   etime - time where the time-series is to be evaluated
-#   type  - type of timeseries either: \'linear\' or \'step\' 
-#  
-  # initializing the return value 
-  value = -1
-
-  if(type == \'step\'){
-    if(length(tvals) == 1){
-    # if there is only one element in tvals 
-    # then we just take that value
-      value = tail(lvals, 1)
-    }
-    else if(etime > max(tvals)){
-    # the eval time is beyond the range of 
-    # specified times then we carry the last
-    # one forward
-      value = tail(lvals, 1)
-    }
-    else if(etime < min(tvals)){
-    # the eval time is before the range of 
-    # specified times then we assign it to 
-    # the first value
-     value = lvals[1];
-    }
-    else{
-    # this should return the portion of the 
-    # lvals vector that is less than
-    # the evaluation time (etime): 
-    #
-    # lvals[tvals <= etime]
-    # and tail should pop off the last value
-     value = tail(lvals[tvals <= etime], 1)
-    
-    }
-  } 
-  else if(type == \'linear\'){
-    #linearly interpolating, values beyond boundary 
-    # will take on the values at the boundary
-    linear_interp = approx(tvals, lvals, etime, method="linear", , , , n=2)
-    value = linear_interp$y
-  }
-  return(value)
-}
-
-run_simulation_ubiquity = function(SIMINT_parameters,SIMINT_cfg){
-# This runs a simulation for a model created in the system.txt format
-#  
-# # compile   the system to make sure the 
-# # latest changes have been committed. 
-# system(\'perl build_system.pl\')
-# 
-# See the generated file:
-#   transient/auto_simulation_driver.R 
-# for examples on how to control different aspects of the simulation. 
-
-SIMINT_simulation_options = c()
-# default simulation options 
-SIMINT_simulation_options$solver$method          = "lsoda"
-SIMINT_simulation_options$output_times           = seq(0,100,1)
-SIMINT_simulation_options$include_important_output_times = "no"
-SIMINT_simulation_options$integrate_with          = "r-file"
-
-# overriding the default simulation options
-for(SIMINT_option in names(SIMINT_cfg$options$simulation_options)){
-  if(is.null(SIMINT_simulation_options[[SIMINT_option]])){
-    print(paste("Unknown simulation option ", SIMINT_option))}
-  else{
-    SIMINT_simulation_options[[SIMINT_option]] = SIMINT_cfg$options$simulation_options[[SIMINT_option]] }
-}
-
-
-# It can be important to force the solver to evaluate 
-# the system at specific times to make sure all events 
-# are observed. The way bolus values are handled means 
-# the system will be evaluated at each bolus event. However
-# other events must be accounted for explicitly. This includes 
-# the time varying inputs like infusion_rates and timevarying.
-# The times these events occur are stored in the 
-# important_times variable
-SIMINT_important_times = SIMINT_simulation_options$output_times
-
-# placing the parameters vector into cfg 
-# because cfg is passed into the odes
-SIMINT_cfg$parameters$values =  SIMINT_parameters
-
-# setting up the nonzero initial conditions
-SIMINT_IC = system_IC(SIMINT_cfg, SIMINT_parameters)
-
-# creating the bolus inputs
-SIMINT_eventdata = system_prepare_inputs(SIMINT_cfg, SIMINT_parameters)
- 
-# adding the bolus times to the important times
-SIMINT_important_times =   c(SIMINT_eventdata$time, SIMINT_important_times)
-
-# defining the parameters
-for(SIMINT_parameter_names in names(SIMINT_parameters)){
-  eval(parse(text=sprintf("%s = SIMINT_parameters$%s", SIMINT_parameter_names, SIMINT_parameter_names)))
-}
-
-
-# all forcing functions will be stored in SIMINT_forces
-# this will be used with the compiled option
-SIMINT_forces = c()
-
-# processing infusion rates
-for(SIMINT_rate_name in names(SIMINT_cfg$options$inputs$infusion_rates)){
-  # Looping through each infusion rate 
-  # plucking out the rate name
-  SIMINT_my_rate = SIMINT_cfg$options$inputs$infusion_rates[[SIMINT_rate_name]]
-
-
-  SIMINT_rate_time_scale   = eval(parse(text=SIMINT_my_rate$times$scale))
-  SIMINT_rate_values_scale = eval(parse(text=SIMINT_my_rate$levels$scale))
-
-  SIMINT_my_ff = make_forcing_function(SIMINT_my_rate$times$values*SIMINT_rate_time_scale,
-                                       SIMINT_my_rate$levels$values*SIMINT_rate_values_scale,
-                                       "step", SIMINT_rate_name,  
-                                       SIMINT_simulation_options$output_times)
-  
-  eval(parse(text=sprintf("SIMINT_forces$%s = SIMINT_my_ff", SIMINT_rate_name)))
-
-
-  # adding the time values to important times
-  SIMINT_important_times =   c(SIMINT_my_ff[,1], SIMINT_important_times)
-  
-}
-
-
-# processing infusion rates
-for(SIMINT_cv_name in names(SIMINT_cfg$options$inputs$covariates)){
-  # Looping through each infusion rate 
-  # plucking out the rate name
-  SIMINT_my_cv = SIMINT_cfg$options$inputs$covariates[[SIMINT_cv_name]]
-
-  # the full covariate (time varying component)
-  SIMINT_my_ff = make_forcing_function(SIMINT_my_cv$times$values,
-                                       SIMINT_my_cv$values$values,
-                                       SIMINT_my_cv$cv_type, 
-                                       SIMINT_cv_name,  
-                                       SIMINT_simulation_options$output_times)
-  eval(parse(text=sprintf("SIMINT_forces$%s = SIMINT_my_ff", SIMINT_cv_name)))
-  # adding the time values to important times
-  SIMINT_important_times =   c(SIMINT_my_ff[,1], SIMINT_important_times)
-
-  # covariate evaluated at the initial condition and carried forward
-  SIMINT_my_ff = make_forcing_function(SIMINT_my_cv$times$values[1],
-                                       SIMINT_my_cv$values$values[1],
-                                       SIMINT_my_cv$cv_type, 
-                                       \'step\',  
-                                       SIMINT_simulation_options$output_times)
-  eval(parse(text=sprintf("SIMINT_forces$SIMINT_CVIC_%s = SIMINT_my_ff", SIMINT_cv_name)))
-  # adding the time values to important times
-  SIMINT_important_times =   c(SIMINT_my_ff[,1], SIMINT_important_times)
-  
-}
-
-# processing covariates 
- 
-
-# If important times were selected to be included then we set the output times
-# equal to that vector (bounded on either end by the min and max of the
-# selected simulation times).
-if("yes" == SIMINT_simulation_options$include_important_output_times){
-  SIMINT_important_times = SIMINT_important_times[(SIMINT_important_times >= min(SIMINT_simulation_options$output_times))  
-                                                & (SIMINT_important_times <= max(SIMINT_simulation_options$output_times))]
-  SIMINT_output_times_actual = sort(unique(SIMINT_important_times))
-} else {
-  SIMINT_output_times_actual = SIMINT_simulation_options$output_times}
-
-
-
-if("r-file" == SIMINT_simulation_options$integrate_with){
-# simulating the system using R
-SIMINT_simout = ode(SIMINT_IC, 
-                    SIMINT_output_times_actual,
-                    system_DYDT, SIMINT_cfg, 
-                    method=SIMINT_simulation_options$solver$method, 
-                    events=list(data=SIMINT_eventdata))
-# mapping the outputs, times, etc.
-SIMINT_simout_mapped = system_map_output(SIMINT_cfg, SIMINT_simout, SIMINT_parameters, \'r\')
-                    
-} else if("c-file" == SIMINT_simulation_options$integrate_with){
-
-# simulating the system using compiled C
-SIMINT_simout <- ode(SIMINT_IC, SIMINT_output_times_actual, 
-           func     = "derivs", 
-           parms    = unlist(SIMINT_parameters),
-           jacfunc  = NULL, 
-           dllname  = "r_ode_model",
-           initfunc = "initparams", 
-           initforc = "initforcs",
-           forcings = SIMINT_forces, 
-           method   = SIMINT_simulation_options$solver$method, 
-           nout     = length(names(cfg$options$mi$outputs)),
-           events   = list(data=SIMINT_eventdata), 
-           outnames = names(cfg$options$mi$outputs))
-SIMINT_simout_mapped = system_map_output(SIMINT_cfg, SIMINT_simout, SIMINT_parameters, \'c\')
-}
-
-return(SIMINT_simout_mapped)
-} 
-
-make_forcing_function = function(times, values, type, name, output_times){
-#
-# Inputs:
-#
-# times - time values for the forcing function
-#
-# values - magnitude for each time (same length of time)
-#
-# type - type of forcing function can be one of the following:
-#         "step" for constant values that switch to new values at
-#                the times
-#         "linear" to linearly interpolate between the points
-#
-# cfg - System configuration variable generated in the following manner:
-#
-
-
-delta         = 250*.Machine$double.eps
-
-if("step" == type){
- counter = 1
- while( counter <= length(times)){
-  if(counter == 1){
-    myforce = matrix(ncol=2,byrow=TRUE,data=c(times[counter], values[counter]))
-  } else{
-    # just before the switching time it takes the previous value
-    myforce = (rbind(myforce, c((times[counter]-delta), values[counter-1])))
-    # just afterwards it takes on the next value
-    myforce = (rbind(myforce, c((times[counter]+delta), values[counter])))
-  }
-  counter = counter +1
- }
-
- # if the last switching time occurs before the end of the simulation
- # then we extend the last rate specified to the end of the simulation
- if(tail(myforce[,1], n=1) < tail(output_times, n=1)){
-   myforce = (rbind(myforce, c((tail(output_times, n=1)), tail(values, n=1) )))
-   }
-}else  if("linear" == type){
-   myforce = cbind(times, values)
- # if the last switching time occurs before the end of the simulation
- # then we extend the last rate specified to the end of the simulation
- if(tail(myforce[,1], n=1) < tail(output_times, n=1)){
-   myforce = (rbind(myforce, c((tail(output_times, n=1)), tail(values, n=1) )))
- }
-}
-return(myforce);
-}
-
-simulate_subjects = function (parameters, ssoptions, cfg){
-#function [predictions] = simulate_subjects(parameters, subopts, cfg)
-#
-# Inputs:
-#
-# cfg - System configuration variable generated in the following manner:
-#
-# cfg = system_fetch_cfg()
-# cfg = system_select_set(cfg, \'default\')
-#
-# parameters - vector of typical parameter values. This can be obtained from
-# the cfg variable:
-#
-# parameters = cfg$parameters$values
-#
-# ssoptions - data structure with the following fields:
-#
-#   ssoptions$nsub -
-#      number of subjects to simulate  (default 100)
-#
-#   ssoptions$seed - 
-#      seed for random number generator (default 8675309)
-#
-#   ssoptions$ci   - 
-#      desired confidence interval (e.g. 95)
-#
-# These values can then be modified as necessary.
-#
-# Output:
-#
-# The predictions data structure contains the following:
-#
-# predictions$tcsummary
-#   This is a data frame that summarizes the predictions with the following
-#   fields:
-#     ts.TIMESCALE
-#     s.STATE.X
-#     o.OUTPUT.X
-#
-#   Where TIMESCALE, STATE, and OUTPUT refer to the named timescales states
-#   and outputs. X can be either the mean, median, lb_ci or ub_ci (the latter
-#   represent the lower and upper bounds on the confidence interval).
-#
-#
-# predictions$subjects 
-#   Full parameter vector (one per column) for each subject
-#
-# predictions$times
-#   A field for every timescale containing the sample times from the
-#   simulation.
-#
-# predictions$states and predictions$outputs -
-#   There is a field for each state or output which contains a profile for
-#   each subject (one per column) and each row corresponds to the sampling
-#   times in predictions$times
-# 
-# predictions$states_stats and predictions$outputs_stats -
-#   There is a field for each state or output which contains the following
-#   fields:
-#      lb_ci:  lower bound of the confidence interval for that named value
-#      ub_ci:  upper bound of the confidence interval for that named value
-#      mean:   mean of the prediction for that named value 
-#      median: median of the prediction for that named value 
-#   These are all vectors corresponding to the sampling times in
-#   prediction.times
-#
-# predictions$times_patch, predictions$states_patch and predictions$outputs_patch -
-# These contain vectors to be used with the patch command to generate shaded
-# regions. For example if you had an output called Coverage, the following
-# would shade in the region representing the confidence interval, specified by
-# options$ci = 95 (the default):
-#
-#
-# 
-# This plots the upper and lower confidence intervals:
-#   plot(p$times$days, p$states_stats$Cp$ub_ci, type="l")
-#  lines(p$times$days, p$states_stats$Cp$lb_ci, type="l")
-# 
-# Creating the shaded region
-#  polygon(p$times_patch$days, 
-#          p$states_patch$Cp$ci, 
-#          col=\'skyblue\',  border=NA)
-#
-# This plots the mean:
-#  lines(p$times$days, p$states_stats$Cp$mean, type="l")
-#   % This line is only necessary if you have some negative values and you want
-#   % to put it on a log scale:
-
-p = list()
-
-# Parsing ssoptions
-if("nsub" %in% names(ssoptions)){
-  nsub = ssoptions$nsub
-} else {
-  nsub = 100}
-
-if("seed" %in% names(ssoptions)){
-  seed = ssoptions$seed
-} else {
-  seed = 8675309}
-
-if("ci" %in% names(ssoptions)){
-  ci   = ssoptions$ci
-} else {
-  ci   = 95}
-
-
-max_errors = 100;
-
-isgood = 1;
-
-if("iiv" %in% names(cfg)){
-  if(min((eigen((cfg$iiv$values + (cfg$iiv$values))/2))$values) <= 0){
-    cat("----------------------------------------------\n ");
-    cat("  simulate_subjects.R                         \n ");
-    cat("> Warning: The variance/covariance matrix is not\n ");
-    cat("> positive semi-definite. Testing only the diagonal\n ");
-    cat("> elements. I.e. no covariance/interaction terms\n");
-  
-    cfg$iiv$values = diag(diag(cfg$iiv$values))
-    if(min((eigen((cfg$iiv$values + (cfg$iiv$values))/2))$values) <= 0){
-      cat("> Failed using only diagonal/variance elements.");
-      cat("> Check the specified IIV elements in");
-      cat("> cfg$iiv$values");
-      isgood = 0;
-    } else {
-      cat("> Using only the diagional elements seems to   ");
-      cat("> have worked. Understand that the results do  ");
-      cat("> not include any interaction.                 ");
-    }
-  }
-  
-  set.seed(seed)
-  
-  
-  # generating the subject specific parameters and 
-  # simulating the system out for each subject
-  sub_idx = 1;
-  while((sub_idx <= nsub) & isgood) {
-    # Generating a subject:
-    subject = generate_subject(parameters,  cfg);
-    parameters_subject = subject$parameters;
-  
-    # simulating the system for the current subject
-    som = run_simulation_ubiquity(parameters_subject, cfg)
-  
-    # for the first subject we initialize a bunch of things
-    if(sub_idx == 1){
-      p$subjects = parameters_subject
-      p$times    = som$simout["time"]
-      # creating the time patch vectors for the different timescales
-      for(timescale_name   in names(cfg$options$time_scales)){
-       timescale_name = sprintf(\'ts.%s\', timescale_name)
-       p$times_patch[[timescale_name]] = c(som$simout[[timescale_name]], rev(som$simout[[timescale_name]]))
-      }
-  
-      # initializing the matrices to hold state and output information
-      # then adding the current simulation as the first row
-      for(state_name   in names(cfg$options$mi$states)){
-        p$states[[state_name]] = matrix(0, nsub, length(som$simout[[state_name]]))
-        p$states[[state_name]][1,] = som$simout[[state_name]]
-        }
-  
-      for(output_name   in names(cfg$options$mi$outputs)){
-        p$outputs[[output_name]] = matrix(0, nsub, length(som$simout[[output_name]]))
-        p$outputs[[output_name]][1,] = som$simout[[output_name]]
-        }
-  
-    } else{
-      # appending parameters, state and output information to the matrices and
-      # datastructures created when the first subject was simulated above
-      p$subjects = rbind(p$subjects, parameters_subject)
-  
-      for(state_name   in names(cfg$options$mi$states)){
-        p$states[[state_name]][sub_idx,] = som$simout[[state_name]] }
-  
-      for(output_name   in names(cfg$options$mi$outputs)){
-        p$outputs[[output_name]][sub_idx,] = som$simout[[output_name]] }
-      }
-  
-    sub_idx = sub_idx + 1;
-  }
-  
-  
-  # summarizing the statistics for both the states and the outputs
-  for(state_name   in names(cfg$options$mi$states)){
-    tc = timecourse_stats(p$states[[state_name]],ci)
-    p$states_stats[[state_name]] = tc$stats
-    p$states_patch[[state_name]] = tc$patch
-    }
-  for(output_name   in names(cfg$options$mi$outputs)){
-    tc = timecourse_stats(p$outputs[[output_name]],ci)
-    p$outputs_stats[[output_name]] = tc$stats
-    p$outputs_patch[[output_name]] = tc$patch
-    }
-  #
-  # placing the structured data into a data frame
-  #
-  for(timescale_name   in names(cfg$options$time_scales)){
-    if("tcsummary" %in% names(p)){
-      eval(parse(text=sprintf(\'p$tcsummary[["ts.%s"]] = som$simout[["ts.%s"]]\', timescale_name, timescale_name))) 
-    }else{
-      eval(parse(text=sprintf(\'p$tcsummary = data.frame(ts.%s =  som$simout[["ts.%s"]])\', timescale_name, timescale_name))) 
-    }
-  }
-  for(state_name   in names(p$states)){
-      eval(parse(text=sprintf(\'p$tcsummary[["s.%s.lb_ci"]] = p$states_stats$%s$lb_ci\', state_name, state_name))) 
-      eval(parse(text=sprintf(\'p$tcsummary[["s.%s.ub_ci"]] = p$states_stats$%s$ub_ci\', state_name, state_name))) 
-      eval(parse(text=sprintf(\'p$tcsummary[["s.%s.mean"]]  = p$states_stats$%s$median\', state_name, state_name))) 
-    }
-  for(output_name   in names(p$outputs)){
-      eval(parse(text=sprintf(\'p$tcsummary[["o.%s.lb_ci"]] = p$outputs_stats$%s$lb_ci\',  output_name, output_name))) 
-      eval(parse(text=sprintf(\'p$tcsummary[["o.%s.ub_ci"]] = p$outputs_stats$%s$ub_ci\',  output_name, output_name))) 
-      eval(parse(text=sprintf(\'p$tcsummary[["o.%s.mean"]]  = p$outputs_stats$%s$median\', output_name, output_name))) 
-    }
-
-} else {
-  cat("---------------------------------------------- \n");
-  cat("  simulate_subjects.R                          \n");
-  cat("> Error:Trying to simulate subjects with       \n");
-  cat(">    variability, but no variance/covariance   \n");
-  cat(">    information was specified.                \n");
-  cat(">                                              \n");
-  cat(">    Modify the system.txt file to add the     \n");
-  cat(">    IIV information using the following:      \n");
-  cat(">     <IIV:?>      ?                           \n");
-  cat(">     <IIV:?:?>    ?                           \n");
-  cat(">     <IIVCOR:?:?> ?                           \n");
-  cat("---------------------------------------------- \n");
-}
-
-return(p)
-}
-
-
-
-
-timecourse_stats = function (d, ci){
-#
-# Given a matrix (d) of time courses (each row is an individual and each column is
-# a time point) and a confidence interval (ci) this will calculate the mean,
-# median, confidence intervals and a vector of values for creating patches.
-# 
-
-tc = list();
-
-myci = ci/100
-dsorted = apply(d, 2, sort)
-nsubs   = length(dsorted[,1]) 
-lb_idx  = nsubs*(1-myci)/2 + 1;
-ub_idx  = nsubs - nsubs*(1-myci)/2;
-
-tc$stats$lb_ci  = apply(rbind(dsorted[floor(lb_idx),],  dsorted[ ceiling(lb_idx),]), 2, mean)
-tc$stats$ub_ci  = apply(rbind(dsorted[floor(ub_idx),],  dsorted[ ceiling(ub_idx),]), 2, mean)
-
-tc$stats$mean   = apply(dsorted, 2, mean)
-tc$stats$median = apply(dsorted, 2, median)
-
-
-tc$patch$ci  = c(tc$stats$ub_ci,  rev(tc$stats$lb_ci))
-
-return(tc)
-
-}
-
-
-
-generate_subject = function (parameters, cfg){
-# function [subject] = generate_subject(parameters, cfg)
-#
-# Generates subject with variability specified using the <IIV:?> descriptor
-# in the system.txt file
-#
-# Inputs:
-#
-# cfg - system configuration variable generated in the following manner:
-#
-# cfg = system_fetch_cfg()
-# cfg = system_select_set(cfg, \'default\')
-#
-# parameters - vector of typical parameter values. This can be obtained from
-# the cfg variable:
-#
-# parameters = cfg$parameters$values
-#
-# This can be modified before subject generation
-#
-# Output:
-#
-# The data structure \'subject\' will be generated with the following fields:
-#
-# subject$parameters  - parameters for a sample from a subject 
-#
-
-library("MASS") 
-
-subject = list()
-subject$parameters   = parameters;
-
-
-#
-# Generating the subject
-#
-#iiv_parameter_names = fieldnames(cfg.iiv.parameters);
-# creating a temporary vector containing the typical values of all of the
-# parameters:
-TMP_parameters_all = parameters;
-
-# defining the mean of the IIVs and the covariance matirx
-covmatrix = cfg$iiv$values;
-muzero    = matrix(0, nrow(covmatrix),1)
-
-# Generating the normal sample:
-iiv_sample = mvrnorm(n = 1, muzero, covmatrix, tol = 1e-6, empirical = FALSE, EISPACK = FALSE);
-
-# now looping through each parameter with inter-individual variability
-#names(cfg$iiv$iivs)
-#names(cfg$iiv$parameters)
-for(TMP_parameter_name in names(cfg$iiv$parameters)){
-
-  # getting the typical value of the parameter
-  TMP_parameter_value = parameters[TMP_parameter_name];
-
-  # pulling out the distribution and IIV name
-  eval(parse(text=paste(sprintf("TMP_distribution = cfg$iiv$parameters$%s$distribution",TMP_parameter_name))))
-  eval(parse(text=paste(sprintf("TMP_iiv_name     = cfg$iiv$parameters$%s$iiv_name",    TMP_parameter_name))))
-
-  # pulling out the random IIV value for the current iiv
-  eval(parse(text=paste(sprintf("TMP_iiv_value = iiv_sample[cfg$options$mi$iiv$%s]",TMP_iiv_name))))
-
-
-  # Sampling based on the distribution
-  # Normal distribution:
-  if(TMP_distribution == \'N\'){
-    TMP_subject_parameter_value = TMP_parameter_value*(1.0 + TMP_iiv_value) 
-  # Log-Normal distribution:
-  } else if(TMP_distribution == \'LN\'){
-    TMP_subject_parameter_value =  TMP_parameter_value*exp(TMP_iiv_value) }
-
-
-  # Storing the sample in the vector with all parameters
-  subject$parameters[TMP_parameter_name] = TMP_subject_parameter_value
-}
-
-
-return(subject)
-
-}
-
-prepare_figure = function(purpose, fo){
-#
-# Takes a ggplot figure object and removes some of the accoutrements and
-# adjusts line thicknesses and what not to make it more appropriate for
-# different outputs
-#
-  # general things like the axis color and grids
-  fo = fo +
-  theme(axis.line = element_line(colour = "black"),
-        panel.grid.major = element_blank(),
-        panel.grid.minor = element_blank(),
-        panel.border     = element_blank(),
-        panel.background = element_blank()) 
-
-  # setting line thickness and font size for the specific output type
-  if(purpose == "present"){
-  fo = fo + 
-       theme( axis.text.x  = element_text(color="black", size=14), 
-              axis.title.x = element_text(color="black", size=14), 
-              axis.title.y = element_text(color="black", size=14), 
-              axis.text.y  = element_text(color="black", size=14)) 
-  } else if (purpose == "print") {
-       theme( axis.text.x  = element_text(color="black", size=10), 
-              axis.title.x = element_text(color="black", size=10), 
-              axis.title.y = element_text(color="black", size=10), 
-              axis.text.y  = element_text(color="black", size=10)) 
-  }
-return(fo)
-}
-
-# The following are implementations of the tic and toc commands from matlab.
-# The original source is here:
-# http://stackoverflow.com/questions/1716012/stopwatch-function-in-r
-
-tic <- function(gcFirst = TRUE, type=c("elapsed", "user.self", "sys.self"))
-{
-   type <- match.arg(type)
-   assign(".type", type, envir=baseenv())
-   if(gcFirst) gc(FALSE)
-   tic <- proc.time()[type]         
-   assign(".tic", tic, envir=baseenv())
-   invisible(tic)
-}
-
-toc <- function()
-{
-   type <- get(".type", envir=baseenv())
-   toc <- proc.time()[type]
-   tic <- get(".tic", envir=baseenv())
-   print(toc - tic)
-   invisible(toc)
-} ';
-
-return $template;
-}
-
-sub fetch_adapt_template_prm
-{
-my $template ='<SYMBOL_NDEqs>   <SYMBOL_NSParam> <SYMBOL_NVParam> <SYMBOL_NCVParam>
-<VALUES_PARAMETERS>
-<VALUES_IC>
-<VALUES_VARIANCE_PARAMETERS> ';
-
-return $template;
-
-}
-
-sub fetch_adapt_template_fortran
-{
-    my $template = '
-C**********************************************************************
-C                           ADAPT                                     *
-C                         Version 5                                   *
-C**********************************************************************
-C                                                                     *
-C                       MODEL - AUTO GENERATED                        *
-C                                                                     *
-C    This file contains Fortran subroutines into which the user       *
-C    must enter the relevant model equations and constants.           *
-C    Consult the User\'s Guide for details concerning the format for   *
-C    entered equations and definition of symbols.                     *
-C                                                                     *
-C       1. Symbol-  Parameter symbols and model constants             *
-C       2. DiffEq-  System differential equations                     *
-C       3. Output-  System output equations                           *
-C       4. Varmod-  Error variance model equations                    *
-C       5. Covmod-  Covariate model equations (ITS,MLEM)              *
-C       6. Popinit- Population parameter initial values (ITS,MLEM)    *
-C       7. Prior -  Parameter mean and covariance values (ID,NPD,STS) *
-C       8. Sparam-  Secondary parameters                              *
-C       9. Amat  -  System state matrix                               *
-C                                                                     *
-C**********************************************************************
-
-C######################################################################C
-
-        Subroutine SYMBOL
-        Implicit None
-
-        Include \'globals.inc\'
-        Include \'model.inc\'
-
-CC
-C----------------------------------------------------------------------C
-C                   Enter as Indicated                                 C
-C----------------------------------------------------------------------C
-
-      NDEqs   =  <SYMBOL_NDEqs>   ! Enter # of Diff. Eqs.
-      NSParam =  <SYMBOL_NSParam>   ! Enter # of System Parameters.
-      NVParam =  <SYMBOL_NVParam>   ! Enter # of Variance Model Parameters.
-      NSecPar =  <SYMBOL_NSecPar>   ! Enter # of Secondary Parameters.
-      NSecOut =  0   ! Enter # of Secondary Outputs (not used).
-      Ieqsol  =  1   ! Model type: 1 - DIFFEQ, 2 - AMAT, 3 - OUTPUT only.
-      Descr = \'Autogenerated Adapt 5 Model Target\'
-
-CC
-C----------------------------------------------------------------------C
-C     Enter Symbol for Each System Parameter (eg. Psym(1)=\'Kel\')       C
-C----c-----------------------------------------------------------------C
-
-<SYMBOL_PARAMETER_NAMES>
-
-CC
-C----------------------------------------------------------------------C
-C    Enter Symbol for Each Variance Parameter {eg: PVsym(1)=\'Sigma\'}   C
-C----c-----------------------------------------------------------------C
-
-<SYMBOL_VARIANCE_PARAMETER_NAMES>
-
-CC
-C----------------------------------------------------------------------C
-C    Enter Symbol for Each Secondary Parameter {eg: PSsym(1)=\'CLt\'}    C
-C----c-----------------------------------------------------------------C
-
-<SYMBOL_SECONDARY_PARAMETER_NAMES>
-
-C----------------------------------------------------------------------C
-C----------------------------------------------------------------------C
-C
-      Return
-      End
-
-C######################################################################C
-
-      Subroutine DIFFEQ(T,X,XP)
-      Implicit None
-
-      Include \'globals.inc\'
-      Include \'model.inc\'
-
-      Real*8 T,X(MaxNDE),XP(MaxNDE)
-<COMMON_BLOCK_DECLARE_PARAMETERS>
-<COMMON_BLOCK_DECLARE_STATIC_SECONDARY_PARAMETERS>
-<COMMON_BLOCK_DECLARE_STATE_DEFINITIONS>
-<COMMON_BLOCK_DECLARE_INFUSION_RATE_DEFINITIONS> 
-<COMMON_BLOCK_DECLARE_DYNAMIC_SECONDARY_PARAMETERS>
-
-<COMMON_BLOCK_PARAMETERS>
-<SECONDARY_PARAMETERS_ASSIGNMENT>
-<COMMON_BLOCK_STATE_DEFINITIONS>
-<COMMON_BLOCK_INFUSION_RATE_DEFINITIONS> 
-<COMMON_BLOCK_DYNAMIC_SECONDARY_PARAMETERS>
-
-
-CC
-C----------------------------------------------------------------------C
-C     Enter Differential Equations Below  {e.g.  XP(1) = -P(1)*X(1) }  C
-C----c-----------------------------------------------------------------C
-
-
-<ODES_ASSIGNMENT>
-
-<ODES_MAP>
-
-C----------------------------------------------------------------------C
-C----------------------------------------------------------------------C
-C
-      Return
-      End
-
-C######################################################################C
-
-      Subroutine OUTPUT(Y,T,X)
-      Implicit None
-
-      Include \'globals.inc\'
-      Include \'model.inc\'
-
-      Real*8 Y(MaxNOE),T,X(MaxNDE)
-      Integer DelayPar, I
-<COMMON_BLOCK_DECLARE_PARAMETERS>
-<COMMON_BLOCK_DECLARE_STATIC_SECONDARY_PARAMETERS>
-<COMMON_BLOCK_DECLARE_STATE_DEFINITIONS>
-<COMMON_BLOCK_DECLARE_INFUSION_RATE_DEFINITIONS> 
-<COMMON_BLOCK_DECLARE_DYNAMIC_SECONDARY_PARAMETERS>
-<COMMON_BLOCK_DECLARE_OUTPUT_DEFINITIONS>
-
-<COMMON_BLOCK_PARAMETERS>
-<SECONDARY_PARAMETERS_ASSIGNMENT>
-<COMMON_BLOCK_STATE_DEFINITIONS>
-<COMMON_BLOCK_INFUSION_RATE_DEFINITIONS> 
-<COMMON_BLOCK_DYNAMIC_SECONDARY_PARAMETERS>
-
-
-CC
-C----------------------------------------------------------------------C
-C     Enter Output Equations Below   {e.g.  Y(1) = X(1)/P(2) }         C
-C----c-----------------------------------------------------------------C
-
-<OUTPUTS_ASSIGNMENT> 
-
-<OUTPUTS_MAP>
-C----------------------------------------------------------------------C
-C----------------------------------------------------------------------C
-C
-      Return
-      End
-
-C######################################################################C
-
-      Subroutine VARMOD(V,T,X,Y)
-      Implicit None
-
-      Include \'globals.inc\'
-      Include \'model.inc\'
-
-      Real*8 V(MaxNOE),T,X(MaxNDE),Y(MaxNOE)
-<COMMON_BLOCK_DECLARE_OUTPUT_DEFINITIONS>
-<COMMON_BLOCK_DECLARE_VARIANCE_DEFINITIONS> 
-<COMMON_BLOCK_DECLARE_VARIANCE_EQUATION_DEFINITIONS> 
-
-<COMMON_BLOCK_OUTPUT_DEFINITIONS>
-<COMMON_BLOCK_VARIANCE_DEFINITIONS> 
-<COMMON_BLOCK_VARIANCE_EQUATION_DEFINITIONS> 
-
-
-CC
-C----------------------------------------------------------------------C
-C       Enter Variance Model Equations Below                           C
-C        {e.g. V(1) = (PV(1) + PV(2)*Y(1))**2 }                        C
-C----c-----------------------------------------------------------------C
-
-<VARIANCE_ASSIGNMENT>
-
-<VARIANCE_MAP>
-
-C----------------------------------------------------------------------C
-C----------------------------------------------------------------------C
-C
-      Return
-      End
-
-C######################################################################C
-
-      Subroutine COVMOD(Pmean, ICmean, PC)
-C  Defines any covariate model equations (MLEM, ITS)
-      Implicit None
-
-      Include \'globals.inc\'
-      Include \'model.inc\'
-
-      Real*8 PC(MaxNCP)
-      Real*8 Pmean(MaxNSP+MaxNDE), ICmean(MaxNDE)
-
-CC
-C----------------------------------------------------------------------C
-C     Enter # of Covariate Parameters                                  C
-C----c-----------------------------------------------------------------C
-
-      NCparam = 0    ! Enter # of Covariate Parameters.
-
-CC
-C----------------------------------------------------------------------C
-C   Enter Symbol for Covariate Params {eg: PCsym(1)=\'CLRenal\'}         C
-C----c-----------------------------------------------------------------C
-
-
-CC
-C----------------------------------------------------------------------C
-C   For the Model Params. that Depend on Covariates Enter the Equation C
-C         {e.g. Pmean(1) =  PC(1)*R(2) }                               C
-C----c-----------------------------------------------------------------C
-
-
-C----------------------------------------------------------------------C
-C----------------------------------------------------------------------C
-C
-      Return
-      End
-
-C######################################################################C
-
-      Subroutine POPINIT(PmeanI,ICmeanI,PcovI,ICcovI, PCI)
-C  Initial parameter values for population program parameters (ITS, MLEM)
-
-      Implicit None
-
-      Include \'globals.inc\'
-      Include \'model.inc\'
-
-      Integer I,J
-      Real*8 PmeanI(MaxNSP+MaxNDE), ICmeanI(MaxNDE)
-      Real*8 PcovI(MaxNSP+MaxNDE,MaxNSP+MaxNDE), ICcovI(MaxNDE,MaxNDE)
-      Real*8 PCI(MaxNCP)
-
-CC
-C----------------------------------------------------------------------C
-C  Enter Initial Values for Population Means                           C
-C          {  e.g. PmeanI(1) = 10.0    }                               C
-C----c-----------------------------------------------------------------C
-
-
-CC
-C----------------------------------------------------------------------C
-C   Enter Initial Values for Pop. Covariance Matrix (Lower Triang.)    C
-C         {  e.g. PcovI(2,1) = 0.25    }                               C
-C----c-----------------------------------------------------------------C
-
-
-CC
-C----------------------------------------------------------------------C
-C   Enter Values for Covariate Model Parameters                        C
-C         {  e.g. PCI(1) = 2.0    }                                    C
-C----c-----------------------------------------------------------------C
-
-
-C----------------------------------------------------------------------C
-C----------------------------------------------------------------------C
-C
-      Return
-      End
-
-C######################################################################C
-
-      Subroutine PRIOR(Pmean,Pcov,ICmean,ICcov)
-C  Parameter mean and covariance values for MAP estimation (ID,NPD,STS)
-      Implicit None
-
-      Include \'globals.inc\'
-      Include \'model.inc\'
-
-      Integer I,J
-      Real*8 Pmean(MaxNSP+MaxNDE), ICmean(MaxNDE)
-      Real*8 Pcov(MaxNSP+MaxNDE,MaxNSP+MaxNDE), ICcov(MaxNDE,MaxNDE)
-
-CC
-C----------------------------------------------------------------------C
-C  Enter Nonzero Elements of Prior Mean Vector                         C
-C          {  e.g. Pmean(1) = 10.0    }                                C
-C----c-----------------------------------------------------------------C
-
-
-CC
-C----------------------------------------------------------------------C
-C   Enter Nonzero Elements of Covariance Matrix (Lower Triang.)       C
-C         {  e.g. Pcov(2,1) = 0.25    }                                C
-C----c-----------------------------------------------------------------C
-
-
-C----------------------------------------------------------------------C
-C----------------------------------------------------------------------C
-C
-      Return
-      End
-
-C######################################################################C
-
-      Subroutine SPARAM(PS,P,IC)
-      Implicit None
-
-      Include \'globals.inc\'
-
-      Real*8 PS(MaxNSECP), P(MaxNSP+MaxNDE), IC(MaxNDE) 
-<COMMON_BLOCK_DECLARE_PARAMETERS>
-<COMMON_BLOCK_DECLARE_STATIC_SECONDARY_PARAMETERS>
-
-<COMMON_BLOCK_PARAMETERS>
-
-CC
-C----------------------------------------------------------------------C
-C       Enter Equations Defining Secondary Paramters                   C
-C           {  e.g.  PS(1) = P(1)*P(2)   }                             C
-C----c-----------------------------------------------------------------C
-      
-<SECONDARY_PARAMETERS_ASSIGNMENT>
-
-<SECONDARY_PARAMETERS_MAP>
-
-C----------------------------------------------------------------------C
-C----------------------------------------------------------------------C
-C
-        Return
-        End
-        
-C######################################################################C
-
-        Subroutine AMAT(A)
-        Implicit None
-
-        Include \'globals.inc\'
-        Include \'model.inc\'
-
-        Integer I,J
-        Real*8 A(MaxNDE,MaxNDE)
-
-        DO I=1,Ndeqs
-           Do J=1,Ndeqs
-              A(I,J)=0.0D0
-           End Do
-        End Do
-
-CC
-C----------------------------------------------------------------------C
-C    Enter non zero elements of state matrix  {e.g.  A(1,1) = -P(1) }  C
-C----c-----------------------------------------------------------------C
-
-
-
-C----------------------------------------------------------------------C
-C----------------------------------------------------------------------C
-C
-        Return
-        End
-
-C######################################################################C';
 
 }
 

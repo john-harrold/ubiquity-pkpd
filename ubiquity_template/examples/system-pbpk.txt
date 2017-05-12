@@ -134,6 +134,7 @@
 <P> V_V_THYMUS      0.000000495              eps    inf      L      no       THYMUS  
 <P> V_V_SPLEEN      0.000015367              eps    inf      L      no       SPLEEN  
 <P> V_V_OTHER       0.000019535609097        eps    inf      L      no       OTHER   
+
                                                         
 # Blood Cell Volume                                     
 <P> V_BC_HEART        0.000004788            eps    inf      L      no       HEART   
@@ -543,7 +544,7 @@
 <TS:weeks> 1.0/24.0/7.0
 
 # output times 
-<OPT:output_times> linspace(0,300,1000)
+<OPT:output_times>  SIMINT_SEQ[0][300][.1]
 # default time scale
 # <OPT:TS>  name                            
 # <OPT:ylim>  [ymin ymax]

@@ -1,5 +1,5 @@
-function [data]=read_nm_data(data);
-% function [data]=read_nm_data(data);
+function [data]=nm_read_data(data);
+% function [data]=nm_read_data(data);
 % This function can be used to read NONMEM data sets and output tab files. To
 % read a dataset it can be in excel or csv format. If an excel file is used,
 % it should be saved in an older format (95 or 98). 
@@ -63,6 +63,8 @@ if(isfield(data, 'column'))
 if(isfield(data.column, 'auto'))
 if(strcmp(data.column.auto, 'yes'))
   for row_idx = 1:length(data.header)
+    % replacing '.' with '_'
+    data.header{row_idx} = regexprep(data.header{row_idx}, '\.', '_');
     eval(sprintf('data.column.names.%s = ''%s'';', data.header{row_idx}, data.header{row_idx}));
   end
 end
