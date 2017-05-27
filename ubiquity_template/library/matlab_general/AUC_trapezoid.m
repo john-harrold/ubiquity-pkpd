@@ -49,14 +49,16 @@ for sub_idx =1:R
   end
 
   if(exist('extrap', 'var'))
-    if(subtmp(end) > subtmp(end-1))
-      disp(' unable to extraploate to infinity');
-    else
-      %           ln(y2) - ln(y1)
-      %  kel = -  ---------------
-      %               t2 - t1
-      kel = -(log(subtmp(end)) - log(subtmp(end-1)))/(ttmp(end) - ttmp(end-1));
-      result.AUC_sub(sub_idx) = result.AUC_sub(sub_idx) + subtmp(end)/kel;
+    if(extrap)
+      if(subtmp(end) > subtmp(end-1))
+        disp(' unable to extraploate to infinity');
+      else
+        %           ln(y2) - ln(y1)
+        %  kel = -  ---------------
+        %               t2 - t1
+        kel = -(log(subtmp(end)) - log(subtmp(end-1)))/(ttmp(end) - ttmp(end-1));
+        result.AUC_sub(sub_idx) = result.AUC_sub(sub_idx) + subtmp(end)/kel;
+      end
     end
   end
 end

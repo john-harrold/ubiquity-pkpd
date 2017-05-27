@@ -2882,6 +2882,8 @@ if("yes" == SIMINT_simulation_options$include_important_output_times){
   SIMINT_output_times_actual = SIMINT_simulation_options$output_times}
 
 
+# constructing the simulation command depending on the integrate_with option
+
 if("r-file" == SIMINT_simulation_options$integrate_with){
 # simulating the system using R
 SIMINT_simcommand = 'SIMINT_simout = ode(SIMINT_IC, 
@@ -2890,7 +2892,7 @@ SIMINT_simcommand = 'SIMINT_simout = ode(SIMINT_IC,
                                          method=SIMINT_simulation_options$solver, 
                                          events=list(data=SIMINT_eventdata)'
 SIMINT_simcommand = sprintf('%s %s)', SIMINT_simcommand, SIMINT_solver_opts)
-eval(parse(text=SIMINT_simcommand))
+
 #   tryCatch(
 #    { 
 #   eval(parse(text=SIMINT_simcommand))
@@ -2903,12 +2905,9 @@ eval(parse(text=SIMINT_simcommand))
 #    })
 #
 
-# mapping the outputs, times, etc.
-SIMINT_simout_mapped = system_map_output(SIMINT_cfg, SIMINT_simout, SIMINT_parameters, "r", SIMINT_eventdata)
                     
 } else if("c-file" == SIMINT_simulation_options$integrate_with){
 
-# simulating the system using compiled C
 SIMINT_simcommand = ' SIMINT_simout <- ode(SIMINT_IC, SIMINT_output_times_actual, 
                                            func     = "derivs", 
                                            parms    = unlist(SIMINT_parameters),
@@ -2922,12 +2921,24 @@ SIMINT_simcommand = ' SIMINT_simout <- ode(SIMINT_IC, SIMINT_output_times_actual
                                            events   = list(data=SIMINT_eventdata), 
                                            outnames = names(SIMINT_cfg$options$mi$outputs)'
 SIMINT_simcommand = sprintf('%s %s)', SIMINT_simcommand, SIMINT_solver_opts)
-eval(parse(text=SIMINT_simcommand))
-SIMINT_simout_mapped = system_map_output(SIMINT_cfg, SIMINT_simout, SIMINT_parameters, "c", SIMINT_eventdata)
+#eval(parse(text=SIMINT_simcommand))
+#SIMINT_simout_mapped = system_map_output(SIMINT_cfg, SIMINT_simout, SIMINT_parameters, "c", SIMINT_eventdata)
 }
+
+# simulating the system using compiled C
+SIMINT_SIM_tic = proc.time()
+eval(parse(text=SIMINT_simcommand))
+SIMINT_SIM_toc = proc.time()
+
+# mapping the outputs, times, etc.
+SIMINT_simout_mapped = system_map_output(SIMINT_cfg, SIMINT_simout, SIMINT_parameters, "r", SIMINT_eventdata)
 
 # adding error to the output
 SIMINT_simout_mapped = add_observation_errors(SIMINT_simout_mapped, SIMINT_parameters, SIMINT_cfg);
+
+
+# Adding the timing for the simulations
+SIMINT_simout_mapped$meta$proc_time = SIMINT_SIM_toc - SIMINT_SIM_tic
 
 return(SIMINT_simout_mapped) } 
 
@@ -4144,12 +4155,17 @@ prepare_figure = function(purpose, fo,
               axis.title.x = element_text(size=16), 
               axis.title.y = element_text(size=16), 
               legend.text  = element_text(size=16), 
+              title        = element_text(size=16), 
+              plot.title   = element_text(size=16), 
               axis.text.y  = element_text(size=16)) 
   } else if (purpose == "print") {
        theme( axis.text.x  = element_text(size=10), 
               axis.title.x = element_text(size=10), 
               axis.title.y = element_text(size=10), 
               legend.text  = element_text(size=10), 
+              title        = element_text(size=10), 
+              text         = element_text(size=10), 
+              plot.title   = element_text(size=10), 
               axis.text.y  = element_text(size=10)) 
   }
 
