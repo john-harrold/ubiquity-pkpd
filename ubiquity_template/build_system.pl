@@ -693,6 +693,8 @@ sub dump_rproject
   my $iname2     = '';
   my $counter2;
 
+  my $counter_ode_outputs = 1;
+
   # used to keep track of forcing function counter in C
   my $counter_ff_C = 0;
   my $namespace_map; 
@@ -721,31 +723,34 @@ sub dump_rproject
   my $mc;
   #my $template_components = &fetch_rproject_components_template();
   my $template_components = &fetch_template_file('r_components.r');
-  $mc->{COMMENTS}              = '';
-  $mc->{FETCH_SYS_PARAMS}      = '';
-  $mc->{FETCH_SYS_INDICES}     = '';
-  $mc->{FETCH_SYS_IC}          = '';
-  $mc->{FETCH_SYS_IIV}         = '';
-  $mc->{FETCH_SYS_VE}          = '';
-  $mc->{FETCH_SYS_PSETS}       = '';
-  $mc->{FETCH_SYS_TS}          = '';
-  $mc->{FETCH_SYS_DATA}        = '';
-  $mc->{FETCH_SYS_MISC}        = '';
-  $mc->{FETCH_SYS_BOLUS}       = '';
-  $mc->{FETCH_SYS_INFUSIONS}   = '';
-  $mc->{FETCH_SYS_COVARIATES}  = '';
-  $mc->{COVARIATES_IC}         = '';
-  $mc->{COVARIATES}            = '';
-  $mc->{INFUSION_RATES}        = '';
-  $mc->{SS_PARAM}              = '';
-  $mc->{SS_PARAM_META}         = '';
-  $mc->{DS_PARAM}              = '';
-  $mc->{ODES}                  = '';
-  $mc->{ODES_REMAP}            = '';
-  $mc->{OUTPUTS}               = '';
-  $mc->{SELECT_PARAMS}         = '';
-  $mc->{STATES}                = '';
-  $mc->{SYSTEM_PARAM}          = '';
+  $mc->{COMMENTS}                     = '';
+  $mc->{FETCH_SYS_PARAMS}             = '';
+  $mc->{FETCH_SYS_SSP}                = '';
+  $mc->{FETCH_SYS_DSP}                = '';
+  $mc->{FETCH_SYS_INDICES}            = '';
+  $mc->{FETCH_SYS_INDICES_ODE_OUTPUT} = '';
+  $mc->{FETCH_SYS_IC}                 = '';
+  $mc->{FETCH_SYS_IIV}                = '';
+  $mc->{FETCH_SYS_VE}                 = '';
+  $mc->{FETCH_SYS_PSETS}              = '';
+  $mc->{FETCH_SYS_TS}                 = '';
+  $mc->{FETCH_SYS_DATA}               = '';
+  $mc->{FETCH_SYS_MISC}               = '';
+  $mc->{FETCH_SYS_BOLUS}              = '';
+  $mc->{FETCH_SYS_INFUSIONS}          = '';
+  $mc->{FETCH_SYS_COVARIATES}         = '';
+  $mc->{COVARIATES_IC}                = '';
+  $mc->{COVARIATES}                   = '';
+  $mc->{INFUSION_RATES}               = '';
+  $mc->{SS_PARAM}                     = '';
+  $mc->{DS_PARAM}                     = '';
+  $mc->{ODES}                         = '';
+  $mc->{ODES_REMAP}                   = '';
+  $mc->{OUTPUTS}                      = '';
+  $mc->{SELECT_PARAMS}                = '';
+  $mc->{STATES}                       = '';
+  $mc->{SYSTEM_PARAM}                 = '';
+  $mc->{TIME_SCALES}                  = '';
 
   my $md;
   #my $template_driver     = &fetch_rproject_simulation_driver_template();
@@ -755,6 +760,9 @@ sub dump_rproject
   $md->{INFUSION_RATES}        = '';
   $md->{COVARIATES}            = '';
   $md->{OUTPUT_TIMES}          = '';
+  $md->{SYSTEM_FILE}           = $cfg->{files}->{system};
+
+
 
 
   
@@ -767,6 +775,7 @@ sub dump_rproject
   $mo->{STATES}                = '';
   $mo->{ODES}                  = '';
   $mo->{ODES_REMAP}            = '';
+  $mo->{TIME_SCALES}           = '';
   $mo->{SS_PARAM}              = '';
   $mo->{DS_PARAM}              = '';
   $mo->{OUTPUTS}               = '';
@@ -783,6 +792,7 @@ sub dump_rproject
   $ma->{INFUSION_RATES}        = '';
   $ma->{COVARIATES}            = '';
   $ma->{OUTPUT_TIMES}          = '';
+  $ma->{SYSTEM_FILE}           = $cfg->{files}->{system};
 
 #
 # defining aspects of forcing functions in C
@@ -856,36 +866,24 @@ $mc->{FETCH_SYS_PARAMS} .= ")";
 }
 $mc->{FETCH_SYS_PARAMS} .= ")\n";
 
-
 #
 # Processing components
 #
-# Parameters
 $mc->{FETCH_SYS_INDICES} .= "# defining indices\n";
-$mc->{FETCH_SYS_INDICES} .= "# parmeters\n";
-$counter = 1;
-foreach $parameter (@{$cfg->{parameters_index}}){
-  $pname = $parameter;
-  # defining the indices of the parameters
-  $mc->{FETCH_SYS_INDICES} .= 'cfg$options$mi$parameters$'."$pname".&fetch_padding($pname, $cfg->{parameters_length})." = $counter \n";
-  $mc->{SYSTEM_PARAM}  .= $pname.&fetch_padding($pname, $cfg->{parameters_length}).' = SIMINT_p$'.$pname."\n";
-  $mc->{SELECT_PARAMS} .= "  ".$pname.&fetch_padding($pname, $cfg->{parameters_length}).' = c(cfg$parameters$matrix$value['.$counter.'])';
-  if($counter < scalar(@{$cfg->{parameters_index}})){
-    $mc->{SELECT_PARAMS} .= ",\n"; }
-
-
-  # Compiled C Code
-  $mo->{SYSTEM_PARAM} .= "#define $pname".&fetch_padding($pname, $cfg->{parameters_length})." parms[".($counter-1)."]\n";
-  $counter = 1+$counter;
-}
+$mc->{FETCH_SYS_INDICES} .= "# parameters\n";
 
 # States    
 # These are the components that are state dependent like ODEs, initial
 # conditions, etc.
 $mc->{FETCH_SYS_INDICES} .= "# states   \n";
+$mo->{OUTPUTS_REMAP}      .= "/* States */\n";
 $counter = 1;
 foreach $state     (@{$cfg->{species_index}}){
   $sname = $state;
+
+  # collecting all of the outputs to include with the simulation outputs
+  #$mc->{FETCH_SYS_INDICES_ODE_OUTPUT} .= 'cfg$options$mi$odes$'."$sname".&fetch_padding($sname, $cfg->{species_length})." = $counter_ode_outputs \n";
+  # $mo->{OUTPUTS_REMAP}      .= "yout[".($counter_ode_outputs-1)."] = $sname;\n";
 
   # R-script level
   $mc->{FETCH_SYS_INDICES} .= 'cfg$options$mi$states$'."$sname".&fetch_padding($sname, $cfg->{species_length})." = $counter \n";
@@ -918,11 +916,18 @@ foreach $state     (@{$cfg->{species_index}}){
   $mo->{ODES_REMAP} .= "ydot[".($counter-1)."] = SIMINT_d$sname;\n";
 
   
-  $counter = 1+$counter;
+  $counter             = 1 + $counter;
+  #$counter_ode_outputs = 1 + $counter_ode_outputs;
+
 }
-$mc->{FETCH_SYS_INDICES} .= "# outputs  \n";
-$counter = 1;
+
+
+
 # Outputs   
+$mc->{FETCH_SYS_INDICES} .= "# outputs  \n";
+$mo->{OUTPUTS_REMAP}      .= "/* Model Outputs */\n";
+$counter = 1;
+
 foreach $output    (@{$cfg->{outputs_index}}){
   $sname = $output;
 
@@ -941,11 +946,38 @@ foreach $output    (@{$cfg->{outputs_index}}){
   $mo->{OUTPUTS}           .= $sname.&fetch_padding($sname, $cfg->{outputs_length})." = ";
   $mo->{OUTPUTS}           .= &apply_format($cfg, $cfg->{outputs}->{$sname}, 'C').";\n";
 
-  $mo->{OUTPUTS_REMAP}      .= "yout[".($counter-1)."] = $sname;\n";
+  # collecting all of the outputs to include with the simulation outputs
+  $mc->{FETCH_SYS_INDICES_ODE_OUTPUT} .= 'cfg$options$mi$odes$'."$sname".&fetch_padding($sname, $cfg->{species_length})." = $counter_ode_outputs \n";
+  $mo->{OUTPUTS_REMAP}      .= "yout[".($counter_ode_outputs-1)."] = $sname;\n";
 
   $counter = 1+$counter;
+  $counter_ode_outputs = 1 + $counter_ode_outputs;
 
 }
+
+
+# Parameters
+$mo->{OUTPUTS_REMAP}      .= "/* System Parameters */\n";
+$counter = 1;
+foreach $parameter (@{$cfg->{parameters_index}}){
+  $pname = $parameter;
+  # defining the indices of the parameters
+  $mc->{FETCH_SYS_INDICES} .= 'cfg$options$mi$parameters$'."$pname".&fetch_padding($pname, $cfg->{parameters_length})." = $counter \n";
+  $mc->{SYSTEM_PARAM}  .= $pname.&fetch_padding($pname, $cfg->{parameters_length}).' = SIMINT_p$'.$pname."\n";
+  $mc->{SELECT_PARAMS} .= "  ".$pname.&fetch_padding($pname, $cfg->{parameters_length}).' = c(cfg$parameters$matrix$value['.$counter.'])';
+  if($counter < scalar(@{$cfg->{parameters_index}})){
+    $mc->{SELECT_PARAMS} .= ",\n"; }
+
+  # collecting all of the outputs to include with the simulation outputs
+  $mc->{FETCH_SYS_INDICES_ODE_OUTPUT} .= 'cfg$options$mi$odes$'."$parameter".&fetch_padding($parameter, $cfg->{species_length})." = $counter_ode_outputs \n";
+  $mo->{OUTPUTS_REMAP}      .= "yout[".($counter_ode_outputs-1)."] = $parameter;\n";
+  $counter_ode_outputs = 1 + $counter_ode_outputs;
+
+  # Compiled C Code
+  $mo->{SYSTEM_PARAM} .= "#define $pname".&fetch_padding($pname, $cfg->{parameters_length})." parms[".($counter-1)."]\n";
+  $counter = 1+$counter;
+}
+
 
 # IIV
 
@@ -1015,9 +1047,9 @@ if(keys(%{$cfg->{iiv}})){
 
 
 
-
 # infusion rates
 if((@{$cfg->{input_rates_index}})){
+  $mo->{OUTPUTS_REMAP}      .= "/* Infusion Rates */\n";
   # simulation driver
   $md->{INFUSION_RATES} .= "# To overwrite the default infusion \n";
   $md->{INFUSION_RATES} .= "# inputs uncomment the lines below\n";
@@ -1051,13 +1083,20 @@ if((@{$cfg->{input_rates_index}})){
     #JMH this seems aberrant 2015.04.08
     # $mc->{INFUSION_RATES} .= $rname.&fetch_padding($rname, $cfg->{inputs_length})." = 0.0\n";
 
+    # collecting all of the outputs to include with the simulation outputs
+    $mc->{FETCH_SYS_INDICES_ODE_OUTPUT} .= 'cfg$options$mi$odes$'."$rname".&fetch_padding($rname, $cfg->{species_length})." = $counter_ode_outputs \n";
+    $mo->{OUTPUTS_REMAP}      .= "yout[".($counter_ode_outputs-1)."] = $rname;\n";
+    $counter_ode_outputs = 1 + $counter_ode_outputs;
+
     # c target
     $mo->{FORCE_PARAM} .= "#define $rname".&fetch_padding($rname, $cfg->{inputs_length})." forc[$counter_ff_C]\n";
     $counter_ff_C = $counter_ff_C +1;
   }
 }
 
-# infusion rates
+$mo->{OUTPUTS_REMAP}      .= "/* Covariates */\n";
+
+# covariates    
 if((@{$cfg->{covariates_index}})){
   $md->{COVARIATES} .= "# Covariates are set using the system_set_covariate statement.\n";
   $md->{COVARIATES} .= "# The default values are listed here, and they may be \n";
@@ -1093,6 +1132,20 @@ if((@{$cfg->{covariates_index}})){
     $counter_ff_C = $counter_ff_C +1;
     $namespace_map->{$cname} = "SIMINT_CVIC_$cname";
 
+
+    # collecting all of the outputs to include with the simulation outputs
+    # Covariate initial condition used
+    $mc->{FETCH_SYS_INDICES_ODE_OUTPUT} .= 'cfg$options$mi$odes$'."SIMINT_CVIC_$cname".&fetch_padding("SIMINT_CVIC_$cname", $cfg->{species_length})." = $counter_ode_outputs \n";
+    $mo->{OUTPUTS_REMAP}      .= "yout[".($counter_ode_outputs-1)."] = SIMINT_CVIC_$cname;\n";
+    $counter_ode_outputs = 1 + $counter_ode_outputs;
+
+    # Covariate value
+    $mc->{FETCH_SYS_INDICES_ODE_OUTPUT} .= 'cfg$options$mi$odes$'."$cname".&fetch_padding($cname, $cfg->{species_length})." = $counter_ode_outputs \n";
+    $mo->{OUTPUTS_REMAP}      .= "yout[".($counter_ode_outputs-1)."] = $cname;\n";
+    $counter_ode_outputs = 1 + $counter_ode_outputs;
+
+
+
     foreach $set (keys(%{$cfg->{covariates}->{$cname}->{parameter_sets}})) {
       $mc->{FETCH_SYS_COVARIATES} .= 'cfg$options$inputs$covariates$'.$cname.'$parameter_sets$'.$set.'$times  = '."c(".join(', ', &extract_elements($cfg->{covariates}->{$cname}->{parameter_sets}->{$set}->{times})).")\n"; 
       $mc->{FETCH_SYS_COVARIATES} .= 'cfg$options$inputs$covariates$'.$cname.'$parameter_sets$'.$set.'$values = '."c(".join(', ', &extract_elements($cfg->{covariates}->{$cname}->{parameter_sets}->{$set}->{values})).")\n"; 
@@ -1103,16 +1156,16 @@ if((@{$cfg->{covariates_index}})){
 
 # static secondary parameters
 if ((@{$cfg->{static_secondary_parameters_index}})){
+  $mo->{OUTPUTS_REMAP}      .= "/* Secondary Parameters (Static) */\n";
   foreach $parameter    (@{$cfg->{static_secondary_parameters_index}}){
     $pname = $parameter;
     # R script
+    $mc->{FETCH_SYS_SSP} .= 'cfg$options$ssp$'.$pname.'="'.&apply_format($cfg, $cfg->{static_secondary_parameters}->{$pname}, 'rproject').'"'."\n";
     $mc->{SS_PARAM} .= $pname.&fetch_padding($pname, $cfg->{parameters_length})." = ";
     $mc->{SS_PARAM} .= &apply_format($cfg, $cfg->{static_secondary_parameters}->{$pname}, 'rproject')." \n"; 
     if(defined($cfg->{if_conditional}->{$pname})){
       $mc->{SS_PARAM} .= &extract_conditional($cfg, $pname, 'rproject');
     }
-    # storing the secondary parameters in the output
-    $mc->{SS_PARAM_META} .= 'SIMINT_meta$secondary_parameters$'.$pname.&fetch_padding($pname, $cfg->{parameters_length})." = $pname\n";
     
     # Compiled code level
     if($mo->{SS_PARAM} eq ""){
@@ -1125,6 +1178,13 @@ if ((@{$cfg->{static_secondary_parameters_index}})){
     if(defined($cfg->{if_conditional}->{$pname})){
       $mo->{SS_PARAM} .= &extract_conditional($cfg, $pname, 'C');
     }
+
+  # collecting all of the outputs to include with the simulation outputs
+  $mc->{FETCH_SYS_INDICES_ODE_OUTPUT} .= 'cfg$options$mi$odes$'."$parameter".&fetch_padding($parameter, $cfg->{species_length})." = $counter_ode_outputs \n";
+  $mo->{OUTPUTS_REMAP}      .= "yout[".($counter_ode_outputs-1)."] = $parameter;\n";
+  $counter_ode_outputs       = 1 + $counter_ode_outputs;
+
+
   }
   # if any covariates were used in the static secondary parameters, we change
   # those to the SIMINT_CVIC_ versions which are just the covariates evaluated 
@@ -1135,9 +1195,11 @@ if ((@{$cfg->{static_secondary_parameters_index}})){
 
 # dynamic secondary parameters
 if ((@{$cfg->{dynamic_secondary_parameters_index}})){
+  $mo->{OUTPUTS_REMAP}      .= "/* Secondary Parameters (Dynamic) */\n";
   foreach $parameter    (@{$cfg->{dynamic_secondary_parameters_index}}){
     $pname = $parameter;
     # R script
+    $mc->{FETCH_SYS_DSP} .= 'cfg$options$dsp$'.$parameter.'="'.&apply_format($cfg, $cfg->{dynamic_secondary_parameters}->{$parameter}, 'rproject').'"'."\n";
     $mc->{DS_PARAM} .= $pname.&fetch_padding($pname, $cfg->{parameters_length})." = ";
     $mc->{DS_PARAM} .= &apply_format($cfg, $cfg->{dynamic_secondary_parameters}->{$pname}, 'rproject')." \n"; 
     if(defined($cfg->{if_conditional}->{$pname})){
@@ -1155,6 +1217,14 @@ if ((@{$cfg->{dynamic_secondary_parameters_index}})){
     if(defined($cfg->{if_conditional}->{$pname})){
       $mo->{DS_PARAM} .= &extract_conditional($cfg, $pname, 'C');
     }
+
+  # collecting all of the outputs to include with the simulation outputs
+  $mc->{FETCH_SYS_INDICES_ODE_OUTPUT} .= 'cfg$options$mi$odes$'."$parameter".&fetch_padding($parameter, $cfg->{species_length})." = $counter_ode_outputs \n";
+  $mo->{OUTPUTS_REMAP}      .= "yout[".($counter_ode_outputs-1)."] = $parameter;\n";
+  $counter_ode_outputs       = 1 + $counter_ode_outputs;
+
+
+
   }
 }
 
@@ -1168,10 +1238,28 @@ if(keys %{$cfg->{options}}){
 
 # time scales
 $mc->{FETCH_SYS_TS} .= 'cfg$options$time_scales$time'.&fetch_padding("time", $cfg->{time_scales_length})." = 1.0\n";
+
+# Adding the default "time" timescale 
+$mo->{OUTPUTS_REMAP}      .= "/* Time Scales */\n";
+$mc->{TIME_SCALES}        .= "ts.time           = SIMINT_TIME;\n";
+$mo->{TIME_SCALES}        .= "SIMINT_TS_time    = SIMINT_TIME;\n";
+$mc->{FETCH_SYS_INDICES_ODE_OUTPUT} .= 'cfg$options$mi$odes$'."ts.time".&fetch_padding("ts.time", $cfg->{species_length})." = $counter_ode_outputs \n";
+$mo->{VARIABLE_INIT}.= "double SIMINT_TS_time".&fetch_padding("SIMINT_TS_time", $cfg->{outputs_length})." = 0.0;\n";
+$mo->{OUTPUTS_REMAP}      .= "yout[".($counter_ode_outputs-1)."] = SIMINT_TS_time;\n";
+$counter_ode_outputs = 1 + $counter_ode_outputs;
+
 if ((@{$cfg->{time_scales_index}})){
   foreach $option       (@{$cfg->{time_scales_index}}){
     $mc->{FETCH_SYS_TS} .= 'cfg$options$time_scales$'.$option.&fetch_padding($option, $cfg->{time_scales_length})." = ";
     $mc->{FETCH_SYS_TS} .= $cfg->{time_scales}->{$option}."\n";
+
+  # # collecting all of the outputs to include with the simulation outputs
+    $mo->{VARIABLE_INIT}.= "double SIMINT_TS_$option".&fetch_padding("SIMINT_TS_$option", $cfg->{outputs_length})." = 0.0;\n";
+    $mc->{FETCH_SYS_INDICES_ODE_OUTPUT} .= 'cfg$options$mi$odes$'."ts.$option".&fetch_padding("ts.$option", $cfg->{species_length})." = $counter_ode_outputs \n";
+    $mo->{TIME_SCALES}        .= "SIMINT_TS_$option = SIMINT_TIME*$cfg->{time_scales}->{$option};\n";
+    $mc->{TIME_SCALES}        .= "ts.$option = SIMINT_TIME*$cfg->{time_scales}->{$option};\n";
+    $mo->{OUTPUTS_REMAP}      .= "yout[".($counter_ode_outputs-1)."] = SIMINT_TS_$option;\n";
+    $counter_ode_outputs = 1 + $counter_ode_outputs;
   }
 }
 

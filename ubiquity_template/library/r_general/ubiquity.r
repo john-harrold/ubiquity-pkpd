@@ -1506,7 +1506,6 @@ if("iiv" %in% names(cfg)){
         # saving the execution time
         som$exec.time = exec.time
       
-      
      #  if(cfg$options$misc$operating_environment == 'gui'){
      #    pb$inc(1/nsub, detail = sprintf('%d/%d (%d %%)', sub_idx, nsub, floor(100*sub_idx/nsub))) }
       
@@ -1516,7 +1515,6 @@ if("iiv" %in% names(cfg)){
       # Stopping the cluster
       #
       stopCluster(cl)
-    
 
     }
     else{
@@ -1554,18 +1552,16 @@ if("iiv" %in% names(cfg)){
           #setTxtProgressBar(pb, sub_idx/nsub)
           myprogress(sub_idx/nsub) }
       
-      # if(cfg$options$misc$operating_environment == 'gui'){
-      #   pb$inc(1/nsub, detail = sprintf('%d/%d (%d %%)', sub_idx, nsub, floor(100*sub_idx/nsub))) }
+        if(cfg$options$misc$operating_environment == 'gui'){
+          pb$inc(1/nsub, detail = sprintf('%d/%d (%d %%)', sub_idx, nsub, floor(100*sub_idx/nsub))) }
       
         som }
     }
 
 
-
-
     # Pulling out the lengths of different things
     ntimes = length(somall[[1]]$simout$time)
-    npsec  = length(names(somall[[1]]$meta$secondary_parameters))
+    npsec  = length(names(cfg$options$ssp))
 
     # pulling out the first subject to use below:
     som    = somall[[1]]
@@ -1584,7 +1580,7 @@ if("iiv" %in% names(cfg)){
     p$subjects$secondary_parameters  = as.data.frame(matrix(0, ncol = npsec, nrow=nsub))
 
     # putting the column names
-    colnames( p$subjects$secondary_parameters) = names(som$meta$secondary_parameters)
+    colnames( p$subjects$secondary_parameters) = names(cfg$options$ssp)
 
     # And storing the output times/timescales
     p$times    = som$simout["time"]
@@ -1598,7 +1594,7 @@ if("iiv" %in% names(cfg)){
       sub_idx = som$sub_idx
     
       # storing the secondary parameters
-      p$subjects$secondary_parameters[sub_idx,] = som$meta$secondary_parameters
+      p$subjects$secondary_parameters[sub_idx,] = som$simout[1,names(cfg$options$ssp)]
 
       # Storing the states, outputs and titration information
       for(state_name   in state_names){
@@ -2917,28 +2913,59 @@ SIMINT_simcommand = ' SIMINT_simout <- ode(SIMINT_IC, SIMINT_output_times_actual
                                            initforc = "initforcs",
                                            forcings = SIMINT_forces, 
                                            method   = SIMINT_simulation_options$solver, 
-                                           nout     = length(names(SIMINT_cfg$options$mi$outputs)),
+                                           nout     = length(names(SIMINT_cfg$options$mi$odes)), 
                                            events   = list(data=SIMINT_eventdata), 
-                                           outnames = names(SIMINT_cfg$options$mi$outputs)'
+                                           outnames = names(SIMINT_cfg$options$mi$odes)'
 SIMINT_simcommand = sprintf('%s %s)', SIMINT_simcommand, SIMINT_solver_opts)
 #eval(parse(text=SIMINT_simcommand))
 #SIMINT_simout_mapped = system_map_output(SIMINT_cfg, SIMINT_simout, SIMINT_parameters, "c", SIMINT_eventdata)
 }
 
-# simulating the system using compiled C
+# simulating the system
 SIMINT_SIM_tic = proc.time()
 eval(parse(text=SIMINT_simcommand))
 SIMINT_SIM_toc = proc.time()
 
-# mapping the outputs, times, etc.
-SIMINT_simout_mapped = system_map_output(SIMINT_cfg, SIMINT_simout, SIMINT_parameters, "r", SIMINT_eventdata)
+SIMINT_simout_mapped = list()
+
+# In C all of the outputs are defined, for the r-file we have to define the
+# outputs separately:
+if("r-file" == SIMINT_simulation_options$integrate_with){
+  SIMINT_MAP_tic = proc.time()
+  SIMINT_simout  = system_map_output(SIMINT_cfg, SIMINT_simout, SIMINT_parameters, SIMINT_eventdata)
+  SIMINT_MAP_toc = proc.time()
+  # Adding the timing for the mapping
+  SIMINT_simout_mapped$timing$output_mapping = SIMINT_MAP_toc - SIMINT_MAP_tic
+} 
+# Adding the timing for the simulations
+SIMINT_simout_mapped$timing$simulation = SIMINT_SIM_toc - SIMINT_SIM_tic
+
+
+# When R has a bolus applied at a certain time the state has the value before
+# the bolus is applied. This means that a dose applied at time zero has serum
+# levels that start at start at zero. We compensate for this by setting the
+# reported state value to the value in the second time point. This shouldn't
+# be a problem if 'include_important_output_times' is set to yes (default)
+# because the system will automatically be sampled just _after_ each bolus.
+#
+# This is only done if the first output time corresponds to the first event
+# time:
+if(SIMINT_simout[1,"time"] ==  SIMINT_eventdata[1,"time"]){
+ SIMINT_simout=SIMINT_simout[-1,]
+}
 
 # adding error to the output
-SIMINT_simout_mapped = add_observation_errors(SIMINT_simout_mapped, SIMINT_parameters, SIMINT_cfg);
+SIMINT_ERR_tic = proc.time()
+SIMINT_simout  = add_observation_errors(SIMINT_simout, SIMINT_parameters, SIMINT_cfg);
+SIMINT_ERR_toc = proc.time()
+
+SIMINT_simout_mapped$timing$adding_error   = SIMINT_ERR_toc - SIMINT_ERR_tic
 
 
-# Adding the timing for the simulations
-SIMINT_simout_mapped$meta$proc_time = SIMINT_SIM_toc - SIMINT_SIM_tic
+# Adding the simout to the mapped output. Up until now all calculations and
+# modifications should have been done in a matrix to speed things up
+# and lastly we convert it to a data frame
+SIMINT_simout_mapped$simout = as.data.frame(SIMINT_simout)
 
 return(SIMINT_simout_mapped) } 
 
@@ -2968,6 +2995,17 @@ df = c()
 
     # names of the outputs and the states in the system
     os_names = c(names(cfg$options$mi$outputs), names(cfg$options$mi$states))
+
+    # Covariate: cfg$options$inputs$covariates
+    #   -> timecourse        (CVNAME)
+    #   -> initial condition (SIMINT_CVIC_CVNAME)
+    # cfg$options$inputs$infusion_rates
+    #   -> infusion rate     (RNAME)
+    # dynamic secondary parameters: cfg$options$dsp
+    # static secondary parameters:  cfg$options$ssp
+
+
+
     
     # pulling out the timescales, these are the columns that begin with 'ts.'
     ts_names = names(som$simout)
@@ -3070,11 +3108,8 @@ df = c()
           else{
             df = rbind(df, dfos) }
         }
-        
       }
-
     }
-  
 
 return(df)
 }
@@ -4178,7 +4213,7 @@ return(fo)
 
 
 
-gg_log10_yaxis = function(fo){
+gg_log10_yaxis = function(fo, ylim_min=NULL, ylim_max=NULL){
 #
 # This function puts a "pretty" log10 y axis on a ggplot figure
 #
@@ -4207,6 +4242,18 @@ gg_log10_yaxis = function(fo){
  ytick_major = c(min(ytick_major)/10, ytick_major, max(ytick_major)*10)
 
 
+ # defining the axis limits
+ myylim = 10^(c(data_ylim))
+
+ if(!is.null(ylim_min)){
+     myylim[1] = ylim_min
+ }
+
+ if(!is.null(ylim_max)){
+     myylim[2] = ylim_max
+ }
+
+
  # Creating the minor ticks between the major ticks
  ytick_minor = c()
  for(yt in 1:length(ytick_major)-1){
@@ -4215,6 +4262,7 @@ gg_log10_yaxis = function(fo){
 
  fo = fo + scale_y_continuous(breaks       = ytick_major,
                               minor_breaks = ytick_minor,
+                              limits       = myylim,
                               labels       = scales::trans_format("log10", scales::math_format(10^.x)))
  fo = fo + annotation_logticks(sides='lr', scaled='FALSE')
 }

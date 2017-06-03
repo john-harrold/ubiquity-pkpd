@@ -9,10 +9,17 @@ system_fetch_cfg = function(){
 # System parameter information
 <FETCH_SYS_PARAMS>
 
+# Static secondary parameters
+<FETCH_SYS_SSP>
+
+# Dynamic secondary parameters
+<FETCH_SYS_DSP>
 
 # Indices mapping state, parameter, etc. names
 # to their index in the different vectors
 <FETCH_SYS_INDICES>
+
+<FETCH_SYS_INDICES_ODE_OUTPUT>
 
 # Parameter Sets
 <FETCH_SYS_PSETS>
@@ -292,7 +299,7 @@ run_simulation_titrate  <- function(SIMINT_p, SIMINT_cfg){
 
   SIMINT_som = list()
   #
-  # Defining the parameter locally 
+  # Defining the system parameters locally 
   #
   <SYSTEM_PARAM>
 
@@ -449,8 +456,7 @@ run_simulation_titrate  <- function(SIMINT_p, SIMINT_cfg){
                                SIMINT_ti_times$tstime))
                  
                  
-                   }
-
+                  }
               }
             }
           }
@@ -623,21 +629,23 @@ list(dy=SIMINT_DYDT,global=c())
 }
 
 
-system_map_output = function(SIMINT_cfg, SIMINT_simout, SIMINT_p, SIMINT_ODE_func_type, SIMINT_eventdata){
+system_map_output = function(SIMINT_cfg, SIMINT_simout, SIMINT_p,  SIMINT_eventdata){
 
 
-# States
-# Checking the 
+# Pulling out the time vector
 SIMINT_tts     = SIMINT_simout[,'time']
-SIMINT_som     = list();
-SIMINT_outputs = list();  
-SIMINT_meta    = list();
-SIMINT_som$simout = data.frame(time = SIMINT_simout[,'time'])
+
+# Creating the matrix to store the simout
+SIMINT_all_outputs = c(names(SIMINT_cfg$options$mi$states), names(SIMINT_cfg$options$mi$odes))
+
+SIMINT_simoutmat = matrix(data=NA, nrow=length(SIMINT_tts), ncol=(length(SIMINT_all_outputs) +1) )
+colnames(SIMINT_simoutmat) =   eval(parse(text= sprintf("c('time', '%s')", paste(SIMINT_all_outputs, collapse="', '"))))
 
 
 # System parameters
 <SYSTEM_PARAM>
-SIMINT_meta$parameters = SIMINT_p
+
+
 
 for(SIMINT_cov_name in names(SIMINT_cfg$options$inputs$covariates)){
 # Looping through each covariate and creating a variable in the current
@@ -652,21 +660,21 @@ for(SIMINT_cov_name in names(SIMINT_cfg$options$inputs$covariates)){
   
   # creating the named value for the covariate
   # at the current time
+  # This is used when calculating secondary parameters:
   eval(parse(text=paste(sprintf("%s = SIMINT_cov_value",SIMINT_cov_name))))
 
-  # storing that value in the meta variable
-  eval(parse(text=paste(sprintf("SIMINT_meta$covariate_IC$%s = SIMINT_cov_value",SIMINT_cov_name))))
+  # This will be stored in the output data frame
+  eval(parse(text=paste(sprintf("SIMINT_CVIC_%s = SIMINT_cov_value",SIMINT_cov_name))))
 }
+
+
 
 # Static secondary parameters
 <SS_PARAM>
 
-# storing the secondary parameters
-<SS_PARAM_META>
-
-
 for (SIMINT_tidx in seq(1,length(SIMINT_tts))){
   SIMINT_TIME = SIMINT_tts[SIMINT_tidx]
+  <TIME_SCALES>
 
   # Creating the states here at a given time
   # (above a vector was created)
@@ -716,80 +724,17 @@ for (SIMINT_tidx in seq(1,length(SIMINT_tts))){
     eval(parse(text=paste(sprintf("%s = SIMINT_cov_value",SIMINT_cov_name))))
   }
 
-  # we only calculate the dynamic secondary parameters and the outputs if the
-  # 'r' function was used. If the 'c' function was used then these are not
-  # needed because they were calculated and returned from the simulation.
-  if('r' == SIMINT_ODE_func_type){
-
-  # Dynamic secondary parameters
   <DS_PARAM>
   
   # Outputs
   <OUTPUTS>  
   
-    for (SIMINT_oname in names(SIMINT_cfg$options$mi$outputs)){
-      SIMINT_tmp_assignment = sprintf('SIMINT_outputs$%s[SIMINT_tidx] = %s', SIMINT_oname, SIMINT_oname) 
-      eval(parse(text=SIMINT_tmp_assignment))
-      }
-    }
-
+  # With all of the variables defined we add a row to the simout matrix
+  SIMINT_simoutmat[SIMINT_tidx,] =  eval(parse(text=sprintf("c(SIMINT_TIME, %s)", paste(SIMINT_all_outputs , collapse=", ")))) 
 }
 
-# Storing the time scales, appending ts. to the 
-# beginning to prevent any namespace issues
-for (SIMINT_name   in names(SIMINT_cfg$options$time_scales)){
-  eval(parse(text=sprintf('SIMINT_som$simout["ts.%s"] =  SIMINT_cfg$options$time_scales[[SIMINT_name]]*SIMINT_tts', SIMINT_name))) 
-}
 
-# When R has a bolus applied at a certain time the state has the value before
-# the bolus is applied. This means that a dose applied at time zero has serum
-# levels that start at start at zero. We compensate for this by setting the
-# reported state value to the value in the second time point. THis shouldn't
-# be a problem if 'include_important_output_times' is set to yes because the
-# system will automatically be sampled just _after_ each bolus.
-#
-# This is only done if the first output time corresponds to the first event
-# time:
-if(SIMINT_simout[1,"time"] ==  SIMINT_eventdata[1,"time"]){
- SIMINT_skip_first = TRUE
-} else {
- SIMINT_skip_first = FALSE }
-
-
-# storing the states
-for (SIMINT_name in names(SIMINT_cfg$options$mi$states)){
-  SIMINT_som$simout[SIMINT_name] =  SIMINT_simout[,SIMINT_name]
-  if(SIMINT_skip_first){
-   SIMINT_som$simout[1,SIMINT_name] =  SIMINT_som$simout[2,SIMINT_name] 
-  }
-}
-# Storing the outputs
-# this is done differently depending on whether the R script or compiled C
-# code was used. 
-if("r" == SIMINT_ODE_func_type){
-  # here we are returning the outputs calculated in this funciton
-  for(SIMINT_name   in names(SIMINT_outputs)){
-    SIMINT_som$simout[SIMINT_name] =SIMINT_outputs[SIMINT_name] 
-    if(SIMINT_skip_first){
-     SIMINT_som$simout[1,SIMINT_name] =  SIMINT_som$simout[2,SIMINT_name] 
-    }
-    }
-  } else if("c" == SIMINT_ODE_func_type){
-  # otherwise we return those calculated in the compiled c code.
-  for (SIMINT_name in names(SIMINT_cfg$options$mi$outputs)){
-    SIMINT_som$simout[SIMINT_name] =  SIMINT_simout[,SIMINT_name]
-    if(SIMINT_skip_first){
-     SIMINT_som$simout[1,SIMINT_name] =  SIMINT_som$simout[2,SIMINT_name] 
-    }
-    }
-}
-
-# storing the meta data to be returned
-SIMINT_som$meta     = SIMINT_meta
-
-return(SIMINT_som)
-
-}
+return(SIMINT_simoutmat) }
 
 
 system_evaluate_input = function(tvals, lvals, etime, type){
@@ -835,10 +780,16 @@ system_evaluate_input = function(tvals, lvals, etime, type){
     }
   } 
   else if(type == 'linear'){
+    if(length(tvals) == 1){
+      # if there is only 1 value then there is no linear interpolation :)
+      value = lvals
+    }
+    else{
     #linearly interpolating, values beyond boundary 
     # will take on the values at the boundary
-    linear_interp = approx(tvals, lvals, etime, method="linear", , , , n=2)
+    linear_interp = approx(tvals, lvals, etime, method="linear", rule=2, , , n=2)
     value = linear_interp$y
+    }
   }
   return(value)
 }
@@ -870,10 +821,10 @@ return(tsample)
 #-------------------------------------------------------------------------
 
 # Looping through each output to add the error
-add_observation_errors = function(som, parameters, cfg){
+add_observation_errors = function(simout, parameters, cfg){
 for(output in names(cfg$ve)){
-   som =  
-   output_add_error(SIMINT_som        = som,             # simulation output without error
+   simout =  
+   output_add_error(SIMINT_simout     = simout,          # simulation output without error
                     SIMINT_output     = output,          # output
                     SIMINT_em         = cfg$ve[[output]],# error model
                     SIMINT_parameters = parameters,      # current parameter values
@@ -881,17 +832,19 @@ for(output in names(cfg$ve)){
 
 }
 
-return(som)}
+return(simout)}
 
 #-------------------------------------------------------------------------
 
-output_add_error = function(SIMINT_som, SIMINT_output, SIMINT_em, SIMINT_parameters, SIMINT_cfg){
+output_add_error = function(SIMINT_simout, SIMINT_output, SIMINT_em, SIMINT_parameters, SIMINT_cfg){
+
+#browser()
 
 # Defining the time
-SIMINT_TIME = SIMINT_som$simout$time
+SIMINT_TIME = SIMINT_simout[,'time']
 
 # Defining the pred values locally
-PRED  = SIMINT_som$simout[[SIMINT_output]]
+PRED  = SIMINT_simout[, SIMINT_output]
 
 # Pulling the variance parmeter names
 SIMINT_VP_NAMES = as.vector(SIMINT_cfg$parameters$matrix$name[SIMINT_cfg$parameters$matrix$ptype == 'variance'])
@@ -903,13 +856,13 @@ for(SIMINT_VP_NAME in SIMINT_VP_NAMES){
 
 # calculating the error model value
 eval(parse(text=sprintf("SIMINT_em_VARIANCE  =  %s", SIMINT_em)))
-SIMINT_em_MEAN =  rep(0,length(SIMINT_em_VARIANCE));
-SIMINT_ERR     = rnorm(SIMINT_em_MEAN, SIMINT_em_MEAN, sqrt(SIMINT_em_VARIANCE))
+SIMINT_em_MEAN =  rep(0,length(PRED));
+SIMINT_ERR     = rnorm(PRED, SIMINT_em_MEAN, sqrt(SIMINT_em_VARIANCE))
 
-# adding the error to the prediction and storing it in SIMINT_som
-SIMINT_som$simout[[sprintf('SIOE_%s', SIMINT_output)]] = PRED + SIMINT_ERR
+# adding the error to the prediction and storing it in SIMINT_simout
+SIMINT_simout = eval(parse(text=sprintf('cbind(SIMINT_simout, SIOE_%s=c(PRED+SIMINT_ERR))', SIMINT_output)))
 
-return(SIMINT_som)}
+return(SIMINT_simout)}
 
 #-------------------------------------------------------------------------
 

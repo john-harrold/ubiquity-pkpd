@@ -21,7 +21,7 @@ library("doRNG")
 # http://presentation.ubiquity.grok.tv
 
 # Rebuilding the system (R scripts and compiling C code)
-build_system()
+build_system(system_file="<SYSTEM_FILE>")
 
 # loading the different functions
 source("transient/auto_rcomponents.r");

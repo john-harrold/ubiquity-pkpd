@@ -33,9 +33,9 @@ double SIMINT_TIME = 0.0;
 <VARIABLE_INIT>
 /* Done Initializing variables */
 
-/* 
-*/
+/* System time and time scales*/
 SIMINT_TIME = *t; 
+<TIME_SCALES>
 
 <SS_PARAM>
 
