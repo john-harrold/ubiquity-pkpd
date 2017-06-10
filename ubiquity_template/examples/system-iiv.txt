@@ -40,6 +40,8 @@
 <P> D_MW       150        eps    inf      KDA       yes      Drug  
 
 <PSET:default> TMDD: Membrane bound target
+<PSET:slowint> Same as default with slow turnover
+<PSET:slowint:thalf_hr> 10
 
 <As> ktp  = Q/Vt
 <As> kpt  = Q/Vp
@@ -61,10 +63,18 @@
  <IIV:ETAQ>        0.15
  <IIV:ETAQ:LN>     Q
 
-#<IIV:ETAV>        0.10
-#<IIV:ETAV:LN>     Vp
 
-# <IIVCOR:ETAQ:ETACL> 0.01
+ 
+# <IIVSET:slowint:ETAQ>        0.05
+# <IIVSET:slowint:ETAQ:LN>     Q
+#
+# <IIVSET:slowint:ETACL>        0.25
+# <IIVSET:slowint:ETACL:LN>     CL
+#
+# <IIVSET:slowint:ETATH>       0.05
+# <IIVSET:slowint:ETATH:LN>    thalf_hr
+#
+# <IIVCORSET:slowint:ETATH:ETACL>    .01
 
 #--------------------#
 # Dosing information #

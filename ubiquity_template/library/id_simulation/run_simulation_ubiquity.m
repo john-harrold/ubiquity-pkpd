@@ -168,7 +168,11 @@ if(isfield(cfg.options, 'inputs'))
 end
 
 % running the simulation
+tstart   = cputime;
 [simout]=run_simulation_generic(parameters, simulation_options, cfg);
+tstop    = cputime;
+SIMINT_META.timing.simulation = tstop-tstart;
+
 % mapping the outputs and states
 simout_mapped = auto_map_simulation_output(simout, cfg);
 

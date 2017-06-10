@@ -5492,7 +5492,7 @@ sub extract_conditional{
            if($tmp_cond_idx eq 0){
              $return_text .= "if($tmp_cond){\n  $parameter = $tmp_value  \n"; }
            else{
-             $return_text .= "}else if($tmp_cond)\n  $parameter = $tmp_value  \n"; } 
+             $return_text .= "}else if($tmp_cond){\n  $parameter = $tmp_value  \n"; } 
          }
    
    

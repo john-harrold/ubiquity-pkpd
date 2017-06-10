@@ -41,6 +41,7 @@ cfg = system_log_init(cfg)
 
 <PSETS>
 
+
 # # The following will estimate a subset of the parameters:
 # pnames = c('PNAME1', 'PNAME2')
 # cfg = system_select_set(cfg, "default", pnames)
@@ -57,6 +58,14 @@ cfg = system_log_init(cfg)
 #  
 # Setting options
 # 
+# Specify output times here using sparse sampling (large time steps) to make
+# the estimation quick. See down below where you can specify the sampling to 
+# generate smooth profiles when plotting. This will be the
+# default output times unless overwritten at the cohort level:
+# cfg=system_set_option(cfg, group  = "simulation", 
+#                            option = "output_times", 
+#                            seq(0,100,1))
+#
 # cfg=system_set_option(cfg,group = "simulation", option = "solver", value = "lsoda")
 #
 # To overwrite solver options use the following:
@@ -67,12 +76,6 @@ cfg = system_log_init(cfg)
 # cfg=system_set_option(cfg,group  = "solver",
 #                           option = "rtol",   
 #                           value  = 1e-10)
-#
-# Set the output times for smooth profiles when plotting. This will be the
-# default output times unless overwritten at the cohort level:
-# cfg=system_set_option(cfg, group  = "simulation", 
-#                            option = "output_times", 
-#                            seq(0,100,1))
 #
 # Uncomment to specify ode file to use. r-file or c-file
 # cfg=system_set_option(cfg, group  = "simulation", 
@@ -183,6 +186,13 @@ if((flowctl == "estimate") | (flowctl == "previous estimate as guess")){
   vp(cfg, "Loading the previous solution")
   load(file=sprintf('output%s%s.RData', .Platform$file.sep, analysis_name))
 }
+
+
+# Here you can specify the output times used for the simulations that will
+# be used for plotting. Here you want frequent sampling (small time steps).
+# cfg=system_set_option(cfg, group  = "simulation", 
+#                            option = "output_times", 
+#                            seq(0,100,1))
 
 # Simulating the system at the estimates
 erp = system_simulate_estimation_results(pest = pest, cfg = cfg) 

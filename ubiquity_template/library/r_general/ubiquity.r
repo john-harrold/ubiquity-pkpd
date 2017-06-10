@@ -2752,8 +2752,6 @@ if(length(SIMINT_cfg$options$simulation_options$solver_opts)>0){
   }
 }
 
-
-
 # overriding the default simulation options
 for(SIMINT_option in names(SIMINT_cfg$options$simulation_options)){
   if(is.null(SIMINT_simulation_options[[SIMINT_option]])){
@@ -3118,8 +3116,11 @@ calculate_objective <- function(parameters, cfg, estimation=TRUE){
 
 
   errorflag = FALSE
-  value     = 0 
-  obj       = c()
+  # We default to Inf in case the observation function below fails. This way 
+  # if we move into a bad parameter space, the Inf will push it away from that
+  # parameter space
+  value     = Inf 
+  # obj       = c()
 
   # Bounding the parameters
   bv    = bound_parameters(pv = parameters, cfg = cfg)
@@ -3258,7 +3259,7 @@ odtest = calculate_objective(cfg$estimation$parameters$guess, cfg, estimation=FA
       vp(cfg,'------------------------------------------')
       vp(cfg,'Starting Estimation ')
       vp(cfg, sprintf('Optimizer:           %s', cfg$estimation$options$optimizer))
-      vp(cfg, sprintf('Method:              %s', cfg$estimation$options$method))
+      vp(cfg, sprintf('Method:              %s', cat(cfg$estimation$options$method, sep=", ")))
       vp(cfg, sprintf('Observation Detials: %s', cfg$estimation$observation_function))
       vp(cfg, sprintf('Integrating with:    %s', cfg$options$simulation_options$integrate_with))
       
@@ -3273,7 +3274,9 @@ odtest = calculate_objective(cfg$estimation$parameters$guess, cfg, estimation=FA
       vp(cfg,'------------------------------------------')
 
 
-
+      # Applying bound to estimate
+      pest_bound =  bound_parameters(pv = p$par, cfg = cfg)
+      p$par = pest_bound$pv
 
     # because each optimizer returns solutions in a different format
     # we collect them here in a common structure
@@ -3880,11 +3883,18 @@ compare_estimate <- function(cfg, parameters, pname){
   lower_diff = abs(lower_bound - pvalue)
   upper_diff = abs(upper_bound - pvalue)
   
-  if(lower_diff/lower_bound  <0.05){
-    notes = 'L'
-  } else if(upper_diff/upper_bound  <0.05){
-    notes = 'U'
+  if(is.finite(lower_bound)){
+    if(lower_diff/lower_bound  <0.05){
+      notes = 'L'
+    }
   }
+
+  if(is.finite(upper_bound)){
+    if(upper_diff/upper_bound  <0.05){
+      notes = 'U'
+    }
+  }
+
   
 return(notes)
 }

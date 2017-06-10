@@ -78,10 +78,10 @@ if(is.null(getLoadedDLLs()$r_ode_model) == FALSE){
 }
 
 
-# defaulting to no specified initial condition
+# defaulting the solver_opts                  
 cfg$options$simulation_options$parallel       = "No"
 cfg$options$simulation_options$compute_cores  = 1
-
+cfg$options$simulation_options$solver_opts    = list()
 
 # Defaulting output times to gui output times
 cfg$options$simulation_options$output_times =  eval(parse(text=cfg$options$misc$output_times))
