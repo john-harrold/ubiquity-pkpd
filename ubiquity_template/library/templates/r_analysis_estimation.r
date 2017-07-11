@@ -168,6 +168,16 @@ cohort$outputs$ONAME$options$marker_line    = 1
 cfg = system_define_cohort(cfg, cohort)
 
 if((flowctl == "estimate") | (flowctl == "previous estimate as guess")){
+  # Checking the analysis_name
+  name_check = ubiquity_name_check(analysis_name)
+  if(!name_check$isgood){
+    vp(cfg, sprintf('system_plot_cohorts()'))
+    vp(cfg, sprintf('Error: the analyssis name >%s< is invalid', analysis_name))
+    vp(cfg, sprintf('Problems: %s', name_check$msg))
+    analysis_name = 'analysis'
+    vp(cfg, sprintf('Instead Using: %s', analysis_name))
+    }
+
   #loading the previous estimate and setting that as a guess
   if(flowctl == "previous estimate as guess"){
     load(file=sprintf('output%s%s.RData', .Platform$file.sep, analysis_name))
@@ -189,7 +199,8 @@ if((flowctl == "estimate") | (flowctl == "previous estimate as guess")){
 
 
 # Here you can specify the output times used for the simulations that will
-# be used for plotting. Here you want frequent sampling (small time steps).
+# be used for plotting. Here you want frequent sampling (small time steps)
+# so that you have smoother profiles.
 # cfg=system_set_option(cfg, group  = "simulation", 
 #                            option = "output_times", 
 #                            seq(0,100,1))

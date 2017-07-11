@@ -287,6 +287,11 @@ function [parameters_est, statistics_est]=estimate_parameters(cfg)
       best_params   = cfg.estimation.parameters.guess ;
       initial_guess = best_params;
 
+
+      if(isrow(initial_guess))
+        initial_guess = initial_guess';
+      end
+
       vp(cfg,  '   Method: Nelder-Mead (fminsearch)');
      
       if(cfg.estimation.effort >1)

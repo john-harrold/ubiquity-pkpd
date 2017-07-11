@@ -87,10 +87,12 @@ cfg$options$simulation_options$solver_opts    = list()
 cfg$options$simulation_options$output_times =  eval(parse(text=cfg$options$misc$output_times))
 
 # default stochastic options
-cfg$options$stochastic$nsub  = 100
-cfg$options$stochastic$seed  = 8675309
-cfg$options$stochastic$ci    = 95
-cfg$options$stochastic$ponly = FALSE
+cfg$options$stochastic$nsub             = 100
+cfg$options$stochastic$seed             = 8675309
+cfg$options$stochastic$ci               = 95
+cfg$options$stochastic$ponly            = FALSE
+cfg$options$stochastic$sub_file         = NULL
+cfg$options$stochastic$sub_file_sample  = 'with replacement'
 
 # default logging options
 cfg$options$logging$enabled   = 'yes'

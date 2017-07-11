@@ -101,7 +101,7 @@ function [cfg]=system_set_option(cfg, group, option, value)
 %   of additional outputs can be defined by the user.
 %
 %   Default:
-%   cfg = system_set_option(cfg, 'estimation', 'observation_function', 'observation_details');
+%   cfg = system_set_option(cfg, 'estimation', 'observation_function', 'system_od_general');
 %
 %   Option: 'effort'
 %   ----------------

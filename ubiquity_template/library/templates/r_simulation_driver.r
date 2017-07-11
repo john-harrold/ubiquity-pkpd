@@ -100,6 +100,20 @@ som = run_simulation_ubiquity(parameters, cfg)
 # cfg = system_set_option(cfg, group="stochastic", option="states",  value=list())
 # cfg = system_set_option(cfg, group="stochastic", option="outputs", value=c('OP1', 'OP2'))
 #
+# # To pull subject parameters and covariates from a file first
+# # Load the file then tell simulate_subjects to use that file
+# cfg = system_load_data(cfg, dsname     = "SUBS", 
+#                             data_file  = "subjects.csv")
+# 
+# cfg=system_set_option(cfg, group  = "stochastic",
+#                            option = "sub_file",
+#                            value  = "SUBS")
+# 
+# # Control how subjects are sampled from the file here:
+# cfg=system_set_option(cfg, group  = "stochastic",
+#                            option = "sub_file_sample",
+#                            value  = "with replacement")
+#
 # som   = simulate_subjects(parameters, cfg)
 # 
 # # To parallelize the simulations uncomment the following:

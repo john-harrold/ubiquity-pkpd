@@ -194,8 +194,18 @@ if(isfield(cohort, 'name'))
   if(isfield(cfg.cohorts, cohort.name))
     isgood = false;
     vp(cfg, sprintf('Error: cohort with name >%s< has already been defined', cohort.name));
+  else
+    cohort_name = cohort.name;
+    name_check = ubiquity_name_check(cohort.name);
+    if(~name_check.isgood)
+      isgood = false;
+      vp(cfg, sprintf('Error: cohort with name >%s< is invalid', cohort.name))
+      vp(cfg, sprintf('Problems: %s', name_check.msg))
+    end
   end 
-  cohort_name = cohort.name;
+
+
+
 else
   isgood = false;
   vp(cfg, 'Error: cohort name not specified');

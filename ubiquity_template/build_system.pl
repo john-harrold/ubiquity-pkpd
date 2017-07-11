@@ -6127,6 +6127,15 @@ cfg = system_define_cohort(cfg, cohort);
 pnames_est = cfg.estimation.parameters.names;
 if(strcmp(flowctl , \'estimate\') | strcmp(flowctl, \'previous estimate as guess\'))
 
+  % Checking the analysis name
+  name_check = ubiquity_name_check(analysis_name)   ;
+  if(~name_check.isgood)
+    vp(cfg, sprintf(\'Error: the analyssis name >%s< is invalid\', analysis_name  ))
+    vp(cfg, sprintf(\'Problems: %s\', name_check.msg))
+    analysis_name   = \'analysis\';
+    vp(cfg, sprintf(\'Instead Using: %s\', analysis_name  ))
+  end
+
   % Loading the previous estimate
   if(strcmp(flowctl, \'previous estimate as guess\'))
     eval(sprintf(\'load output%sanalysis_%s.mat pest ss pnames_est\',filesep, analysis_name))

@@ -122,8 +122,8 @@ system_select_set = function(cfg, set_name='default', parameter_names=NULL){
 
 # defining parameters for the current set
 if(is.null(cfg$parameters$sets[[set_name]])){
-  print(sprintf('Could not find set: %s', set_name))
-  print(sprintf('Returning the default set instead'))
+  vp(cfg,sprintf('Could not find set: %s', set_name))
+  vp(cfg,sprintf('Returning the default set instead'))
   set_name = 'default'
   cfg$parameters$matrix$value = cfg$parameters$sets$default$values;
   cfg$parameters$current_set  = 'default';
@@ -138,6 +138,28 @@ if(is.null(cfg$parameters$sets[[set_name]])){
   }
 
   cfg$parameters$values = as.data.frame(cfg$parameters$values);
+
+# checking to make sure the values specified in parameter_names are 
+# actual parameters :)
+if(!is.null(parameter_names)){
+  # parameter names selected for estimation that do not exist
+  mpn = setdiff(parameter_names, names(cfg$options$mi$parameters))
+  if(length(mpn) > 0){
+    parameter_names = NULL
+    vp(cfg, sprintf('The following parameters were selected'))
+    vp(cfg, sprintf('to be estimated but have not been defined:'))
+    vp(cfg, sprintf('  %s', paste(mpn, collapse=',                ')))
+    vp(cfg, sprintf('Check your spelling or create  this parameter '))
+    vp(cfg, sprintf('in the system file using the <P> descriptor   '))
+    vp(cfg, sprintf('Defaulting to _ALL_ parameters being estimated'))
+  }
+
+}
+
+# if the parameter_names list is null we select them all for estimation
+if(is.null(parameter_names)){
+  parameter_names = names(cfg$options$mi$parameters)
+}
 
 
 
@@ -154,6 +176,7 @@ for(p_name in parameter_names){
 
 tmp_to_estimate_all = c(tmp_to_estimate_system, tmp_to_estimate_variance)
 
+
 # setting objective function type:
 if(length(tmp_to_estimate_variance) == 0){
   cfg$estimation$objective_type = 'wls' }
@@ -168,6 +191,9 @@ cfg$estimation$parameters$matrix = c()
 # Storing the parameter information for estimation
 # this is a reduced set of parameters (those that are being estimated)
 p_idx = 1
+# Initializing the guess list
+cfg$estimation$parameters$guess = list()
+cfg$estimation$mi               = list()
 for(p_name in tmp_to_estimate_all){
   # matrix
   cfg$estimation$parameters$matrix = 
@@ -347,6 +373,25 @@ system_set_option <- function(cfg, group, option, value){
           }
         } 
       }
+
+      # Making sure the specified dataset is loaded
+      if(option == "sub_file"){
+        if(!(value %in% names(cfg$data))){
+          errormsg =  sprintf('%s #-> Error: dataset >%s< not found, please load first \n', errormsg, value)
+          errormsg =  sprintf('%s #-> using system_load_dataset() \n', errormsg)
+          isgood = FALSE
+        }
+      }
+      if(option == "sub_file_sample"){
+        if(!any(value == c("with replacement", "sequential", "without replacement"))){
+          errormsg =  sprintf('%s #-> The value  %s is invalid and must be one of the following \n', errormsg, toString(value))
+          errormsg =  sprintf('%s #->   sequential          - sample from data file sequentially \n', errormsg)
+          errormsg =  sprintf('%s #->   with replacement    - sample from data file with replacement \n', errormsg)
+          errormsg =  sprintf('%s #->   without replacement - sample from data file with out replacement \n', errormsg)
+          isgood = FALSE
+        }
+      }
+
 
       if(isgood){
         cfg$options$stochastic[[option]] = value
@@ -1306,22 +1351,27 @@ simulate_subjects = function (parameters, cfg){
 # parameters - vector of typical parameter values. This can be obtained from
 # the cfg variable:
 #
-# parameters = cfg$parameters$values
+# parameters = system_fetch_parameters(cfg)
 #
-# stochastic- data structure with the following fields:
+# cfg$options$stochastic
+# list with the following fields:
 #
-#   stochastic$nsub -
+#   nsub 
 #      number of subjects to simulate  (default 100)
 #
-#   stochastic$seed - 
+#   seed  
 #      seed for random number generator (default 8675309)
 #
-#   stochastic$ci   - 
+#   ci    
 #      desired confidence interval (e.g. 95)
 #
-#   stochastic$ponly -
+#   ponly 
 #      generate only the parameters and do not perform the simulation
 #      TRUE, or FALSE (default)
+#
+#   sub_file 
+#      name of the data structure loaded with system_load_dataset
+#
 #
 # These values can then be modified as necessary.
 #
@@ -1356,10 +1406,18 @@ simulate_subjects = function (parameters, cfg){
 p = list()
 
 # defining the default values
-nsub  = 100
-seed  = 8675309
-ci    = 95
-ponly = FALSE
+nsub              = 100
+seed              = 8675309
+ci                = 95
+ponly             = FALSE
+sub_file          = NULL
+sub_file_sample   = 'with replacement'
+sub_file_ID_col   = 'SIMINT_ID'
+sub_file_TIME_col = 'SIMINT_TIME'
+# Used to map IDs form the sub_file to 
+# Subject IDs
+sub_file_ID_map   = data.frame(file_ID = c(),
+                               sub_ID  = c())
 
 state_names  = names(cfg$options$mi$states)
 output_names = names(cfg$options$mi$outputs)
@@ -1378,6 +1436,14 @@ if("stochastic" %in% names(cfg$options)){
     ci   = cfg$options$stochastic$ci
   } 
   
+  if("sub_file" %in% names(cfg$options$stochastic)){
+    sub_file   = cfg$options$stochastic$sub_file
+  } 
+
+  if("sub_file_sample" %in% names(cfg$options$stochastic)){
+    sub_file_sample   = cfg$options$stochastic$sub_file_sample
+  } 
+
   if("ponly" %in% names(cfg$options$stochastic)){
     ponly = cfg$options$stochastic$ponly
   } 
@@ -1404,34 +1470,113 @@ max_errors = 100;
 
 isgood = TRUE;
 
-if("iiv" %in% names(cfg)){
-  if(min((eigen((cfg$iiv$values + (cfg$iiv$values))/2))$values) <= 0){
-    cat("----------------------------------------------\n ");
-    cat("  simulate_subjects()                         \n ");
-    cat("> Warning: The variance/covariance matrix is not\n ");
-    cat("> positive semi-definite. Testing only the diagonal\n ");
-    cat("> elements. I.e. no covariance/interaction terms\n");
-  
-    cfg$iiv$values = diag(diag(cfg$iiv$values))
+if("iiv" %in% names(cfg) | !is.null(sub_file)){
+
+  # If the subjects file is null we check the IIV matrix
+  if(is.null(sub_file)){
+    # otherwise we check the IIV
     if(min((eigen((cfg$iiv$values + (cfg$iiv$values))/2))$values) <= 0){
-      cat("> Failed using only diagonal/variance elements.");
-      cat("> Check the specified IIV elements in");
-      cat("> cfg$iiv$values");
-      isgood = FALSE 
-    } else {
-      cat("> Using only the diagional elements seems to   ");
-      cat("> have worked. Understand that the results do  ");
-      cat("> not include any interaction.                 ");
+      cat("----------------------------------------------\n ");
+      cat("  simulate_subjects()                         \n ");
+      cat("> Warning: The variance/covariance matrix is not\n ");
+      cat("> positive semi-definite. Testing only the diagonal\n ");
+      cat("> elements. I.e. no covariance/interaction terms\n");
+    
+      cfg$iiv$values = diag(diag(cfg$iiv$values))
+      if(min((eigen((cfg$iiv$values + (cfg$iiv$values))/2))$values) <= 0){
+        cat("> Failed using only diagonal/variance elements.");
+        cat("> Check the specified IIV elements in");
+        cat("> cfg$iiv$values");
+        isgood = FALSE 
+      } else {
+        cat("> Using only the diagional elements seems to   ");
+        cat("> have worked. Understand that the results do  ");
+        cat("> not include any interaction.                 ");
+      }
     }
   }
+  else{
   
+      # Summarizing information about the data file
+      sub_file_dataset        = cfg$data[[sub_file]]$values
+      sub_file_nsub           = length(unique(sub_file_dataset[[sub_file_ID_col]]))
+      sub_file_file_name      = cfg$data[[sub_file]]$data_file$name
+
+      # Parameter information
+      sub_file_p_found        =       intersect(names(parameters), names(sub_file_dataset))
+      sub_file_p_missing      =       setdiff(names(parameters), names(sub_file_dataset))
+      if(length(sub_file_p_found) > 0){
+        sub_file_p_found_str  = paste(intersect(names(parameters), names(sub_file_dataset)), collapse=', ') }
+      else{
+        sub_file_p_found_str  =  "None" }
+      if(length(sub_file_p_found) > 0){
+        sub_file_p_missing_str= paste(setdiff(names(parameters), names(sub_file_dataset)), collapse=', ')}
+      else{
+        sub_file_p_missing_str  =  "None" }
+
+      # Covariate information
+      sub_file_cov_all = names(cfg$options$inputs$covariates)
+      if(length(sub_file_cov_all) > 0){
+        # Covariate details
+        sub_file_cov_found      = intersect(sub_file_cov_all, names(sub_file_dataset))
+        sub_file_cov_missing    =   setdiff(sub_file_cov_all, names(sub_file_dataset))
+        if(length(sub_file_cov_found) > 0){
+          sub_file_cov_found_str  = paste(sub_file_cov_found, collapse=', ') }
+        else{
+          sub_file_cov_found_str  =  "None" }
+        if(length(sub_file_cov_missing) > 0){
+          sub_file_cov_missing_str  = paste(sub_file_cov_missing, collapse=', ') }
+        else{
+          sub_file_cov_missing_str  =  "None" }
+        }
+      else {
+        # No covariates
+        sub_file_cov_found      = c()
+        sub_file_cov_missing    = c()
+        sub_file_cov_found_str  = "" 
+        sub_file_cov_missing_str= "" 
+      }
+
+  
+  }
+  
+  # Set the random seed
   set.seed(seed)
 
   if(isgood){
-    cat(sprintf(" #-> Simulating multiple subjects (%d)\n", nsub));
-    cat(sprintf(" #-> Integrating with: %s \n",  cfg$options$simulation_options$integrate_with))
-    cat(sprintf(" #-> Parallel set to:  %s \n",  cfg$options$simulation_options$parallel))
-    cat(sprintf(" #-> Number of cores:  %d \n",  cfg$options$simulation_options$compute_cores))
+
+    if(!is.null(sub_file)){                            
+    if((nsub > sub_file_nsub & sub_file_sample == "without replacement")){
+       vp(cfg, "----------------------------------------------")
+       vp(cfg, "simulate_subjects ()")
+       vp(cfg, sprintf("Warning: The number of subjects requested (%d) is greater than", nsub))
+       vp(cfg, sprintf("the number in the subjects dataset (%d) so it is not", sub_file_nsub))
+       vp(cfg, sprintf("possible to sample without replacement. Changing sampling"))
+       vp(cfg, sprintf("method to 'with replacement'"))
+       vp(cfg, "----------------------------------------------")
+       sub_file_sample = "with replacement"
+    }
+    }
+
+
+    vp(cfg, sprintf("Simulating multiple subjects (%d)", nsub))
+    vp(cfg, sprintf("Integrating with:            %s ",  cfg$options$simulation_options$integrate_with))
+    vp(cfg, sprintf("Parallel set to:             %s ",  cfg$options$simulation_options$parallel))
+    vp(cfg, sprintf("Number of cores:             %d ",  cfg$options$simulation_options$compute_cores))
+    if(!is.null(sub_file)){                            
+    vp(cfg, sprintf("Subjects file:               %s ", sub_file_file_name))
+    vp(cfg, sprintf("   Parameters from file:     %s ", sub_file_p_found_str))
+    vp(cfg, sprintf("   Default parameters used:  %s ", sub_file_p_missing_str))
+    vp(cfg, sprintf("   Subjects in file:         %d ", sub_file_nsub))
+    vp(cfg, sprintf("   Sampling:                 %s ", sub_file_sample))
+      if(length(sub_file_cov_all) > 0){
+      vp(cfg, sprintf("   Covariates from file:     %s ", sub_file_cov_found_str))
+      vp(cfg, sprintf("   Default covariates used:  %s ", sub_file_cov_missing_str))
+      }
+      else{
+      vp(cfg, "   Covariates:               None specified in system ")
+      }
+    }
   }
   
   # Initialzing progress bar
@@ -1452,15 +1597,60 @@ if("iiv" %in% names(cfg)){
 
   # generating the parameters for each of the subjects
   sub_idx = 1;
-  while((sub_idx <= nsub) & isgood) {
-    subject = generate_subject(parameters,  cfg);
-    parameters_subject = subject$parameters;
-    if(sub_idx == 1){
-      p$subjects$parameters           = parameters_subject
-    } else{
-      p$subjects$parameters           = rbind(p$subjects$parameters,          parameters_subject)}
 
-    sub_idx = sub_idx + 1;
+  # If the subject file null then we generate the subjects using 
+  # the specified IIV
+  if(is.null(sub_file)){
+    while((sub_idx <= nsub) & isgood) {
+      subject = generate_subject(parameters,  cfg);
+      parameters_subject = subject$parameters;
+      if(sub_idx == 1){
+        p$subjects$parameters           = parameters_subject
+      } else{
+        p$subjects$parameters           = rbind(p$subjects$parameters,          parameters_subject)}
+    
+      sub_idx = sub_idx + 1;
+    }
+  }
+  else{
+    # Sampling the subject IDs from the sub_file based on the methodology
+    # specified by the user
+    if(sub_file_sample == "sequential"){
+      file_IDs = rep_len(sub_file_dataset[[sub_file_ID_col]], nsub) 
+      }
+    else if(sub_file_sample == "with replacement"){
+      file_IDs = sample(sub_file_dataset[[sub_file_ID_col]], 
+                       size    =  nsub,
+                       replace =TRUE) 
+      }
+    else if(sub_file_sample == "without replacement"){
+      file_IDs = sample(sub_file_dataset[[sub_file_ID_col]], 
+                       size    =  nsub,
+                       replace =FALSE)
+      }
+
+    for(sub_idx in 1:length(file_IDs)){
+       # Ceating the subject parameters with the default values
+       parameters_subject = parameters
+    
+       # Now we overwrite those parameters specified in the dataset
+       tmp_sub_records = sub_file_dataset[sub_file_dataset[[sub_file_ID_col]] == file_IDs[sub_idx], ]
+       parameters_subject[,sub_file_p_found] = tmp_sub_records[1,sub_file_p_found]
+    
+       # Storing the subject in the data frame with the other subjects
+       if(sub_idx == 1){
+         p$subjects$parameters           = parameters_subject
+       } else{
+         p$subjects$parameters           = rbind(p$subjects$parameters,          parameters_subject)}
+    
+    
+     # Soring the map between the ID in the file and the sampled subject id
+     sub_file_ID_map   = rbind(sub_file_ID_map, 
+                               data.frame(file_ID = file_IDs[sub_idx],
+                                          sub_ID  = sub_idx))
+    
+    
+    }
   }
   
   # Running simulations
@@ -1476,6 +1666,7 @@ if("iiv" %in% names(cfg)){
       
       somall <- foreach(sub_idx=1:nsub,
                         .verbose = TRUE,
+                        .errorhandling='pass',
                         .options.snow=list(progress = myprogress),
                         .packages=c("deSolve")) %dorng% {
 
@@ -1489,14 +1680,31 @@ if("iiv" %in% names(cfg)){
       
         # Pulling out subject level parameters
         parameters_subject = p$subjects$parameters[sub_idx,]
+
+        # storing the cfg for the subject
+        cfg_sub = cfg
+
+        # If we're reading from a file and covariates were specified
+        # then we have to apply those on a per subject basis
+        if(!is.null(sub_file)){
+          if(length(sub_file_cov_found) > 0){
+            cfg_sub = 
+            apply_sub_file_COV(tmpcfg       = cfg_sub, 
+                               cov_found    = sub_file_cov_found, 
+                               sub_dataset  = sub_file_dataset,
+                               sub_ID_col   = sub_file_ID_col,
+                               sub_TIME_col = sub_file_TIME_col,
+                               file_ID      = sub_file_ID_map[sub_file_ID_map$sub_ID == sub_idx,]$file_ID)
+          }
+        }
       
         # Running either titration or normal simulation
         if(cfg$titration$titrate){
-          exec.time = system.time((som = run_simulation_titrate(parameters_subject, cfg)))
+          exec.time = system.time((som = run_simulation_titrate(parameters_subject, cfg_sub)))
           #som = run_simulation_titrate(parameters_subject, cfg)
           }
         else{
-          exec.time = system.time((som = run_simulation_ubiquity(parameters_subject, cfg)))
+          exec.time = system.time((som = run_simulation_ubiquity(parameters_subject, cfg_sub)))
           #som = run_simulation_ubiquity(parameters_subject, cfg)
           }
       
@@ -1530,14 +1738,30 @@ if("iiv" %in% names(cfg)){
       
         # Pulling out subject level parameters
         parameters_subject = p$subjects$parameters[sub_idx,]
+
+        cfg_sub = cfg
+
+        # If we're reading from a file and covariates were specified
+        # then we have to apply those on a per subject basis
+        if(!is.null(sub_file)){
+          if(length(sub_file_cov_found) > 0){
+            cfg_sub = 
+            apply_sub_file_COV(tmpcfg       = cfg_sub, 
+                               cov_found    = sub_file_cov_found, 
+                               sub_dataset  = sub_file_dataset,
+                               sub_ID_col   = sub_file_ID_col,
+                               sub_TIME_col = sub_file_TIME_col,
+                               file_ID      = sub_file_ID_map[sub_file_ID_map$sub_ID == sub_idx,]$file_ID)
+          }
+        }
       
         # Running either titration or normal simulation
         if(cfg$titration$titrate){
-          exec.time = system.time((som = run_simulation_titrate(parameters_subject, cfg)))
+          exec.time = system.time((som = run_simulation_titrate(parameters_subject, cfg_sub)))
           #som = run_simulation_titrate(parameters_subject, cfg)
           }
         else{
-          exec.time = system.time((som = run_simulation_ubiquity(parameters_subject, cfg)))
+          exec.time = system.time((som = run_simulation_ubiquity(parameters_subject, cfg_sub)))
           #som = run_simulation_ubiquity(parameters_subject, cfg)
           }
       
@@ -1692,6 +1916,24 @@ return(tc)
 }
 
 
+apply_sub_file_COV = function (tmpcfg, cov_found, sub_dataset, sub_ID_col, sub_TIME_col, file_ID){
+# This function is used when stochastic simulations are being performed using
+# a data file for the subject level information. If the data file contains
+# covariate information, this function will update the system for each subjects
+# covariates. 
+
+# Pulling all records for the current subject
+sub_records = sub_dataset[sub_dataset[[sub_ID_col]] == file_ID,]
+
+# Looping through each covariate and updating the cfg file
+for(cov_name in cov_found){
+  tmpcfg = system_set_covariate(tmpcfg, cov_name,          
+                                        times  = sub_records[[sub_TIME_col]],
+                                        values = sub_records[[cov_name]])
+}
+
+return(tmpcfg)
+}
 
 generate_subject = function (parameters, cfg){
 # function [subject] = generate_subject(parameters, cfg)
@@ -1982,13 +2224,21 @@ system_define_cohort <- function(cfg, cohort){
  # checking the cohort name
  #
  if('name' %in% names(cohort)){
-   if(cohort$name %in% names(cfg$cohorts)){
-     isgood = FALSE
-     vp(cfg, sprintf('Error: cohort with name >%s< has already been defined', cohort$name))
-   }
+  if(cohort$name %in% names(cfg$cohorts)){
+    isgood = FALSE
+    vp(cfg, sprintf('Error: cohort with name >%s< has already been defined', cohort$name))
+  }
   else{
-    # the cohort name is good
-    cohort_name = cohort$name }
+    name_check = ubiquity_name_check(cohort$name)
+
+    cohort_name = cohort$name 
+    # Checking the cohort name
+    if(!name_check$isgood){
+      isgood = FALSE
+      vp(cfg, sprintf('Error: cohort with name >%s< is invalid', cohort$name))
+      vp(cfg, sprintf('Problems: %s', name_check$msg))
+      }
+    }
  }
  else{
    isgood = FALSE 
@@ -2523,7 +2773,7 @@ for(cohort_name in names(cfg$cohorts)){
   }
 
   # Simulating the cohort  
-  som = run_simulation_ubiquity(chparameters, chcfg) 
+  som = run_simulation_ubiquity(chparameters, chcfg, SIMINT_dropfirst=FALSE) 
 
 
 
@@ -2723,7 +2973,7 @@ calculate_variance <- function(SIMINT_parameters, SIMINT_varstr, SIMINT_odchunk,
 }
 
 
-run_simulation_ubiquity = function(SIMINT_parameters,SIMINT_cfg){
+run_simulation_ubiquity = function(SIMINT_parameters,SIMINT_cfg, SIMINT_dropfirst=TRUE){
 # This runs a simulation for a model created in the system.txt format
 #  
 # # compile   the system to make sure the 
@@ -2947,10 +3197,13 @@ SIMINT_simout_mapped$timing$simulation = SIMINT_SIM_toc - SIMINT_SIM_tic
 # because the system will automatically be sampled just _after_ each bolus.
 #
 # This is only done if the first output time corresponds to the first event
-# time:
-if(SIMINT_simout[1,"time"] ==  SIMINT_eventdata[1,"time"]){
- SIMINT_simout=SIMINT_simout[-1,]
+# time and can be overwritten if SIMINT_dropfirst is set to FALSE
+if(SIMINT_dropfirst){
+  if(SIMINT_simout[1,"time"] ==  SIMINT_eventdata[1,"time"]){
+   SIMINT_simout=SIMINT_simout[-1,]
+  }
 }
+
 
 # adding error to the output
 SIMINT_ERR_tic = proc.time()
@@ -3258,8 +3511,9 @@ odtest = calculate_objective(cfg$estimation$parameters$guess, cfg, estimation=FA
   if(odtest$isgood){
       vp(cfg,'------------------------------------------')
       vp(cfg,'Starting Estimation ')
+      vp(cfg, sprintf('Parmaeters:          %s', paste(names(cfg$estimation$mi), collapse=", ")))
       vp(cfg, sprintf('Optimizer:           %s', cfg$estimation$options$optimizer))
-      vp(cfg, sprintf('Method:              %s', cat(cfg$estimation$options$method, sep=", ")))
+      vp(cfg, sprintf('Method:              %s', cfg$estimation$options$method))
       vp(cfg, sprintf('Observation Detials: %s', cfg$estimation$observation_function))
       vp(cfg, sprintf('Integrating with:    %s', cfg$options$simulation_options$integrate_with))
       
@@ -3402,6 +3656,10 @@ system_fetch_guess <- function(cfg){
 
 system_plot_cohorts <- function(erp, plot_opts=c(), cfg, prefix='analysis'){
 
+
+# list of graphics objects to return
+grobs = list()
+
 def = c() 
 def$yscale = "linear"
 def$xlim  = NULL
@@ -3514,6 +3772,9 @@ for(output in levels(erp$pred$OUTPUT)){
   fname = sprintf('output%s%s_timecourse_%s.pdf', .Platform$file.sep, prefix, output )
   ggsave(fname, plot=p, height=def$dim$tc$height, width=def$dim$tc$width)
   vp(cfg, sprintf('Figure written: %s', fname))
+
+  # storing the plot object to be returned to the user
+  eval(parse(text=sprintf('grobs$timecourse$%s = p', output)))
 }
 
 #
@@ -3576,11 +3837,6 @@ for(output in levels(erp$pred$OUTPUT)){
     p = p + scale_x_log10()
     p = p + scale_y_log10()}
 
- #if(!is.null(plot_opts$outputs[[output]]$ylim)){
- #  p = p + ylim(plot_opts$outputs[[output]]$ylim)
- #  p = p + xlim(plot_opts$outputs[[output]]$ylim)
- #}
-
   p = prepare_figure(p, purpose="present")
   eval(parse(text=sprintf('p = p + scale_colour_manual(values=c(%s))', color_string)))
 
@@ -3588,22 +3844,13 @@ for(output in levels(erp$pred$OUTPUT)){
   ggsave(fname, plot=p, height=def$dim$op$height, width=def$dim$op$width)
   vp(cfg, sprintf('Figure written: %s', fname))
 
+  # storing the plot object to be returned to the user
+  eval(parse(text=sprintf('grobs$obs_pred$%s = p', output)))
 
 }
 
-#ps.Vp = ggplot(som$subjects$parameters, aes(x=Vp)) + 
-#        geom_histogram(colour="black", bins=8) 
-#        ylab("")
-#ps.Vp =  prepare_figure(ps.Vp, purpose="present")
-#
-#ps.CLp_D = ggplot(som$subjects$parameters, aes(x=CLp_D)) + 
-#        geom_histogram(colour="black", bins=8) 
-#        ylab("")
-#ps.CLp_D =  prepare_figure(ps.CLp_D, purpose="present")
-#
-#
-#multiplot(ps.Vp, ps.CLp_D, cols=2)
 
+return(grobs)
 
 }
 
@@ -3964,8 +4211,14 @@ solution_statistics <- function(parameters, cfg){
   s$num_observations       = num_observations
   s$objective              = objective
   s$degrees_of_freedom     = num_observations - num_parameters
-  s$aic                    = num_observations*log(objective) + 2.0*num_parameters
-  s$bic                    = num_observations*log(objective) + log(num_observations)*num_parameters
+  if('wls' == cfg$estimation$objective_type){
+    s$aic                    = num_observations*log(objective) + 2.0*num_parameters
+    s$bic                    = num_observations*log(objective) + log(num_observations)*num_parameters
+  }
+  else if('ml' == cfg$estimation$objective_type){
+    s$aic                    = 2.0*objective + 2.0*num_parameters
+    s$bic                    = 2.0*objective + log(num_observations)*(num_parameters)
+  }
 
   if('wls' == cfg$estimation$objective_type){
     # Calculating the weighted least squares solution statistics 
@@ -4276,3 +4529,45 @@ gg_log10_yaxis = function(fo, ylim_min=NULL, ylim_max=NULL){
                               labels       = scales::trans_format("log10", scales::math_format(10^.x)))
  fo = fo + annotation_logticks(sides='lr', scaled='FALSE')
 }
+
+
+ubiquity_name_check = function(test_name){
+#
+# Error checking function to make sure the test_name 
+# matches the following rules:
+#
+#  - starts with a letter
+#  - only conatins letters, numbers, and _
+#
+
+  chkres = list()
+  chkres$isgood = TRUE
+
+  chkres$msgs = c()
+
+  # Making sure it starts with a letter
+  if(!grepl('^[a-z,A-Z]', test_name)){
+     chkres$msgs    = c(chkres$msgs, 'Does not begin with a letter') }
+
+
+  # now we remove all of the allowed characters and see what's left
+  # there should be nothing left :)
+  test_name_trim = gsub('[a-z,A-Z,0-9,_]', '', test_name)
+
+  if(nchar(test_name_trim) > 0){
+     chkres$msgs    = c(chkres$msgs,'Should only contain letters, numbers and _') }
+  
+
+  # If there are any messages we flip the isgood to 
+  # false and concatenate them together
+
+  if(length(chkres$msgs) > 0){
+     chkres$isgood = FALSE
+     chkres$msg    = paste(chkres$msg, collapse=', ')
+  
+  }
+
+ return(chkres) 
+
+}
+

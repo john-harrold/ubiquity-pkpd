@@ -24,6 +24,9 @@ stop=false;
 % pulling out the initial guess for the 
 % parameters and the bounds
 pinit = cfg.estimation.parameters.guess;
+if(isrow(pinit))
+ pinit = pinit';
+end
 plb   = cfg.estimation.parameters.lower_bound;
 pub   = cfg.estimation.parameters.upper_bound;
 
