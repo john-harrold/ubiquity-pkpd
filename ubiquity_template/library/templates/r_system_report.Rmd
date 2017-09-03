@@ -15,13 +15,20 @@ knitr::opts_chunk$set(echo = FALSE)
 cfg = params$cfg
 som = params$som
 
-# Getting parameters vector
-# this is the parameters vector for the selected parameter set
-parameters = system_fetch_parameters(cfg)
+# Next we update the information in cfg to match that in the gui. Bascially if
+# there is an overwrite specified in the cfg$gui$sysel_simulate data structure 
+# we apply those here using the eval:
+cfg = system_select_set(cfg, cfg$gui$sysel_simulate$pset)
+cfg_option_names =  c('parameters', 
+                      'options', 
+                      'bolus', 
+                      'covariates', 
+                      'infusion_rates',
+                      'iiv')
 
-# now we update any changes that were made by the user:
-for(pname in names(cfg$gui$parameters)){
-  parameters[[pname]] = cfg$gui$parameters[[pname]]
+for(option_name in cfg_option_names){
+  if(cfg$gui$sysel_simulate[[option_name]] != ""){
+    eval(parse(text=cfg$gui$sysel_simulate[[option_name]])) }
 }
 
 # Pulling out the parameter set that was selected

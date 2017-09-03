@@ -61,7 +61,7 @@ cfg$gui$user_log_length = 10
 # as a fraction of the total time interval
 cfg$gui$minstep = 0.005
 # Output time interval (units are the system time units)
-# cfg$options$misc$output_times = c(0, 100)
+# cfg$options$misc$output_times = 'c(0, 100)'
 
 # Normally simulations will begin at time zero, however some systems with
 # nonzero steadystate will require a lead-in stabilization time. Set this 

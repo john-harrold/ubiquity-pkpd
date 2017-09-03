@@ -2718,7 +2718,7 @@ for(cohort_name in names(cfg$cohorts)){
 
   # Adding all of the observation times to the output times to make sure the
   # simulations evaluate at these times
-  choutput_times = sort(unique(choutput_times, cohort$observation_simtimes))
+  choutput_times = sort(unique(c(choutput_times, cohort$observation_simtimes)))
 
   # Setting times to give a smooth profile, this will include the cohort
   # output times as well 
@@ -3381,7 +3381,6 @@ calculate_objective <- function(parameters, cfg, estimation=TRUE){
   parameters = bv$pv
   objmult   = bv$objmult
 
-  objmult
 
 
   # Trying to pull out the observations
@@ -3404,6 +3403,12 @@ calculate_objective <- function(parameters, cfg, estimation=TRUE){
     errorflag = TRUE
     value = Inf 
    })
+  
+  # Sometimes the eval above fails and it doesn't trigger the error block
+  # but when run outside of try catch it does work. 
+  if(!exists('od') & !errorflag){
+  eval(parse(text=sprintf('od = %s(parameters, cfg)', cfg$estimation$observation_function)))
+  }
 
 
   if(!errorflag){
@@ -3456,7 +3461,6 @@ calculate_objective <- function(parameters, cfg, estimation=TRUE){
       vp(cfg, 'calculate_objective failed')
       vp(cfg, sprintf('   Obj: %s ', toString(value)))
     }
-    
     # Looking to see if there are any variance values that are NA:
     if(any(is.na(od$pred[,4]))){
       vp(cfg, '   Warning: variance values of NA')
@@ -4456,6 +4460,15 @@ prepare_figure = function(purpose, fo,
               title        = element_text(size=16), 
               plot.title   = element_text(size=16), 
               axis.text.y  = element_text(size=16)) 
+  } else if (purpose == "shiny") {
+       theme( axis.text.x  = element_text(size=14), 
+              axis.title.x = element_text(size=14), 
+              axis.title.y = element_text(size=14), 
+              legend.text  = element_text(size=14), 
+              title        = element_text(size=14), 
+              text         = element_text(size=14), 
+              plot.title   = element_text(size=14), 
+              axis.text.y  = element_text(size=14)) 
   } else if (purpose == "print") {
        theme( axis.text.x  = element_text(size=10), 
               axis.title.x = element_text(size=10), 
@@ -4485,6 +4498,7 @@ gg_log10_yaxis = function(fo, ylim_min=NULL, ylim_max=NULL){
  data_ylim = ggplot_build(fo)$panel$ranges[[1]]$y.range 
 
 
+ if(!is.null(data_ylim)){
  if(data_ylim[1] > 0){
    data_ylim[1] = floor(data_ylim[1])
  }  else {
@@ -4529,6 +4543,7 @@ gg_log10_yaxis = function(fo, ylim_min=NULL, ylim_max=NULL){
                               labels       = scales::trans_format("log10", scales::math_format(10^.x)))
  fo = fo + annotation_logticks(sides='lr', scaled='FALSE')
 }
+fo}
 
 
 ubiquity_name_check = function(test_name){
