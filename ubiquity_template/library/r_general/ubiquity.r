@@ -3365,6 +3365,43 @@ df = c()
 return(df)
 }
 
+calculate_objective_pso <- function(pvect, cfg){
+# calculate_objective takes the parameters as a list, so we take the vector
+# provided by psoptim when it calls the objective function and repackage it as
+# a named list.
+
+  plist = list()
+  pidx  = 1
+
+  # coverting the vector into a list
+  for(pname in names(cfg$estimation$parameters$guess)){
+    plist[[pname]] = pvect[pidx]
+    pidx = pidx +1
+  }
+  obj = calculate_objective(plist, cfg, estimation=TRUE)
+  return(obj)
+}
+
+calculate_objective_ga  <- function(pvect, cfg){
+# calculate_objective takes the parameters as a list, so we take the vector
+# provided by psoptim when it calls the objective function and repackage it as
+# a named list.
+
+  plist = list()
+  pidx  = 1
+
+  # coverting the vector into a list
+  for(pname in names(cfg$estimation$parameters$guess)){
+    plist[[pname]] = pvect[pidx]
+    pidx = pidx +1
+  }
+  obj = calculate_objective(plist, cfg, estimation=TRUE)
+
+  # Multiply by -1 because ga does maximization 
+  return(-1*obj)
+}
+
+
 calculate_objective <- function(parameters, cfg, estimation=TRUE){
 
 
@@ -3373,7 +3410,6 @@ calculate_objective <- function(parameters, cfg, estimation=TRUE){
   # if we move into a bad parameter space, the Inf will push it away from that
   # parameter space
   value     = Inf 
-  # obj       = c()
 
   # Bounding the parameters
   bv    = bound_parameters(pv = parameters, cfg = cfg)
@@ -3520,35 +3556,102 @@ odtest = calculate_objective(cfg$estimation$parameters$guess, cfg, estimation=FA
       vp(cfg, sprintf('Method:              %s', cfg$estimation$options$method))
       vp(cfg, sprintf('Observation Detials: %s', cfg$estimation$observation_function))
       vp(cfg, sprintf('Integrating with:    %s', cfg$options$simulation_options$integrate_with))
+
+      #
+      # We perform the estimation depending on the optimizer selected 
+      #
+      if(cfg$estimation$options$optimizer %in% c('optim', 'optimx')){
+        eval(parse(text=sprintf('p = %s(cfg$estimation$parameters$guess, 
+                                        calculate_objective, 
+                                        cfg     = cfg, 
+                                        method  = cfg$estimation$options$method, 
+                                        control = cfg$estimation$options$control)', 
+                                        cfg$estimation$options$optimizer)))
+      }
+      else if(cfg$estimation$options$optimizer %in% c('pso')){
+        p = psoptim(par     = as.vector(cfg$estimation$parameters$guess),
+                    fn      = calculate_objective_pso, 
+                    cfg     = cfg, 
+                    lower   = cfg$estimation$parameters$matrix$lower_bound,
+                    upper   = cfg$estimation$parameters$matrix$upper_bound,
+                    control = cfg$estimation$options$control)
       
-      eval(parse(text=sprintf('p = %s(cfg$estimation$parameters$guess, 
-                                      calculate_objective, 
-                                      cfg     = cfg, 
-                                      method  = cfg$estimation$options$method, 
-                                      control = cfg$estimation$options$control)', 
-                                      cfg$estimation$options$optimizer)))
+      }
+      else if(cfg$estimation$options$optimizer %in% c('ga')){
+        # par     = as.vector(cfg$estimation$parameters$guess),
+
+        # This is a string of the control variables that the user passed on.
+        # By default we have none (empty string):
+        ctl_list = c(" ")
+
+        # now we loop through each option and construct cs 
+        if(!is.null(cfg$estimation$options$control)){
+          for(cname in names(cfg$estimation$options$control)){
+             ctl_list = c(ctl_list, sprintf("%s=cfg$estimation$options$control$%s", cname, cname))
+            }
+            ctl_str = paste(ctl_list, collapse=",\n ")
+        }
+        else{
+          ctl_str  = "" }
+        
+          eval(parse(text=sprintf('p = ga(type    = "real-valued",
+                                          fitness = calculate_objective_ga , 
+                                          cfg     = cfg, 
+                                          min     = cfg$estimation$parameters$matrix$lower_bound,
+                                          max     = cfg$estimation$parameters$matrix$upper_bound%s)', ctl_str)))
+
+      }
       
       vp(cfg,'Estimation Complete ')
       vp(cfg,'------------------------------------------')
 
 
-      # Applying bound to estimate
-      pest_bound =  bound_parameters(pv = p$par, cfg = cfg)
-      p$par = pest_bound$pv
 
     # because each optimizer returns solutions in a different format
     # we collect them here in a common structure
+    # First we keep the 'raw' data
     pest$raw = p
+
+    # estimate_ub is the unbound estimate
     if(cfg$estimation$options$optimizer == "optim"){
-      pest$estimate = p$par 
+      pest$estimate_ub = p$par 
       pest$obj      = p$value
-    } else if(cfg$estimation$options$optimizer == "optimx"){
+    } 
+    else if(cfg$estimation$options$optimizer == "optimx"){
+      pest$obj               = p$value
       for(pname in names(cfg$estimation$parameters$guess)){
-        pest$estimate[[pname]] = p[[pname]]
-        pest$obj               = p$value
+        pest$estimate_ub[[pname]] = p[[pname]]
       }
 
+    } 
+    # Particle swarm (pso) 
+    else if(cfg$estimation$options$optimizer %in% c("pso")){
+      # Pso returns the parameters as a vector so we 
+      # have to put it back into a list for the other functions
+      pest$obj      = p$value
+      pest$estimate_ub = list()
+      pidx = 1
+      for(pname in names(cfg$estimation$parameters$guess)){
+        pest$estimate_ub[[pname]] = p$par[pidx]
+        pidx = pidx+1
+      }
+    } 
+    # Genetic algorithm (ga) output
+    else if(cfg$estimation$options$optimizer %in% c("ga")){
+       pest$obj = p@fitnessValue
+       pest$estimation_ub = structure(rep(-1, length(cfg$estimation$parameters$guess)), 
+                                      names=names(cfg$estimation$parameters$guess))
+       pidx = 1
+       for(pname in names(cfg$estimation$parameters$guess)){
+         pest$estimate_ub[[pname]] = p@solution[pidx]
+         pidx = pidx+1
+       }
     }
+
+    # Applying bound to estimate
+    pest_bound    = bound_parameters(pv = pest$estimate_ub, cfg = cfg)
+    pest$estimate = pest_bound$pv
+
 
    tryCatch(
     { 
@@ -3580,7 +3683,6 @@ odtest = calculate_objective(cfg$estimation$parameters$guess, cfg, estimation=FA
 
     # writing the system components to the screen
     # pstr = sprintf('%s%s', pstr, '\n')
-    #save(list = ls(all.names = TRUE), file ="test.RData")
       #name          value           lower  upper    units  editable grouping
       #                              bound  bound
       # <P> name       1.0            eps    inf      ???    yes      System

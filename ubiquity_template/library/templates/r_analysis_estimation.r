@@ -103,6 +103,20 @@ cfg = system_log_init(cfg)
 #                              value  = list(trace  = TRUE,
 #                                            maxit  = 500,
 #                                            REPORT = 10))
+#
+# To use particle swarm the following will set the optimization routines.
+# Because of how the parameter space is sampled it is important to set the
+# parameter bounds to reasonable values
+#
+# library("pso")
+#
+# cfg = system_set_option(cfg, group  = "estimation",
+#                              option = "optimizer", 
+#                              value  = "pso")
+# 
+# cfg = system_set_option(cfg, group  = "estimation",
+#                              option = "method",
+#                              value  = "psoptim")
 
 
 # Loading Datasets
