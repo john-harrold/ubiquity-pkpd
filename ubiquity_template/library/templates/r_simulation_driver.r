@@ -84,6 +84,9 @@ som = run_simulation_ubiquity(parameters, cfg)
 # myfig = ggplot() + 
 #         geom_line(data=som$simout, aes(x=ts.TS,   y=OUTPUT), color="red") 
 # print(myfig)
+# png('output/simulation.png', width=9.5, height=6, units="in", res=300)
+# print(myfig)
+# dev.off()
 # -------------------------------------------------------------------------
 
 

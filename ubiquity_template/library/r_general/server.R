@@ -1132,6 +1132,32 @@ simulation_state<- function(input, output, session){
   #      
   GUI_log_entry(cfg, sprintf("Simulation status set: %s", sim_status))
   gui_save_cfg(cfg, session)
+
+
+  #
+  # If simulation state is 'stale' we clear out all of the 
+  # generated reports. This will force the App to regenerate 
+  # them when tabs are accessed or if an export is triggered
+  #
+  if(sim_status == "Stale"){
+    # finding all of the reports
+    # basically any files in the user's 
+    # directory that end in R#.html
+    # where # is a number from 1-5
+    user_dir   = find_user_dir(session)
+    user_files = list.files(user_dir)
+    user_files = user_files[grepl('R\\d\\.html$', user_files)]
+ 
+    # browser()
+
+    for(rfile in user_files){
+      # getting the full path to the file
+      rfile = sprintf('%s%s%s',user_dir, .Platform$file.sep, rfile)
+      file.remove(rfile)
+    }
+  }
+
+
   #is.null(input$text_status)
   status =sprintf(" Simulation  %s", sim_status)})
   #-----------------------------------------
@@ -1634,25 +1660,14 @@ generate_timecourse  <-function(input, output, session){
      
      pstr = sprintf("%s p = p + xlab('Time (%s)')                     \n",pstr, output_TS )
      pstr = sprintf("%s p = p + ylab('Output')                        \n",pstr )
-     pstr = sprintf("%s p = prepare_figure('present', p)              \n",pstr )
-     
+     pstr = sprintf("%s p = prepare_figure('present', fo=p, y_tick_major=%s, x_tick_major=%s)\n",pstr, toString(cfg$gui$check_grid), toString(cfg$gui$check_grid) )
+
      #pstr = sprintf("%s p = p + scale_colour_manual(values=c('%s'))   \n", pstr, paste(line_colors, collapse="', '"))
      pstr = sprintf("%s p = p + scale_colour_manual(values=c(%s))   \n", pstr, line_colors)
      pstr = sprintf("%s p = p + theme(legend.title = element_blank()) \n",pstr)
      pstr = sprintf("%s p = p + theme(legend.position = 'bottom')     \n",pstr)
      
      #pstr = sprintf("%s p = p + theme(legend.position='bottom')      \n",pstr )
-     
-     
-     # Adding the grid lines
-     if(cfg$gui$check_grid){
-       pstr = sprintf("%s p = p + theme(panel.grid.major = element_line(color = 'gray'))           \n",pstr )
-     }
-     
-     # Changing the yscale to log 10
-     if(cfg$gui$check_log){
-       pstr = sprintf("%s p = p + scale_y_log10()                                                  \n",pstr )
-     }
      
      
      
@@ -1697,7 +1712,9 @@ generate_timecourse  <-function(input, output, session){
      # now we repeat the same steps for the y axis
      if(!cfg$gui$check_autoy & cfg$gui$good_text_autoy  ){
         if(cfg$gui$check_log){
-          pstr_post = sprintf("%s p = p + scale_y_log10(limits=10^c(%s))   \n",pstr_post, toString(cfg$gui$text_autoy))
+          # Changing the yscale to log 10 with user specified limits
+          pstr_post = sprintf("%s p = gg_log10_yaxis(p, ylim_min = %s, ylim_max= %s)\n",pstr_post, toString(cfg$gui$text_autoy[1]), toString(cfg$gui$text_autoy[2]))
+
         }
         else{
           pstr_post = sprintf("%s p = p + ylim(%s)   \n",pstr_post, toString(cfg$gui$text_autoy))
@@ -1705,6 +1722,10 @@ generate_timecourse  <-function(input, output, session){
         }
      }
      else{
+        # Changing the yscale to log 10 using the default limits
+        if(cfg$gui$check_log){
+          pstr_post = sprintf("%s p = gg_log10_yaxis(p)  \n",pstr_post ) }
+     
      
        eval(parse(text=sprintf("cfg$gui$text_autoy = c(%s,%s)", 
                   var2string(layer_scales(p)$y$range$range[1], maxlength = 1, nsig_e=2, nsig_f=4), 
@@ -2107,26 +2128,36 @@ generate_model_report <- function(cfg, session, RID){
     user_dir = find_user_dir(session)
     Rmdfile  = sprintf('%s%s%s', cfg$gui$wd, .Platform$file.sep, cfg$gui$modelreport_files[[RID]]$file)
     htmlfile = sprintf('%s%smodel_report_%s.html', user_dir, .Platform$file.sep, RID)
-    
+
     success = FALSE
     message = "Unable to generate html report"
-    user_log_entry(cfg, "Generating report") 
-    # rendering the markdown to a temporary html file
-   tryCatch(
-    { 
-      rmarkdown::render(Rmdfile,
-                        params        = params,
-                        output_format = "html_document",
-                        output_file   = htmlfile)
+    # If the report has already been generated 
+    if(file.exists(htmlfile)){
       success = TRUE
-      message = "success"
-    },
-     warning = function(w) {
-     # place warning stuff here
-    },
-      error = function(e) {
-    })
-
+      message = "success: previous report" 
+      user_log_entry(cfg, sprintf("Using previously generated report: %s", htmlfile)) 
+    
+    } 
+    else{
+      user_log_entry(cfg, sprintf("Generating report: %s", htmlfile)) 
+      # rendering the markdown to a temporary html file
+     tryCatch(
+      { 
+       suppressWarnings(
+        rmarkdown::render(Rmdfile,
+                          params        = params,
+                          output_format = "html_document",
+                          output_file   = htmlfile)
+        )
+        success = TRUE
+        message = "success: report generated"
+      },
+       warning = function(w) {
+       # place warning stuff here
+      },
+        error = function(e) {
+      })
+    }
 
 
     output = c()
@@ -2336,7 +2367,7 @@ server <- function(input, output, session) {
     
     # Creating the tab for the variability
     variability_tab = NULL
-    if("iiv" %in% names(cfg)){
+    if(("iiv" %in% names(cfg)) &  cfg$gui$display$iivtab ){
     variability_tab = tabPanel("Variability", 
                       wellPanel(id = "panel_variability",style = "overflow-y:scroll; max-height: 600px", 
                        checkboxInput('check_variability', "Simulate with variability", FALSE),
@@ -2349,7 +2380,7 @@ server <- function(input, output, session) {
     }
 
 
-    if("iiv" %in% names(cfg)){
+    if(("iiv" %in% names(cfg) )&  cfg$gui$display$iivtab ){
       tabsetPanel(type="tabs", parameter_tab, variability_tab)}
     else{
       tabsetPanel(type="tabs", parameter_tab)}
@@ -2372,10 +2403,10 @@ server <- function(input, output, session) {
     tabPanel("Injections",
              wellPanel(id = "panel_bolus",style = "overflow-y:scroll; max-height: 450px", 
              rHandsontableOutput("table_bolus"), 
-             checkboxInput('check_repeatdoses', 'Repeat the last dose', value=FALSE),
-             div(style="display:inline-block", textInput('text_bolus_frequency', label=NULL, value='1')), "(Dosing Interval)",
+             checkboxInput('check_repeatdoses', 'Repeat the last dose', value=cfg$gui$check_repeatdoses),
+             div(style="display:inline-block", textInput('text_bolus_frequency', label=NULL, value=toString(as.integer(cfg$gui$text_bolus_frequency)))), "(Dosing Interval)",
              tags$style(type='text/css', "#text_bolus_frequency { width: 50px; }"), br(),
-             div(style="display:inline-block", textInput('text_bolus_number', label=NULL, value='2')), "(Number of doses)", 
+             div(style="display:inline-block", textInput('text_bolus_number', label=NULL, value=toString(as.integer(cfg$gui$text_bolus_number)))), "(Number of doses)", 
              tags$style(type='text/css', "#text_bolus_number    { width: 50px; }")))
     
     noinputs_tab = 

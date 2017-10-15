@@ -13,6 +13,10 @@ load("transient/rgui/default/gui_state.RData")
 params = list()
 params$cfg = cfg
 params$som = som
+
+# This is needed for debugging
+cfg$options$misc$operating_environment = 'script'
+
 rmarkdown::render(Rmdfile,
                   params        = params,
                   output_format = "html_document")

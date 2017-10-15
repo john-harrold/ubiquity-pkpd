@@ -104,7 +104,7 @@ cfg$options$logging$ts_str    = "%Y-%m-%d %H:%M:%S"
 cfg$options$verbose           = 'yes'
 
 # default estimation options
-cfg$estimation$observation_function           = 'system_od_general'
+cfg$estimation$options$observation_function   = 'system_od_general'
 cfg$estimation$options$optimizer              = "optim"       
 cfg$estimation$options$method                 = "Nelder-Mead"
 cfg$estimation$options$control                = list(trace=TRUE, 

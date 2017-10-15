@@ -10,7 +10,7 @@ library(knitr)
 knitr::opts_chunk$set(echo = FALSE)
 ```
 
-```{r}
+```{r, warning=FALSE, message=TRUE , echo=FALSE, error=TRUE}
 # Settign up the local variables
 cfg = params$cfg
 som = params$som

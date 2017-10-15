@@ -21,8 +21,9 @@ library("doRNG")
 # flowctl = 'plot previous estimate'
 # flowctl = 'previous estimate as guess'
 # flowctl = 'estimate'
-flowctl = 'plot guess'
-analysis_name = 'ANAME'
+flowctl         = 'plot guess'
+analysis_name   = 'ANAME'
+archive_results = FALSE
 
 # For documentation explaining how to modify the commands below
 # See the "R Workflow" section at the link below:
@@ -104,9 +105,11 @@ cfg = system_log_init(cfg)
 #                                            maxit  = 500,
 #                                            REPORT = 10))
 #
-# To use particle swarm the following will set the optimization routines.
-# Because of how the parameter space is sampled it is important to set the
-# parameter bounds to reasonable values
+# To use the global optimization routines, uncomment the appropriate lines
+# below. IMPORTANT: Because of how the parameter space is sampled it is
+# important to set the parameter bounds to reasonable values>
+#
+# To use particle swarm optimization use the following:
 #
 # library("pso")
 #
@@ -117,6 +120,24 @@ cfg = system_log_init(cfg)
 # cfg = system_set_option(cfg, group  = "estimation",
 #                              option = "method",
 #                              value  = "psoptim")
+#
+# The following will use the genetic algorithm:
+#
+# library("GA")
+#
+# cfg = system_set_option(cfg, group  = "estimation",
+#                              option = "optimizer", 
+#                              value  = "ga")
+# 
+# cfg = system_set_option(cfg, group  = "estimation",
+#                              option = "method",
+#                              value  = "ga")
+# 
+# cfg = system_set_option(cfg, group  = "estimation",
+#                              option = "control", 
+#                              value  = list(maxiter   = 10000, 
+#                                            optimArgs = list(method  = "Nelder-Mead",
+#                                                             maxiter = 1000)))
 
 
 # Loading Datasets
@@ -204,6 +225,9 @@ if((flowctl == "estimate") | (flowctl == "previous estimate as guess")){
   pe   = estimate_parameters(cfg)
   pest = pe$estimate
   save(pe, pest, file=sprintf('output%s%s.RData', .Platform$file.sep, analysis_name))
+  if(archive_results){
+    archive_estimation(analysis_name, cfg)
+  }
 } else if(flowctl == "plot guess"){
   pest = system_fetch_guess(cfg)
 } else if(flowctl == "plot previous estimate"){

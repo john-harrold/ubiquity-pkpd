@@ -140,12 +140,12 @@ cfg$gui$colors$region     = c("cadetblue1",  "pink"      , "olivedrab2", "darkor
 #               cfg.
 #     
 #     plot_ind - Funcion called when plotting individual simulations. You can
-#               have paraeters, cfg and som as an input. The format of som will be
+#               have parameters, cfg and som as an input. The format of som will be
 #               the same as the output of run_simulation_ubiquity unless sim_ind
 #               above is returning a custom output.
 #     
 #     plot_var - Funcion called when plotting simulations with variabilitiy. You can
-#               have paraeters, cfg and som as an input. The format of som will be
+#               have parameters, cfg and som as an input. The format of som will be
 #               the same as the output of simulate_subjects unless sim_ind above
 #               is returning a custom output.
 #     
@@ -179,7 +179,7 @@ cfg$gui$dims$modeldiagram$height = '450px'
 
 
 #
-# Enable/disable elements of the UI you can change the display list elements. By
+# To enable/disable elements of the UI you can change the display list elements. By
 # default these values are true but if you set them to FALSE they will not be
 # visible in the App.
 #
@@ -199,8 +199,13 @@ cfg$gui$display$checkgrid        = TRUE
 # Check log       
 cfg$gui$display$checklog         = TRUE
 
-# outputs         
+# outputs list
 cfg$gui$display$outputs          = TRUE
+
+# variability input tab 
+# If the system file has iiv specified and this 
+# variable is TRUE it will show the tab
+cfg$gui$display$iivtab           = TRUE
 
 #
 # Do not make changes below this piont
