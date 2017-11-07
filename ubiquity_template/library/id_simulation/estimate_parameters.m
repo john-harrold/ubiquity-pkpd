@@ -180,7 +180,7 @@ function [parameters_est, statistics_est]=estimate_parameters(cfg)
 
   if(strcmp(cfg.estimation.optimizer, 'ga'))
     % Pulling the defaults for ga
-    options = optimset('ga');
+    options = gaoptimset()
   end
 
 

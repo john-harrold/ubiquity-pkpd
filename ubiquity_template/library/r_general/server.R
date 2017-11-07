@@ -1345,6 +1345,7 @@ generate_iiv <-function(input, output, session){
         }
       }
 
+
       for(IIVIDX in seq(1,length(iivnames))){
         if(IIVIDX == 1){
           eval(parse(text=paste(sprintf("myiiv = data.frame(%s = iivvalues[,IIVIDX])",as.character(iivnames[[IIVIDX]]))))) 
@@ -1353,7 +1354,7 @@ generate_iiv <-function(input, output, session){
       }
 
       row.names(myiiv) = iivnames 
-      htiiv = rhandsontable(myiiv, readOnly=FALSE, width="100%")
+      htiiv = rhandsontable(myiiv, readOnly=FALSE, width="100%", digits=14)
       htiiv = hot_cols(htiiv, renderer = "
         function (instance, td, row, col, prop, value, cellProperties) {
           Handsontable.renderers.TextRenderer.apply(this, arguments);

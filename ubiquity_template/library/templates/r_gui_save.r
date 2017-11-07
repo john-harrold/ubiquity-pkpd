@@ -6,6 +6,9 @@ graphics.off()
 library("deSolve")
 library("ggplot2")
 require("gdata")
+library("foreach")
+library("doParallel")
+library("doRNG")
 
 <user_def>
 

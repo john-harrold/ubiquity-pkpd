@@ -4,6 +4,8 @@ rm(list=ls())
 options(error=traceback)
 options(show.error.locations = TRUE)
 # Uncomment to set the script directory as the working directory
+# This works when calling this file as a script:
+# R -e "source('thisfile.r')"
 # setwd(dirname(sys.frame(tail(grep('source',sys.calls()),n=1))$ofile))
 graphics.off()
 library("deSolve")
@@ -117,8 +119,6 @@ som = run_simulation_ubiquity(parameters, cfg)
 #                            option = "sub_file_sample",
 #                            value  = "with replacement")
 #
-# som   = simulate_subjects(parameters, cfg)
-# 
 # # To parallelize the simulations uncomment the following:
 #  cfg=system_set_option(cfg, group  = "simulation",
 #                             option = "parallel",    
@@ -128,6 +128,8 @@ som = run_simulation_ubiquity(parameters, cfg)
 #                             option = "compute_cores", 
 #                             value  = detectCores() - 1)
 #  
+# som   = simulate_subjects(parameters, cfg)
+# 
 # #
 # # replace TS     with a timescale (i.e. days) and 
 # #         OUTPUT with a named output  (i.e. Cp)

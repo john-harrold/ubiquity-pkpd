@@ -55,7 +55,7 @@ $ERROR
 ; creating the default internal time variable
 SIEB_TIME = TIME
 
-: Mapping the states to their names
+; Mapping the states to their names
 <STATES_ASSIGNMENT_NMEB>
 
 ; Defining the dynamic

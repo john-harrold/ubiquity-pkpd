@@ -4,6 +4,8 @@ rm(list=ls())
 options(error=traceback)
 options(show.error.locations = TRUE)
 # Uncomment to set the script directory as the working directory
+# This works when calling this file as a script:
+# R -e "source('thisfile.r')"
 # setwd(dirname(sys.frame(tail(grep('source',sys.calls()),n=1))$ofile))
 graphics.off()
 library("deSolve")
@@ -17,11 +19,12 @@ library("foreach")
 library("doParallel")
 library("doRNG")
 
+# -------------------------------------------------------------------------
 
-# flowctl = 'plot previous estimate'
-# flowctl = 'previous estimate as guess'
-# flowctl = 'estimate'
-flowctl         = 'plot guess'
+# flowctl       = 'plot previous estimate'
+# flowctl       = 'previous estimate as guess'
+# flowctl       = 'estimate'
+  flowctl       = 'plot guess'
 analysis_name   = 'ANAME'
 archive_results = FALSE
 
@@ -29,6 +32,7 @@ archive_results = FALSE
 # See the "R Workflow" section at the link below:
 # http://presentation.ubiquity.grok.tv
 
+# -------------------------------------------------------------------------
 # Rebuilding the system (R scripts and compiling C code)
 build_system(system_file="<SYSTEM_FILE>")
 
@@ -39,6 +43,7 @@ source("transient/auto_rcomponents.r")
 cfg = system_fetch_cfg()
 # Initializing the log file ./transient/ubiquity.log
 cfg = system_log_init(cfg)
+# -------------------------------------------------------------------------
 
 <PSETS>
 
@@ -56,7 +61,7 @@ cfg = system_log_init(cfg)
 #
 # cfg = system_set_guess(cfg, pname="PNAME", value=VALUE, lb=NULL, ub=NULL) 
 
-#  
+# -------------------------------------------------------------------------
 # Setting options
 # 
 # Specify output times here using sparse sampling (large time steps) to make
@@ -140,6 +145,7 @@ cfg = system_log_init(cfg)
 #                                                             maxiter = 1000)))
 
 
+# -------------------------------------------------------------------------
 # Loading Datasets
 #
 # From Excel sheet
@@ -157,6 +163,7 @@ cfg = system_log_init(cfg)
 #    
 
 
+# -------------------------------------------------------------------------
 # Defining the cohorts
 #
 # Clearing all of the cohorts
@@ -202,39 +209,14 @@ cohort$outputs$ONAME$options$marker_line    = 1
 
 cfg = system_define_cohort(cfg, cohort)
 
-if((flowctl == "estimate") | (flowctl == "previous estimate as guess")){
-  # Checking the analysis_name
-  name_check = ubiquity_name_check(analysis_name)
-  if(!name_check$isgood){
-    vp(cfg, sprintf('system_plot_cohorts()'))
-    vp(cfg, sprintf('Error: the analyssis name >%s< is invalid', analysis_name))
-    vp(cfg, sprintf('Problems: %s', name_check$msg))
-    analysis_name = 'analysis'
-    vp(cfg, sprintf('Instead Using: %s', analysis_name))
-    }
+# -------------------------------------------------------------------------
+# performing estimation or loading guess/previous results
+pest = system_estimate_parameters(cfg, 
+                                  flowctl         = flowctl, 
+                                  analysis_name   = analysis_name, 
+                                  archive_results = archive_results)
 
-  #loading the previous estimate and setting that as a guess
-  if(flowctl == "previous estimate as guess"){
-    load(file=sprintf('output%s%s.RData', .Platform$file.sep, analysis_name))
-    vp(cfg, "Setting initial guess to previous solution")
-    for(pname in names(cfg$estimation$parameters$guess)){
-      cfg = system_set_guess(cfg, pname=pname, value=pest[[pname]]) }
-  }
-
-  # performing the estimation
-  pe   = estimate_parameters(cfg)
-  pest = pe$estimate
-  save(pe, pest, file=sprintf('output%s%s.RData', .Platform$file.sep, analysis_name))
-  if(archive_results){
-    archive_estimation(analysis_name, cfg)
-  }
-} else if(flowctl == "plot guess"){
-  pest = system_fetch_guess(cfg)
-} else if(flowctl == "plot previous estimate"){
-  vp(cfg, "Loading the previous solution")
-  load(file=sprintf('output%s%s.RData', .Platform$file.sep, analysis_name))
-}
-
+# -------------------------------------------------------------------------
 
 # Here you can specify the output times used for the simulations that will
 # be used for plotting. Here you want frequent sampling (small time steps)
@@ -245,6 +227,8 @@ if((flowctl == "estimate") | (flowctl == "previous estimate as guess")){
 
 # Simulating the system at the estimates
 erp = system_simulate_estimation_results(pest = pest, cfg = cfg) 
+# -------------------------------------------------------------------------
+
 
 plot_opts = c()
 # To customize the figures

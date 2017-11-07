@@ -1578,21 +1578,10 @@ if("iiv" %in% names(cfg) | !is.null(sub_file)){
       }
     }
   }
-  
-  # Initialzing progress bar
-  # If we're running as a script we display this in the console
-  # otherwise we initialize a shiny onject
-  if(cfg$options$misc$operating_environment == 'script'){
-    pb = txtProgressBar(min=0, max=1, width=12, style=3, char='.') 
-    # JMH for parallel
-    myprogress <- function(n) setTxtProgressBar(pb, n)
-    }
 
-  if(cfg$options$misc$operating_environment == 'gui'){
-    pb <- shiny::Progress$new()
-    # JMH how to parallelize 
-    pb$set(message = progress_message, value = 0)
-  }
+
+  vp(cfg, "Generating the parameters for subjects.")
+  vp(cfg, "Be patient, there may be a delay...")
 
 
   # generating the parameters for each of the subjects
@@ -1655,6 +1644,22 @@ if("iiv" %in% names(cfg) | !is.null(sub_file)){
   
   # Running simulations
   if(!ponly){
+    vp(cfg, "Now running the simulations")
+    # Initialzing progress bar
+    # If we're running as a script we display this in the console
+    # otherwise we initialize a shiny onject
+    if(cfg$options$misc$operating_environment == 'script'){
+      pb = txtProgressBar(min=0, max=1, width=12, style=3, char='.') 
+      # JMH for parallel
+      myprogress <- function(n) setTxtProgressBar(pb, n)
+      }
+  
+    if(cfg$options$misc$operating_environment == 'gui'){
+      pb <- shiny::Progress$new()
+      # JMH how to parallelize 
+      pb$set(message = progress_message, value = 0)
+    }
+  
     if("multicore" == cfg$options$simulation_options$parallel){
       #
       # Running simulations in parallel
@@ -1665,7 +1670,7 @@ if("iiv" %in% names(cfg) | !is.null(sub_file)){
       registerDoParallel(cl)
       
       somall <- foreach(sub_idx=1:nsub,
-                        .verbose = TRUE,
+                        .verbose = FALSE,
                         .errorhandling='pass',
                         .options.snow=list(progress = myprogress),
                         .packages=c("deSolve")) %dorng% {
@@ -1773,7 +1778,6 @@ if("iiv" %in% names(cfg) | !is.null(sub_file)){
       
         # Updating progress indicators
         if(cfg$options$misc$operating_environment == 'script'){
-          #setTxtProgressBar(pb, sub_idx/nsub)
           myprogress(sub_idx/nsub) }
       
         if(cfg$options$misc$operating_environment == 'gui'){
@@ -1832,6 +1836,12 @@ if("iiv" %in% names(cfg) | !is.null(sub_file)){
       sub_idx = sub_idx + 1;
     }
 
+    # Cleaning up the progress bar objects
+    if(cfg$options$misc$operating_environment == 'script'){
+      close(pb)}
+    if(cfg$options$misc$operating_environment == 'gui'){
+        pb$close()}
+    
   }
 
   
@@ -1876,12 +1886,6 @@ if("iiv" %in% names(cfg) | !is.null(sub_file)){
   cat(">     <IIVCOR:?:?> ?                           \n");
   cat("---------------------------------------------- \n");
 }
-
-# Cleaning up the progress bar objects
-if(cfg$options$misc$operating_environment == 'script'){
-  close(pb)}
-if(cfg$options$misc$operating_environment == 'gui'){
-    pb$close()}
 
 return(p)
 }
@@ -3137,13 +3141,12 @@ for(SIMINT_cv_name in names(SIMINT_cfg$options$inputs$covariates)){
   
 }
 
+
 # creating the bolus inputs
 SIMINT_eventdata = system_prepare_inputs(SIMINT_cfg, SIMINT_parameters, SIMINT_force_times)
  
 # adding sample times around the bolus times to the important times
 SIMINT_important_times =   c(sample_around(SIMINT_eventdata$time, SIMINT_simulation_options$output_times), SIMINT_important_times)
-
-
  
 
 # If important times were selected to be included then we set the output times
@@ -3454,12 +3457,11 @@ calculate_objective <- function(parameters, cfg, estimation=TRUE){
   # if we fail we throw an error and flip the error flag
   tryCatch(
    { 
-    suppressWarnings(
-      eval(parse(text=sprintf('od = %s(parameters, cfg)', cfg$estimation$options$options$observation_function)))
-    )
+      eval(parse(text=sprintf('od = %s(parameters, cfg)', cfg$estimation$options$observation_function)))
    },
     warning = function(w) {
     # place warning stuff here
+      eval(parse(text=sprintf('od = %s(parameters, cfg)', cfg$estimation$options$observation_function)))
    },
     error = function(e) {
     vp(cfg, sprintf(' -> unable to retrieve observations'))
@@ -3481,9 +3483,9 @@ calculate_objective <- function(parameters, cfg, estimation=TRUE){
 
 
   if(!errorflag){
-  tryCatch(
-   { 
-    suppressWarnings({
+
+
+  tCcode     = '
     yobs = od$pred[,2]
     ypred= od$pred[,3]
     yvar = od$pred[,4]
@@ -3496,8 +3498,6 @@ calculate_objective <- function(parameters, cfg, estimation=TRUE){
       # Constant portion of the negative log likelihood objective
       value = value + length(yobs)*log(2*pi)/2
     }
-
-
    
     # Parameter bounds, are handled by increasing the objective function due
     # to the parameter bounds being crossed.
@@ -3505,19 +3505,23 @@ calculate_objective <- function(parameters, cfg, estimation=TRUE){
 
     # if the objective function is inf or NA we throw the error flag
     if(is.na(value) | is.infinite(value)){
-      errorflag = TRUE } 
-    
-    })
+      errorflag = TRUE } '
+
+
+
+  tryCatch(
+   { 
+   eval(parse(text=tCcode))
    },
     warning = function(w) {
     # place warning stuff here
+   eval(parse(text=tCcode))
    },
     error = function(e) {
-    #vp(cfg, sprintf(' Error: %s ', e$message))
+    vp(cfg, sprintf(' Error: %s ', e$message))
     errorflag = TRUE
     value = Inf 
    })
-  
   }
 
   # If we're in the estimation we return the objective function value
@@ -3543,6 +3547,8 @@ calculate_objective <- function(parameters, cfg, estimation=TRUE){
     }
     return(of)
   }
+
+
 }
 
 bound_parameters  <- function(pv, cfg){
@@ -3573,6 +3579,56 @@ objmult = 0.0
 
   return(bv)
 }
+
+
+# system_estimate_parameters - controls the estimation process
+# flowctl - controls the flow of the estimation process with the
+#           following options:
+#           'plot previous estimate'
+#           'previous estimate as guess'
+#           'estimate'
+#           'plot guess'
+# analysis_name - name used for archinving results
+# archive_results - boolean variable to indicate if results should be saved
+system_estimate_parameters <- function(cfg, 
+                                       flowctl         = "plot guess",
+                                       analysis_name   = "my_analysis", 
+                                       archive_results = TRUE){
+
+  if((flowctl == "estimate") | (flowctl == "previous estimate as guess")){
+    # Checking the analysis_name
+    name_check = ubiquity_name_check(analysis_name)
+    if(!name_check$isgood){
+      vp(cfg, sprintf('system_plot_cohorts()'))
+      vp(cfg, sprintf('Error: the analyssis name >%s< is invalid', analysis_name))
+      vp(cfg, sprintf('Problems: %s', name_check$msg))
+      analysis_name = 'analysis'
+      vp(cfg, sprintf('Instead Using: %s', analysis_name))
+      }
+  
+    #loading the previous estimate and setting that as a guess
+    if(flowctl == "previous estimate as guess"){
+      load(file=sprintf('output%s%s.RData', .Platform$file.sep, analysis_name))
+      vp(cfg, "Setting initial guess to previous solution")
+      for(pname in names(cfg$estimation$parameters$guess)){
+        cfg = system_set_guess(cfg, pname=pname, value=pest[[pname]]) }
+    }
+  
+    # performing the estimation
+    pe   = estimate_parameters(cfg)
+    pest = pe$estimate
+    save(pe, pest, file=sprintf('output%s%s.RData', .Platform$file.sep, analysis_name))
+    if(archive_results){
+      archive_estimation(analysis_name, cfg)
+    }
+  } else if(flowctl == "plot guess"){
+    pest = system_fetch_guess(cfg)
+  } else if(flowctl == "plot previous estimate"){
+    vp(cfg, "Loading the previous solution")
+    load(file=sprintf('output%s%s.RData', .Platform$file.sep, analysis_name))
+  }
+
+return(pest)}
 
 
 estimate_parameters <- function(cfg){
@@ -3694,26 +3750,27 @@ odtest = calculate_objective(cfg$estimation$parameters$guess, cfg, estimation=FA
     pest_bound    = bound_parameters(pv = pest$estimate_ub, cfg = cfg)
     pest$estimate = pest_bound$pv
 
-
-   tryCatch(
-    { 
-    suppressWarnings({
-      vp(cfg, '-----------------------------------')
-      vp(cfg, 'Calculating solution statistics. Be')
-      vp(cfg, 'patient this can take a while when ')
-      vp(cfg, 'there are many parameters          ')
-      vp(cfg, '-----------------------------------')
+   tCcode = '
+      vp(cfg, "-----------------------------------")
+      vp(cfg, "Calculating solution statistics. Be")
+      vp(cfg, "patient this can take a while when ")
+      vp(cfg, "there are many parameters          ")
+      vp(cfg, "-----------------------------------")
       # Generating the solution statistics and writing the results to a file
       pest$statistics_est = solution_statistics(pest$estimate, cfg)
       files = generate_report(pest$estimate, pest$statistics_est, cfg)
       cat(files$report_file_contents, sep="\n")
       
-      vp(cfg, "If you're happy with the results, the following")
+      vp(cfg, "If you are happy with the results, the following")
       vp(cfg, "can be used to update system.txt file. Just copy, ")
-      vp(cfg, "paste, and delete the previous entries")
-    })
+      vp(cfg, "paste, and delete the previous entries")'
+
+   tryCatch(
+    { 
+      eval(parse(text=tCcode))
     },
       warning = function(w) {
+      eval(parse(text=tCcode))
     },
       error = function(e) {
         vp(cfg, "Solution statistics calculation failed")
@@ -4312,42 +4369,31 @@ solution_statistics <- function(parameters, cfg){
     perturbation[[pname]] = max(c(abs(parameters[[pname]]), AbsTol))*RelTol
   }
 
- tryCatch(
-  { 
-    suppressWarnings({
-      # Getting the observations at the estimate
-      eval(parse(text=sprintf('observations = %s(parameters, cfg)', cfg$estimation$options$observation_function)))
-      
-      # Getting the objective at the estimate
-      objective=calculate_objective(parameters,cfg)
-      
-      perturbations_plus = list()
-      perturbations_minus= list()
-      
-      for(pname in names(parameters)){
-      
-        # Creating a vector of parameters with _only_ the current parameter
-        # (pname) perturbated in the positive direction and calculating the
-        # observations with that perturbation
-        perturbations_plus[[pname]]$parameters            = parameters
-        perturbations_plus[[pname]]$parameters[[pname]]   = perturbations_plus[[pname]]$parameters[[pname]] + perturbation[[pname]]
-        eval(parse(text=sprintf('perturbations_plus[[pname]]$observations = %s(perturbations_plus[[pname]]$parameters,cfg)',cfg$estimation$options$observation_function)))
-      
-        # doing the same thing for the minus
-        perturbations_minus[[pname]]$parameters           = parameters
-        perturbations_minus[[pname]]$parameters[[pname]]  = perturbations_minus[[pname]]$parameters[[pname]] - perturbation[[pname]]
-        eval(parse(text=sprintf('perturbations_minus[[pname]]$observations = %s(perturbations_minus[[pname]]$parameters,cfg)',cfg$estimation$options$observation_function)))
-      
-      }
-    })
-  },
-    warning = function(w) {
-  },
-    error = function(e) {
-    vp(cfg, 'Unable to retrieve observations')
-    vp(cfg, 'This may result if the system is stiff around the parameter estimate.')
-    return()
-  })
+  
+  # Getting the observations at the estimate
+  eval(parse(text=sprintf("observations = %s(parameters, cfg)", cfg$estimation$options$observation_function)))
+  
+  # Getting the objective at the estimate
+  objective=calculate_objective(parameters,cfg)
+  
+  perturbations_plus = list()
+  perturbations_minus= list()
+  
+  for(pname in names(parameters)){
+  
+    # Creating a vector of parameters with _only_ the current parameter
+    # (pname) perturbated in the positive direction and calculating the
+    # observations with that perturbation
+    perturbations_plus[[pname]]$parameters            = parameters
+    perturbations_plus[[pname]]$parameters[[pname]]   = perturbations_plus[[pname]]$parameters[[pname]] + perturbation[[pname]]
+    eval(parse(text=sprintf("perturbations_plus[[pname]]$observations = %s(perturbations_plus[[pname]]$parameters,cfg)",cfg$estimation$options$observation_function)))
+  
+    # doing the same thing for the minus
+    perturbations_minus[[pname]]$parameters           = parameters
+    perturbations_minus[[pname]]$parameters[[pname]]  = perturbations_minus[[pname]]$parameters[[pname]] - perturbation[[pname]]
+    eval(parse(text=sprintf("perturbations_minus[[pname]]$observations = %s(perturbations_minus[[pname]]$parameters,cfg)",cfg$estimation$options$observation_function)))
+  
+  }
 
 
 
@@ -4637,7 +4683,6 @@ return(fo)
 }
 
 
-
 gg_log10_yaxis = function(fo, 
                           ylim_min     = NULL, 
                           ylim_max     = NULL, 
@@ -4660,6 +4705,9 @@ gg_log10_yaxis = function(fo,
      ydata = c(ydata, fob$data[[didx]]$y)
    }
 
+   # Getting only thge positive y data
+   ydata = ydata[ydata> 0]
+
    if(is.null(ylim_min)){
      ylim_min = max(min(ydata), 0)
    }
@@ -4674,29 +4722,8 @@ gg_log10_yaxis = function(fo,
  ylim_max = 10^ceiling(log10(ylim_max))
 
  data_ylim = c(ylim_min, ylim_max)
- #data_ylim = ggplot_build(fo)$panel$ranges[[1]]$y.range 
 
-#
-# if(!is.null(ylim_min)){
-#    data_ylim[1] = ylim_min }
-# 
-# if(!is.null(ylim_max)){
-#   data_ylim[2] = ylim_max }
-#
  if(!is.null(data_ylim)){
-#  if(data_ylim[1] > 0){
-#    data_ylim[1] = floor(data_ylim[1])
-#  }  else {
-#    data_ylim[1] = ceiling(data_ylim[1])
-#  }
-# 
-#  if(data_ylim[2] < 0){
-#    data_ylim[2] = floor(data_ylim[2])
-#  }  else {
-#    data_ylim[2] = ceiling(data_ylim[2])
-#  }
-
-
  
  # Creating the major ticks
  ytick_major =  10^(log10(data_ylim[1]):log10(data_ylim[2]))
@@ -4744,6 +4771,98 @@ gg_log10_yaxis = function(fo,
 
  # Left aligning the y tick lables
  fo = fo + theme(axis.text.y = element_text(hjust = 0))
+}
+
+fo}
+
+gg_log10_xaxis = function(fo, 
+                          xlim_min     = NULL, 
+                          xlim_max     = NULL, 
+                          x_tick_label = TRUE,
+                          y_tick_label = TRUE){
+#
+# This function puts a "pretty" log10 y axis on a ggplot figure
+#
+
+
+ fo  = fo + coord_trans(x="log10")
+ if(any(is.null(xlim_min), is.null(xlim_max))){
+   fob = ggplot_build(fo)
+
+  
+   # looping through the figure object and pulling out all of the y data
+   # to get the bounds on the y data
+   xdata = c()
+   for(didx in 1:length(fob$data)){
+     xdata = c(xdata, fob$data[[didx]]$x)
+   }
+
+   # Getting only thge positive x data
+   xdata = xdata[xdata> 0]
+
+   if(is.null(xlim_min)){
+     xlim_min = max(min(xdata), 0)
+   }
+   if(is.null(xlim_max)){
+     xlim_max = max(xdata)
+   }
+   
+ 
+ }
+
+ xlim_min = 10^floor(log10(xlim_min))
+ xlim_max = 10^ceiling(log10(xlim_max))
+
+ data_xlim = c(xlim_min, xlim_max)
+#
+ if(!is.null(data_xlim)){
+ 
+ # Creating the major ticks
+ xtick_major =  10^(log10(data_xlim[1]):log10(data_xlim[2]))
+
+ # Expanding the major tick labels beyond the current axis to make sure the
+ # minor tick labels get filled out.
+ xtick_major = c(min(xtick_major)/10, xtick_major, max(xtick_major)*10)
+
+
+ # defining the axis limits
+ myxlim = 10^(c(data_xlim))
+
+ if(!is.null(xlim_min)){
+     myxlim[1] = xlim_min
+ }
+
+ if(!is.null(xlim_max)){
+     myxlim[2] = xlim_max
+ }
+
+
+ # Creating the minor ticks between the major ticks
+ xtick_minor = c()
+ for(xt in 1:length(xtick_major)-1){
+   xtick_minor = c(xtick_minor, 10^log10(xtick_major[xt])*2:9)
+ }
+
+ if(x_tick_label){
+   fo = fo + scale_x_continuous(breaks       = xtick_major,
+                                minor_breaks = xtick_minor,
+                                limits       = myxlim,
+                                labels       = scales::trans_format("log10", scales::math_format(10^.x)))
+ }
+ else{
+   fo = fo + scale_x_continuous(breaks       = xtick_major,
+                                minor_breaks = xtick_minor,
+                                limits       = myxlim,
+                                labels       = NULL)
+ }
+
+
+ if(!y_tick_label){
+   fo = fo + scale_y_continuous(labels=NULL)
+ }
+
+ fo = fo + annotation_logticks(sides='tb', scaled='FALSE')
+
 }
 
 fo}

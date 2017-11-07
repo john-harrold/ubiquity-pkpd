@@ -396,6 +396,7 @@ MAIN:
     &dump_potterswheel3($cfg    , $name);
     &dump_monolix($cfg          , $name);
     &dump_nonmem($cfg           , $name);
+    &dump_mrgsolve($cfg         , $name);
   }
 
   exit 0;
@@ -451,6 +452,7 @@ my $cfg;
   # (.for, .prm, etc)
   $cfg->{files}->{adapt}                             = 'target_adapt_5';
 
+  $cfg->{files}->{mrgsolve}                          = 'target_mrgsolve';
   $cfg->{files}->{nonmem}                            = 'target_nonmem';
   $cfg->{files}->{monolix}                           = 'target_monolix';
 
@@ -1714,27 +1716,57 @@ sub dump_monolix
   my $name      = '';
   my $tmp_ode   = '';
 
-  my $template = &fetch_monolix_template;
+  my $iiv_dist  = '';
+  my $iiv_var   = '';
+  
+  my $iiv_ETA     = '';
+  my $iiv_set     = 'default';
+  if($cfg->{iiv_index}->{$parameter_set}){
+     $iiv_set = $parameter_set; 
+  }
+
+  my $template = &fetch_template_file('monolix.txt');
   # hash to hold the model components
   my $mc = {};
 
   #initializing the model components
-  $mc->{INPUT}      = '';
-  $mc->{PK}         = '';
-  $mc->{EQUATION}   = '';
-  $mc->{POPULATION} = '';
-  $mc->{OUTPUT}     = '';
+  $mc->{INPUT}        = '';
+  $mc->{BOLUS}        = '';
+  $mc->{EQUATION}     = '';
+  $mc->{POPULATION}   = '';
+  $mc->{DESCRIPTION}  = '';
+  
+  $mc->{DESCRIPTION}  = &fetch_comments($cfg->{comments}, 'monolix');
 
   # dumping the system parameters
   if ((@{$cfg->{parameters_system_index}})){
-    $mc->{INPUT} .=  "parameter = {".join(', ', @{$cfg->{parameters_system_index}})."}\n";
+    $mc->{INPUT} .=  "input = {".join(', ', @{$cfg->{parameters_system_index}})."}\n";
     foreach $name (@{$cfg->{parameters_system_index}}){
-      $mc->{POPULATION} .= "pop_{$name} ".&fetch_padding($name, $cfg->{parameters_length})."= {distribution=logNormal, median=";
+      # Default variance information for parameters
+      $iiv_var  = '0.1';
+      $iiv_ETA  = '';
+      $iiv_dist = 'logNormal,';
+      # For variance values that have been specified we add them here
+      if(defined($cfg->{iiv}->{$iiv_set}->{parameters}->{$name})){
+        if($cfg->{iiv}->{$iiv_set}->{parameters}->{$name}->{distribution} eq "LN"){
+          $iiv_dist = 'logNormal,';
+        }
+        elsif($cfg->{iiv}->{$iiv_set}->{parameters}->{$name}->{distribution} eq "N"){
+          $iiv_dist = 'Normal,   ';
+        }
+        $iiv_ETA = $cfg->{iiv}->{$iiv_set}->{parameters}->{$name}->{iiv_name};
+        if(defined($cfg->{iiv}->{$iiv_set}->{vcv}->{$iiv_ETA}->{$iiv_ETA})){
+          $iiv_var = $cfg->{iiv}->{$iiv_set}->{vcv}->{$iiv_ETA}->{$iiv_ETA};
+        }
+      }
+
+
+      $mc->{POPULATION} .= "pop_{$name} ".&fetch_padding($name, $cfg->{parameters_length})."= {distribution=$iiv_dist median=";
       if(exists($cfg->{parameter_sets}->{$parameter_set}->{values}->{$name})){
         $mc->{POPULATION} .= $cfg->{parameter_sets}->{$parameter_set}->{values}->{$name}.", ".&fetch_padding("$cfg->{parameter_sets}->{$parameter_set}->{values}->{$name}", $cfg->{parameter_values_length}); }
       else{
         $mc->{POPULATION} .= $cfg->{parameters}->{$name}->{value}.", ".&fetch_padding("$cfg->{parameters}->{$name}->{value}", $cfg->{parameter_values_length}) ; }
-      $mc->{POPULATION} .= " variance=.1} \n";
+      $mc->{POPULATION} .= " variance=$iiv_var} \n";
     }
   }
 
@@ -1757,6 +1789,14 @@ sub dump_monolix
     foreach $species (keys(%{$cfg->{initial_conditions}})){
       $mc->{EQUATION} .=  $species."_0 ".&fetch_padding("$species  ", $cfg->{species_length})."= ".&apply_format($cfg, $cfg->{initial_conditions}->{$species}, 'monolix')." \n";     
     }
+  }
+
+  if (defined($cfg->{bolus_inputs}->{entries})){
+    $mc->{BOLUS} =  "PK:\n";
+    foreach $name  (keys(%{$cfg->{bolus_inputs}->{entries}})){
+       $mc->{BOLUS} .= "depot(adm=1, target=$name, p=".$cfg->{bolus_inputs}->{entries}->{$name}->{scale}.")\n";
+    }
+
   }
 
 
@@ -1817,7 +1857,7 @@ sub dump_monolix
     foreach $name (@{$cfg->{outputs_index}}){
       $mc->{EQUATION} .= "$name ".&fetch_padding("$name ", $cfg->{species_length})."= ".&apply_format($cfg, $cfg->{outputs}->{$name}, 'monolix')."\n";
     }
-    $mc->{OUTPUT}   .= "Y = {".join(', ', @{$cfg->{outputs_index}})."} \n";
+    $mc->{OUTPUT}   .= "output = {".join(', ', @{$cfg->{outputs_index}})."} \n";
   }
 
   foreach $name      (keys(%{$mc})){
@@ -1829,6 +1869,129 @@ sub dump_monolix
   close(FH);
 
 }
+
+sub dump_mrgsolve
+{
+  my ($cfg, $parameter_set) = @_;
+  my $mc;
+  my $text_string;
+  my $name;
+  my $parameter;
+  my $template = &fetch_template_file('mrgsolve.cpp');
+
+  my $iiv_set     = 'default';
+  if($cfg->{iiv_index}->{$parameter_set}){
+     $iiv_set = $parameter_set; 
+  }
+
+  $mc->{SYSTEM_PARAMS} = '';
+  $mc->{STATE_INIT}    = '';
+  $mc->{STATE_IC}      = '';
+  $mc->{IIV_SP}        = '';
+  $mc->{ODES}          = '';
+  $mc->{SSP}           = '';
+  $mc->{DSP}           = '';
+
+  #
+  # Dumping the system parameters
+  #
+  foreach $parameter (@{$cfg->{parameters_index}}){
+    $name = $parameter;
+
+    if(defined($cfg->{iiv}->{$iiv_set}->{parameters}->{$name})){
+      $mc->{SYSTEM_PARAMS} .= "TV_".$name;
+      $mc->{SYSTEM_PARAMS} .= &fetch_padding("TV_".$name, $cfg->{parameters_length}); 
+      $mc->{SYSTEM_PARAMS} .= " = ";
+
+      $text_string = &make_iiv($cfg, $name, 'nonmem', $iiv_set) ;
+      # substituting the placeholders
+      $text_string =~ s#SIMINT_PARAMETER_TV#TV_$name#g;
+      $text_string =~ s#SIMINT_IIV_VALUE#$cfg->{iiv}->{$iiv_set}->{parameters}->{$name}->{iiv_name}#g;
+
+      $mc->{IIV_SP}        .= "double ".$name;
+      $mc->{IIV_SP}        .= &fetch_padding("double ".$name, $cfg->{parameters_length}); 
+      $mc->{IIV_SP}        .= " = ";
+      $mc->{IIV_SP}        .= $text_string;
+      $mc->{IIV_SP}        .= ";\n";
+    }
+    else{
+      $mc->{SYSTEM_PARAMS} .= $name;
+      $mc->{SYSTEM_PARAMS} .= &fetch_padding($name, $cfg->{parameters_length}); 
+      $mc->{SYSTEM_PARAMS} .= " = ";
+    }
+    $mc->{SYSTEM_PARAMS} .= $cfg->{parameters}->{$name}->{value};
+    $mc->{SYSTEM_PARAMS} .= &fetch_padding($cfg->{parameters}->{$name}->{value}, $cfg->{parameters_length});
+    # $mc->{SYSTEM_PARAMS} .= "  // ".$cfg->{parameters}->{$name}->{units};
+    $mc->{SYSTEM_PARAMS} .= "\n";
+  }
+
+  # 
+  # Parsing the states
+  # 
+  foreach $name      (@{$cfg->{species_index}}){
+    # initializing state names
+    $mc->{STATE_INIT}    .= $name;
+    $mc->{STATE_INIT}    .= &fetch_padding($name, $cfg->{species_length}); 
+    $mc->{STATE_INIT}    .= " = 0.0 \n";
+
+    # Nonzero initial conditions
+    if(defined($cfg->{initial_conditions}->{$name})){
+      $text_string = $cfg->{initial_conditions}->{$name};
+      $text_string = &apply_format($cfg, $text_string, 'C');
+
+      $mc->{STATE_IC} .= $name."_0";
+      $mc->{STATE_IC} .= &fetch_padding($name."_0", $cfg->{species_length})." = ";
+      $mc->{STATE_IC} .= $text_string;
+      $mc->{STATE_IC} .= ";\n";
+      }
+
+    # Differential equations
+    $mc->{ODES}          .= "dxdt_$name".&fetch_padding("dxdt_$name", $cfg->{species_length})." = ".&make_ode($cfg, $name, 'C').";\n";
+  }
+
+  #
+  # Secondary parameters
+  #
+  # Static secondary parameters 
+  if ((@{$cfg->{static_secondary_parameters_index}})){
+    foreach $parameter    (@{$cfg->{static_secondary_parameters_index}}){
+      $name = $parameter;
+      $mc->{SSP} .= "double ".$name;
+      $mc->{SSP} .= &fetch_padding("double ".$name, $cfg->{parameters_length})." = ";
+      $mc->{SSP} .= &apply_format($cfg, $cfg->{static_secondary_parameters}->{$name}, 'C').";\n"; 
+      if(defined($cfg->{if_conditional}->{$name})){
+        $mc->{SSP} .= &extract_conditional($cfg, $name, 'C');
+      }
+    }
+  }
+
+  # Dynamic secondary parameters 
+  if ((@{$cfg->{dynamic_secondary_parameters_index}})){
+    foreach $parameter    (@{$cfg->{dynamic_secondary_parameters_index}}){
+      $name = $parameter;
+      $mc->{DSP} .= "double ".$name;
+      $mc->{DSP} .= &fetch_padding("double ".$name, $cfg->{parameters_length})." = ";
+      $mc->{DSP} .= &apply_format($cfg, $cfg->{dynamic_secondary_parameters}->{$name}, 'C')."; \n"; 
+      if(defined($cfg->{if_conditional}->{$name})){
+        $mc->{DSP} .= &extract_conditional($cfg, $name, 'C');
+      }
+    }
+  }
+
+  #
+  # Mapping the content to the template file
+  #
+  foreach $name      (keys(%{$mc})){
+    $template =~ s#<$name>#$mc->{$name}#g;
+  }
+
+  # Writing the template file
+  open(FH, '>', &ftf($cfg, $cfg->{files}->{mrgsolve}."-$parameter_set.cpp"));
+  print FH $template;
+  close(FH);
+
+}
+
 
 sub dump_nonmem 
 {
@@ -5909,33 +6072,6 @@ sub apply_function{
 # Start:                     #
 # Model Target Templates     #
 #----------------------------#
-sub fetch_monolix_template{
-my $template ='DESCRIPTION:
-This model was automatically generated by 
-build_system.pl       
-According the the documentation from the 
-Monolix 4.2 Users manual
-Make a copy of this file before editing to 
-prevent your changes from being overwritten.
-
-INPUT:
-<INPUT>
-
-EQUATION:
-<EQUATION>
-
-OUTPUT:
-<OUTPUT>
-;odeType = stiff
-
-POPULATION:
-<POPULATION>
-
-
-';
-
-return $template;
-}
 
 
 #
@@ -6312,6 +6448,9 @@ sub fetch_comments
   }
   elsif($format eq 'rproject'){
     $comments =~ s/SIMINT_COMMENT_STRING/#/g;
+  }
+  elsif($format eq 'monolix'){
+    $comments =~ s/SIMINT_COMMENT_STRING//g;
   }
 
 
