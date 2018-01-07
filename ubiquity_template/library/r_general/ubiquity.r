@@ -4,6 +4,8 @@
 #
 build_system <- function(debug=FALSE, clean=TRUE, system_file="system.txt") {
   
+# This is required here to make sure it's loaded before the callable library
+require(deSolve)
 
 # Basic commands:
 # system("cp transient/r_ode_model.c  .")
@@ -2167,7 +2169,8 @@ nm_select_records    <- function(cfg, values, filter){
       #checking to see if the column exists in the dataset
       if(column_name %in% names(values)){
         # subsetting based on the current filter
-        values = values[values[[column_name]] == filter[[column_name]], ]
+        #values = values[values[[column_name]] == filter[[column_name]], ]
+        values = values[values[[column_name]] %in% filter[[column_name]], ]
       } 
       else{
         vp(cfg, sprintf(' fieldname: %s not found ignoring this entry', column_name))
@@ -3983,12 +3986,18 @@ for(output in levels(erp$pred$OUTPUT)){
 
 
 
-  fname = sprintf('output%s%s_timecourse_%s.pdf', .Platform$file.sep, prefix, output )
-  ggsave(fname, plot=p, height=def$dim$tc$height, width=def$dim$tc$width)
-  vp(cfg, sprintf('Figure written: %s', fname))
+  fname_pdf = sprintf('output%s%s_timecourse_%s.pdf', .Platform$file.sep, prefix, output )
+  ggsave(fname_pdf, plot=p, height=def$dim$tc$height, width=def$dim$tc$width)
+  vp(cfg, sprintf('Figure written: %s', fname_pdf))
+
+  fname_png = sprintf('output%s%s_timecourse_%s.png', .Platform$file.sep, prefix, output )
+  ggsave(fname_png, plot=p, height=def$dim$tc$height, width=def$dim$tc$width)
+  vp(cfg, sprintf('Figure written: %s', fname_png))
 
   # storing the plot object to be returned to the user
-  eval(parse(text=sprintf('grobs$timecourse$%s = p', output)))
+  eval(parse(text=sprintf('grobs$timecourse$%s     = p',         output)))
+  eval(parse(text=sprintf('grobs$timecourse$%s_png = fname_png', output)))
+  eval(parse(text=sprintf('grobs$timecourse$%s_pdf = fname_pdf', output)))
 }
 
 #
@@ -4054,12 +4063,19 @@ for(output in levels(erp$pred$OUTPUT)){
   p = prepare_figure(p, purpose="present")
   eval(parse(text=sprintf('p = p + scale_colour_manual(values=c(%s))', color_string)))
 
-  fname = sprintf('output%s%s_obs_pred_%s.pdf', .Platform$file.sep, prefix, output )
-  ggsave(fname, plot=p, height=def$dim$op$height, width=def$dim$op$width)
-  vp(cfg, sprintf('Figure written: %s', fname))
+  fname_pdf = sprintf('output%s%s_obs_pred_%s.pdf', .Platform$file.sep, prefix, output )
+  ggsave(fname_pdf, plot=p, height=def$dim$op$height, width=def$dim$op$width)
+  vp(cfg, sprintf('Figure written: %s', fname_pdf))
+
+  fname_png = sprintf('output%s%s_obs_pred_%s.png', .Platform$file.sep, prefix, output )
+  ggsave(fname_png, plot=p, height=def$dim$op$height, width=def$dim$op$width)
+  vp(cfg, sprintf('Figure written: %s', fname_png))
+
 
   # storing the plot object to be returned to the user
-  eval(parse(text=sprintf('grobs$obs_pred$%s = p', output)))
+  eval(parse(text=sprintf('grobs$obs_pred$%s     = p',         output)))
+  eval(parse(text=sprintf('grobs$obs_pred$%s_png = fname_png', output)))
+  eval(parse(text=sprintf('grobs$obs_pred$%s_pdf = fname_pdf', output)))
 
 }
 
@@ -4683,189 +4699,246 @@ return(fo)
 }
 
 
+#---------------------------------------------------------------------------
+# This function is used to format axis and ticks. 
+#   It can be used to put a "pretty" log10 axis x and y axis on a ggplot
+#   figure
+#
+gg_axis  = function(fo, 
+                     yaxis_scale  = TRUE,
+                     xaxis_scale  = TRUE,
+                     ylim_min     = NULL, 
+                     ylim_max     = NULL, 
+                     xlim_min     = NULL, 
+                     xlim_max     = NULL, 
+                     x_tick_label = TRUE,
+                     y_tick_label = TRUE){
+  # If any of the limits are null we build out the figure object so we can
+  # pull the limits from that object
+  if(any(is.null(ylim_min),is.null(ylim_min),is.null(xlim_min), is.null(xlim_max))){
+    fob = ggplot_build(fo) }
+
+
+
+  #
+  # Finding the xlim values
+  #
+  if(any(is.null(xlim_min), is.null(xlim_max))){
+    fob = ggplot_build(fo)
+    # looping through the figure object and pulling out all of the y data
+    # to get the bounds on the y data
+    xdata = c()
+    for(didx in 1:length(fob$data)){
+      xdata = c(xdata, fob$data[[didx]]$x)
+    }
+
+    # Getting only thge positive x data
+    xdata = xdata[xdata> 0]
+
+    if(is.null(xlim_min)){
+      xlim_min = max(min(xdata), 0)
+    }
+    if(is.null(xlim_max)){
+      xlim_max = max(xdata)
+    }
+    
+  
+  }
+
+  if(xaxis_scale){
+    xlim_min = 10^floor(log10(xlim_min))
+    xlim_max = 10^ceiling(log10(xlim_max))
+  }
+
+  data_xlim = c(xlim_min, xlim_max)
+
+  #
+  # Finding the ylim values
+  #
+  if(any(is.null(ylim_min), is.null(ylim_max))){
+    # looping through the figure object and pulling out all of the y data
+    # to get the bounds on the y data
+    ydata = c()
+    for(didx in 1:length(fob$data)){
+      ydata = c(ydata, fob$data[[didx]]$y)
+    }
+ 
+    # Getting only thge positive y data
+    ydata = ydata[ydata> 0]
+ 
+    if(is.null(ylim_min)){
+      ylim_min = max(min(ydata), 0)
+    }
+    if(is.null(ylim_max)){
+      ylim_max = max(ydata)
+    }
+  }
+
+  if(yaxis_scale){
+    ylim_min = 10^floor(log10(ylim_min))
+    ylim_max = 10^ceiling(log10(ylim_max))
+  }
+ 
+  data_ylim = c(ylim_min, ylim_max)
+
+
+
+  #
+  # Formatting the y axis
+  #
+  if(yaxis_scale){
+    if(!is.null(data_ylim)){
+    
+      # Creating the major ticks
+      ytick_major =  10^(log10(data_ylim[1]):log10(data_ylim[2]))
+     
+      # Expanding the major tick labels beyond the current axis to make sure the
+      # minor tick labels get filled out.
+      ytick_major = c(min(ytick_major)/10, ytick_major, max(ytick_major)*10)
+     
+     
+      # defining the axis limits
+      myylim = 10^(c(data_ylim))
+     
+      if(!is.null(ylim_min)){
+          myylim[1] = ylim_min
+      }
+     
+      if(!is.null(ylim_max)){
+          myylim[2] = ylim_max
+      }
+     
+     
+      # Creating the minor ticks between the major ticks
+      ytick_minor = c()
+      for(yt in 1:length(ytick_major)-1){
+        ytick_minor = c(ytick_minor, 10^log10(ytick_major[yt])*2:9)
+      }
+     
+     
+      if(y_tick_label){
+        fo = fo + scale_y_continuous(breaks       = ytick_major,
+                                     minor_breaks = ytick_minor,
+                                     trans        = 'log10',
+                                     limits       = myylim,
+                                     labels       = scales::trans_format("log10", scales::math_format(10^.x)))
+      }
+      else{
+        fo = fo + scale_y_continuous(breaks       = ytick_major,
+                                     minor_breaks = ytick_minor,
+                                     trans        = 'log10',
+                                     limits       = myylim,
+                                     labels       = NULL)
+      }
+    }
+    fo = fo + annotation_logticks(sides='lr') 
+    
+    # Left aligning the y tick lables
+    fo = fo + theme(axis.text.y = element_text(hjust = 0))
+
+  }
+  
+  #
+  # Formatting the x axis
+  #
+  if(xaxis_scale){
+
+    if(!is.null(data_xlim)){
+      # Creating the major ticks
+      xtick_major =  10^(log10(data_xlim[1]):log10(data_xlim[2]))
+
+      # Expanding the major tick labels beyond the current axis to make sure the
+      # minor tick labels get filled out.
+      xtick_major = c(min(xtick_major)/10, xtick_major, max(xtick_major)*10)
+
+
+      # defining the axis limits
+      myxlim = 10^(c(data_xlim))
+
+      if(!is.null(xlim_min)){
+          myxlim[1] = xlim_min
+      }
+
+      if(!is.null(xlim_max)){
+          myxlim[2] = xlim_max
+      }
+
+
+      # Creating the minor ticks between the major ticks
+      xtick_minor = c()
+      for(xt in 1:length(xtick_major)-1){
+        xtick_minor = c(xtick_minor, 10^log10(xtick_major[xt])*2:9)
+      }
+
+      if(x_tick_label){
+        fo = fo + scale_x_continuous(breaks       = xtick_major,
+                                     minor_breaks = xtick_minor,
+                                     trans        = 'log10',
+                                     limits       = myxlim,
+                                     labels       = scales::trans_format("log10", scales::math_format(10^.x)))
+      }
+      else{
+        fo = fo + scale_x_continuous(breaks       = xtick_major,
+                                     minor_breaks = xtick_minor,
+                                     trans        = 'log10',
+                                     limits       = myxlim,
+                                     labels       = NULL)
+      }
+    }
+    fo = fo + annotation_logticks(sides='tb') 
+  }
+
+
+
+
+fo}
+#---------------------------------------------------------------------------
+
+
+#---------------------------------------------------------------------------
+# Shortcut to gg_axis to make the y axis log10
 gg_log10_yaxis = function(fo, 
                           ylim_min     = NULL, 
                           ylim_max     = NULL, 
-                          x_tick_label = TRUE,
-                          y_tick_label = TRUE){
-#
-# This function puts a "pretty" log10 y axis on a ggplot figure
-#
+                          y_tick_label = TRUE,
+                          x_tick_label = TRUE){
 
 
- fo  = fo + coord_trans(y="log10")
- if(any(is.null(ylim_min), is.null(ylim_max))){
-   fob = ggplot_build(fo)
+ fo =  gg_axis(fo=fo,
+               yaxis_scale  = TRUE,
+               xaxis_scale  = FALSE,
+               ylim_min     = ylim_min,
+               ylim_max     = ylim_max,
+               xlim_min     = NULL, 
+               xlim_max     = NULL, 
+               y_tick_label = y_tick_label,
+               x_tick_label = TRUE) 
 
-  
-   # looping through the figure object and pulling out all of the y data
-   # to get the bounds on the y data
-   ydata = c()
-   for(didx in 1:length(fob$data)){
-     ydata = c(ydata, fob$data[[didx]]$y)
-   }
-
-   # Getting only thge positive y data
-   ydata = ydata[ydata> 0]
-
-   if(is.null(ylim_min)){
-     ylim_min = max(min(ydata), 0)
-   }
-   if(is.null(ylim_max)){
-     ylim_max = max(ydata)
-   }
-   
- 
- }
-
- ylim_min = 10^floor(log10(ylim_min))
- ylim_max = 10^ceiling(log10(ylim_max))
-
- data_ylim = c(ylim_min, ylim_max)
-
- if(!is.null(data_ylim)){
- 
- # Creating the major ticks
- ytick_major =  10^(log10(data_ylim[1]):log10(data_ylim[2]))
-
- # Expanding the major tick labels beyond the current axis to make sure the
- # minor tick labels get filled out.
- ytick_major = c(min(ytick_major)/10, ytick_major, max(ytick_major)*10)
-
-
- # defining the axis limits
- myylim = 10^(c(data_ylim))
-
- if(!is.null(ylim_min)){
-     myylim[1] = ylim_min
- }
-
- if(!is.null(ylim_max)){
-     myylim[2] = ylim_max
- }
-
-
- # Creating the minor ticks between the major ticks
- ytick_minor = c()
- for(yt in 1:length(ytick_major)-1){
-   ytick_minor = c(ytick_minor, 10^log10(ytick_major[yt])*2:9)
- }
-
- if(y_tick_label){
-   fo = fo + scale_y_continuous(breaks       = ytick_major,
-                                minor_breaks = ytick_minor,
-                                limits       = myylim,
-                                labels       = scales::trans_format("log10", scales::math_format(10^.x)))
- }
- else{
-   fo = fo + scale_y_continuous(breaks       = ytick_major,
-                                minor_breaks = ytick_minor,
-                                limits       = myylim,
-                                labels       = NULL)
- }
- if(!x_tick_label){
-   fo = fo + scale_x_continuous(labels=NULL)
- }
-
- fo = fo + annotation_logticks(sides='lr', scaled='FALSE')
-
- # Left aligning the y tick lables
- fo = fo + theme(axis.text.y = element_text(hjust = 0))
-}
 
 fo}
+#---------------------------------------------------------------------------
 
+#---------------------------------------------------------------------------
+# Shortcut to gg_axis to make the x axis log10
 gg_log10_xaxis = function(fo, 
                           xlim_min     = NULL, 
                           xlim_max     = NULL, 
-                          x_tick_label = TRUE,
-                          y_tick_label = TRUE){
-#
-# This function puts a "pretty" log10 y axis on a ggplot figure
-#
+                          y_tick_label = TRUE,
+                          x_tick_label = TRUE){
 
+ fo =  gg_axis(fo=fo,
+               yaxis_scale  = FALSE,
+               xaxis_scale  = TRUE,  
+               ylim_min     = NULL,
+               ylim_max     = NULL,
+               xlim_min     = xlim_min, 
+               xlim_max     = xlim_max, 
+               x_tick_label = x_tick_label,
+               y_tick_label = TRUE)
 
- fo  = fo + coord_trans(x="log10")
- if(any(is.null(xlim_min), is.null(xlim_max))){
-   fob = ggplot_build(fo)
-
-  
-   # looping through the figure object and pulling out all of the y data
-   # to get the bounds on the y data
-   xdata = c()
-   for(didx in 1:length(fob$data)){
-     xdata = c(xdata, fob$data[[didx]]$x)
-   }
-
-   # Getting only thge positive x data
-   xdata = xdata[xdata> 0]
-
-   if(is.null(xlim_min)){
-     xlim_min = max(min(xdata), 0)
-   }
-   if(is.null(xlim_max)){
-     xlim_max = max(xdata)
-   }
-   
- 
- }
-
- xlim_min = 10^floor(log10(xlim_min))
- xlim_max = 10^ceiling(log10(xlim_max))
-
- data_xlim = c(xlim_min, xlim_max)
-#
- if(!is.null(data_xlim)){
- 
- # Creating the major ticks
- xtick_major =  10^(log10(data_xlim[1]):log10(data_xlim[2]))
-
- # Expanding the major tick labels beyond the current axis to make sure the
- # minor tick labels get filled out.
- xtick_major = c(min(xtick_major)/10, xtick_major, max(xtick_major)*10)
-
-
- # defining the axis limits
- myxlim = 10^(c(data_xlim))
-
- if(!is.null(xlim_min)){
-     myxlim[1] = xlim_min
- }
-
- if(!is.null(xlim_max)){
-     myxlim[2] = xlim_max
- }
-
-
- # Creating the minor ticks between the major ticks
- xtick_minor = c()
- for(xt in 1:length(xtick_major)-1){
-   xtick_minor = c(xtick_minor, 10^log10(xtick_major[xt])*2:9)
- }
-
- if(x_tick_label){
-   fo = fo + scale_x_continuous(breaks       = xtick_major,
-                                minor_breaks = xtick_minor,
-                                limits       = myxlim,
-                                labels       = scales::trans_format("log10", scales::math_format(10^.x)))
- }
- else{
-   fo = fo + scale_x_continuous(breaks       = xtick_major,
-                                minor_breaks = xtick_minor,
-                                limits       = myxlim,
-                                labels       = NULL)
- }
-
-
- if(!y_tick_label){
-   fo = fo + scale_y_continuous(labels=NULL)
- }
-
- fo = fo + annotation_logticks(sides='tb', scaled='FALSE')
-
-}
 
 fo}
+#---------------------------------------------------------------------------
 
 
 ubiquity_name_check = function(test_name){
@@ -4919,4 +4992,615 @@ logspace = function(a, b, n=100){
    linseq = seq(a,b,step)
    return(10^linseq)
 }
+
+# -------------------------------------------------------------------------
+# system_define_cohorts_nm  -  Defining cohorts from a NONMEM dataset
+# 
+#  DS - name of databsed defined using system_load_dataset
+# 
+# Column names:
+#  col_ID   - unique subject identifier 
+#  col_DV   - observations
+#  col_TIME - system time
+#  col_AMT  - infusion/dose amounts
+#              - these need to be in the same units specified in the system.txt file
+#  col_RATE - rate of infusion or . for bolus
+#  col_EVID - evid (0 - observation, 1 dose)
+# 
+# 
+# Include all records in the dataset
+#  filter = NULL
+# 
+# Include only records matching the following filter
+#  filter = list()
+#  filter$COLNAME = c()
+# 
+# Mapping information: 
+# 
+# Inputs:
+#  INPUTMAP = list()
+#  INPUTMAP$bolus$SPECIES$CMT_NUM            =  1
+#  INPUTMAP$infusion_rates$RATE$CMT_NUM      =  1
+#  INPUTMAP$covariates$CVNAME$col_COV        = 'CNAME'
+#
+# Outputs
+#  OBSMAP = list()
+#  OBSMAP$ONAME=list(variance     = 'PRED^2',
+#                    CMT          =  1,
+#                    output       = '<O>',
+#                    missing      =  NULL )
+#
+#  system_define_cohorts_nm(cfg, 
+#                           DS        = 'DSNAME',
+#                           col_ID    = 'ID',
+#                           col_CMT   = 'CMT',
+#                           col_DV    = 'DV',
+#                           col_TIME  = 'TIME',
+#                           col_AMT   = 'AMT',
+#                           col_RATE  = 'RATE',
+#                           col_EVID  = 'EVID',
+#                           col_GROUP =  NULL,  
+#                           filter    =  NULL,
+#                           INPUTS    =  INPUTMAP,
+#                           OBS       =  OBSMAP,
+#                           group     =  FALSE)
+system_define_cohorts_nm = function(cfg, 
+                                    DS        = 'DSNAME',
+                                    col_ID    = 'ID',
+                                    col_CMT   = 'CMT',
+                                    col_DV    = 'DV',
+                                    col_TIME  = 'TIME',
+                                    col_AMT   = 'AMT',
+                                    col_RATE  = 'RATE',
+                                    col_EVID  = 'EVID',
+                                    col_GROUP =  NULL,
+                                    filter    =  NULL,
+                                    INPUTS    =  NULL,
+                                    OBS       =  NULL,
+                                    group     =  FALSE){
+
+vp(cfg,'------------------------------------------')
+vp(cfg, sprintf('Defining cohorts from NONMEM dataset'))
+#
+# Checking the nonmem dataset
+#
+cr = system_nm_check_ds(cfg       =  cfg,             
+                        DS        =  DS,              
+                        col_ID    =  col_ID,          
+                        col_CMT   =  col_CMT,         
+                        col_AMT   =  col_AMT,         
+                        col_DV    =  col_DV,          
+                        col_RATE  =  col_RATE,      
+                        col_EVID  =  col_EVID,      
+                        col_TIME  =  col_TIME,       
+                        col_GROUP =  col_GROUP,
+                        filter    =  filter, 
+                        INPUTS    =  INPUTS,  
+                        OBS       =  OBS)
+  # default to true and flip this below if we encounter any problems
+  isgood = TRUE
+
+
+  
+  if(cr$isgood){
+  
+    # Setting up the plotting colors
+    if(!is.null(col_GROUP)){
+      mycolors   = c('blue', 'green', 'orange', 'red')
+      myshapes   = c(    16,      17,       18,    15)
+      mygroups   = unique(cr$dsraw[[col_GROUP]])
+      mygroupg_str = c()
+      grp_colors = rep(x=mycolors, length.out=length(mygroups))
+      grp_shapes = rep(x=myshapes, length.out=length(mygroups))
+
+      colmap = list() 
+      grpidx = 1
+      for(cg in mygroups){
+        cgs = sprintf('GRP_%s', toString(cg))
+        mygroupg_str = c(mygroupg_str, cgs)
+        colmap[[cgs]]$color = grp_colors[grpidx]
+        colmap[[cgs]]$shape = grp_shapes[grpidx]
+        grpidx = grpidx + 1
+        }
+
+      }
+
+
+    # ALLSUBS is a summary of all subjects
+    ALLSUBS = list()
+    for(sid in cr$sids){
+      # By default the subject is good:
+      subisgood = TRUE
+      subinputs = list()
+
+      # String to be associated with the subject
+      sidstr = sprintf('sub_%d', sid)
+
+      # pulling out the all of the subjects records (sar) the subjects input
+      # records (sir) and the subjects output records (sor)
+      sar = cr$dsraw[cr$dsraw[[col_ID]] == sid, ]
+      sir = cr$input_records[cr$input_records[[col_ID]] == sid, ]
+      sor = cr$obs_records[cr$obs_records[[col_ID]] == sid, ]
+      
+      INPUT_RATE     = as.numeric(as.character(sir[[col_RATE]]))
+      INPUT_AMT      = as.numeric(as.character(sir[[col_AMT]]))
+      INPUT_CMT      = as.numeric(as.character(sir[[col_CMT]]))
+      INPUT_TIME_SYS = as.numeric(as.character(sir[[col_TIME]]))
+
+      # Check to make sure there is at least one observation record
+      # for the current subject
+
+      # ocmts is all of the observation compartments
+      ocmts = c()
+      # orecs is all of the observation records for the current subject
+      orecs = NULL
+      for(oname in names(OBS)){
+        # We check the current observation CMT and see 
+        # if its present in the current subejcts records
+        if(any(sor[[col_CMT]] == OBS[[oname]]$CMT)){
+          if(is.null(orecs)){
+            orecs = sor[sor[[col_CMT]] == OBS[[oname]]$CMT, ]
+          } else {
+            orecs = rbind( orecs , sor[sor[[col_CMT]] == OBS[[oname]]$CMT, ])
+          }
+        } 
+        ocmts = c(ocmts, OBS[[oname]]$CMT)
+      }
+
+      # Now we check the records for this subject
+      if(length(orecs[[col_DV]]) > 0){
+        # This subject has observations so we make sure that they are not null
+        subobs = as.numeric(as.character(orecs[[col_DV]]))
+
+        # If any of these values are NA then we give the user an error
+        if(any(is.na(subobs))){
+          subisgood = FALSE
+          vp(cfg, sprintf("Warning: Subject >%s< has observations that are NA", toString(sid)              ))
+        }
+      
+      } else {
+        # This subject has no observations:
+        subisgood = FALSE
+        vp(cfg, sprintf("Warning: Subject >%s< has no output observations", toString(sid)              ))
+        vp(cfg, sprintf("         For compartments %s                    ", paste(ocmts, collapse=", ")))
+      }
+
+      # Bolus
+      if("bolus" %in% names(INPUTS)){
+        for(name in names(INPUTS$bolus)){
+          # Pulling the compartment for the current bolus
+          BOLUS_CMT  = INPUTS$bolus[[name]]$CMT_NUM
+
+          # Keeping all of the all of the indices that have an input rate of
+          # NA and the specified bolus compartment nimber 
+          INDEX_KEEP = is.na(INPUT_RATE) & (INPUT_CMT == BOLUS_CMT)
+          BOLUS_AMTS      = INPUT_AMT[INDEX_KEEP]
+          BOLUS_TIME_SYS  = INPUT_TIME_SYS[INDEX_KEEP]
+
+          # If the subject has bolus inputs we store those, otherwise we push
+          # a warning to the user
+          if(length(BOLUS_AMTS) > 0){
+            eval(parse(text=sprintf('BOLUS_TIME_SCALE  = BOLUS_TIME_SYS/(%s)', cfg$options$inputs$bolus$times$scale)))
+            subinputs$bolus[[name]]$TIME = BOLUS_TIME_SCALE
+            subinputs$bolus[[name]]$AMT  = BOLUS_AMTS
+          } else {
+            vp(cfg, sprintf("Warning: Subject >%s< bolus compartment >%s< no inputs found in dataset", toString(sid), name ))
+          }
+        }
+      }
+
+      # Infusions
+      if("infusion_rates" %in% names(INPUTS)){
+
+        for(name in names(INPUTS$infusion_rates)){
+          # Pulling the compartment number for the current infusion rate
+          RATE_CMT = INPUTS$infusion_rates[[name]]$CMT_NUM
+
+          # Keeping all of the indices that have input rates that are not NA
+          # and where the input CMT is equal to that of the current infusion
+          # rate
+          INDEX_KEEP = !is.na(INPUT_RATE) & (INPUT_CMT == RATE_CMT)
+          RATE_AMTS      = INPUT_AMT[INDEX_KEEP]
+          RATE_RATES_SYS = INPUT_RATE[INDEX_KEEP]
+          RATE_TIME_SYS  = INPUT_TIME_SYS[INDEX_KEEP]
+
+          if(length(RATE_AMTS) > 0){
+
+            # Converting the rates times from system times to the input time scale
+            eval(parse(text=sprintf('RATE_TIME_SCALE  = RATE_TIME_SYS/(%s)', cfg$options$inputs$infusion_rates[[name]]$times$scale)))
+            eval(parse(text=sprintf('RATE_RATES_SCALE = RATE_RATES_SYS*(%s)', cfg$options$inputs$infusion_rates[[name]]$times$scale)))
+
+            RATE_VECT = NULL
+            #
+            #  RATE = mass/time
+            #  AMT  = mass
+            #
+            #  Infusion duration = AMT/RATE
+            #
+
+            for(ridx  in 1:length(RATE_TIME_SCALE)){
+               
+              RATE_RATES_SYS[ridx] 
+              RATE_AMTS[ridx]
+              RATE_TIME_SCALE[ridx]
+              STOP_TIME = RATE_RATES_SYS[ridx]/RATE_AMTS[ridx]
+              RATE_AMTS[ridx]/RATE_RATES_SYS[ridx]
+
+              # JMH what happens in NONMEM when infusions go from one level to
+              # another? like 10 mg/min to 50 mg/min?
+              
+              ISTART = RATE_TIME_SCALE[ridx]
+              IDUR   = RATE_AMTS[ridx]/RATE_RATES_SYS[ridx]
+              ISTOP  = ISTART + IDUR
+
+               if(is.null(RATE_VECT)){
+                 RATE_VECT = list()
+                 RATE_VECT$TIME = c(              ISTART,   ISTOP)
+                 RATE_VECT$AMT  = c(RATE_RATES_SYS[ridx],     0.0)
+               
+               } else {
+                 RATE_VECT$TIME = c(RATE_VECT$TIME,               ISTART, ISTOP)
+                 RATE_VECT$AMT  = c( RATE_VECT$AMT, RATE_RATES_SYS[ridx],   0.0)
+               }
+            
+            }
+          } else {
+            vp(cfg, sprintf("Warning: Subject >%s< rate >%s< no inputs found in dataset", toString(sid), name ))
+          }
+          
+        # Adding the rate for he current subject to the subinputs rate 
+        subinputs$infusion_rates[[name]] = RATE_VECT
+        }
+      }
+      
+
+      # Covariates
+      if("covariates" %in% names(INPUTS)){
+        for(name in names(INPUTS$covariates)){
+          cv_time = as.numeric(as.character(sar[[col_TIME]]))
+          cv_val  = as.numeric(as.character(sar[[INPUTS$covariates[[name]]$col_COV]]))
+
+          # As long as the times and cv columns have numeric values we're good
+          if(!any(is.na(cv_time)) & !any(is.na(cv_time))){
+            subinputs$covariates[[name]]$TIME = cv_time 
+            subinputs$covariates[[name]]$AMT  = cv_val
+          }
+           
+          # If not we send the user some messages and we flag this subject to
+          # be ignored
+          if(any(is.na(cv_time))){
+            subisgood = FALSE
+            vp(cfg, sprintf("Warning: Subject >%s< covariate >%s< time column has NA values", toString(sid), name ))
+          } 
+          if(any(is.na(cv_val))){
+            subisgood = FALSE
+            vp(cfg, sprintf("Warning: Subject >%s< covariate >%s< column >%s< has NA values", toString(sid), name, INPUTS$covariates[[name]]$col_COV))
+          } 
+        }
+      }
+
+
+
+      # After parsing the information we add the subject 
+      # if it passes all of the tests above
+      if(subisgood){
+        ALLSUBS[[sidstr]]$subinputs = subinputs
+        ALLSUBS[[sidstr]]$sid       = sid
+        ALLSUBS[[sidstr]]$sar       = sar
+        
+      } else {
+        # If subisgood is false then we're skipping this subject
+        vp(cfg, sprintf("Skipping Subject >%s< see messages aboves", toString(sid)              ))
+      }
+    }
+
+    vp(cfg, 'Subjects parsed, adding cohorts')
+    for(sidstr in names(ALLSUBS)){
+      cohort = c()
+      cohort$name                                 = sidstr
+
+      # defining the dataset
+      cohort$dataset = DS
+
+      # Filtering the dataset
+      cohort$cf = list()
+      if(!is.null(filter)){
+        for(cname in names(filter)){
+          cohort$cf[[cname]] = filter[[cname]]
+        }
+      }
+      # only observations
+      cohort$cf[[col_EVID]] = c(0)
+      # current subject
+      cohort$cf[[col_ID]]   = ALLSUBS[[sidstr]]$sid
+      # defining the inputs
+      cohort$inputs = ALLSUBS[[sidstr]]$subinputs
+
+      # looping through the outputs and adding the relevant 
+      # fields 
+      for(output in names(OBS)){
+        # Filtering to the compartment for that individual
+        cohort$outputs[[output]]$of[[col_CMT]]       = OBS[[output]]$CMT
+        cohort$outputs[[output]]$obs$missing         = OBS[[output]]$missing  
+        cohort$outputs[[output]]$obs$time            = col_TIME
+        cohort$outputs[[output]]$obs$value           = col_DV
+        cohort$outputs[[output]]$model$variance      = OBS[[output]]$variance
+        cohort$outputs[[output]]$model$time          = cr$TSsys
+        cohort$outputs[[output]]$model$value         = OBS[[output]]$output
+        
+        if(!is.null(col_GROUP)){
+          SUB_GRP = unique(ALLSUBS[[sidstr]]$sar[[col_GROUP]])
+          if(length(SUB_GRP) == 1){
+            SUB_GRP_STR = sprintf('GRP_%s', toString(SUB_GRP))
+            cohort$outputs[[output]]$options$marker_color   = colmap[[SUB_GRP_STR]]$color
+            cohort$outputs[[output]]$options$marker_shape   = colmap[[SUB_GRP_STR]]$shape
+          } else {
+            vp(cfg, sprintf('Warning: Grouping column >%s< for subject >%s< has more', col_GROUP, sidstr))
+            vp(cfg, sprintf('         than one value. Groping was not applied for this subject'))
+          }
+           
+        }
+      }
+
+
+     # Adding the cohort
+     cfg = system_define_cohort(cfg, cohort)
+    
+    }
+
+  } else {
+    isgood = FALSE
+  }
+
+  
+  if(!isgood){
+    vp(cfg, 'system_define_cohorts_nm()') }
+
+
+vp(cfg,'------------------------------------------')
+cfg}
+# /system_define_cohorts_nm 
+# -------------------------------------------------------------------------
+
+# -------------------------------------------------------------------------
+# system_nm_check_ds - Takes mapping information from a NONMEM dataset and
+# checks it with specifications in the system.txt file
+system_nm_check_ds = function(cfg, 
+                              DS        = 'DSNAME',
+                              col_ID    = 'ID',
+                              col_CMT   = 'CMT',
+                              col_DV    = 'DV',
+                              col_TIME  = 'TIME',
+                              col_AMT   = 'AMT',
+                              col_RATE  = 'RATE',
+                              col_EVID  = 'EVID',
+                              col_GROUP =  NULL,
+                              filter    =  NULL,
+                              INPUTS    =  NULL,
+                              OBS       =  NULL){
+                                
+isgood    = TRUE
+mywarning = FALSE
+
+# Pulling the timescales 
+time_scales = names(cfg$options$time_scales)
+time_scales = time_scales[time_scales != "time" ]
+TSsys   = NULL
+for(TS in time_scales){
+  if(cfg$options$time_scales[[TS]] == 1){
+    TSsys = TS
+  }
+}
+
+if(is.null(TSsys)){
+ isgood = FALSE
+ vp(cfg, 'Error: Unable to determine the system timscale. This needs ')
+ vp(cfg, '       to be specified in the system.txt file. For example ')
+ vp(cfg, '       if the timescale is days the following would be used:')
+ vp(cfg, '       <TS:days>  1.0                                    ')
+}
+
+
+# Checking the dataset to make sure it exists
+if((DS %in% names(cfg$data))){
+  vp(cfg, sprintf('Checking NONMEM dataset >%s<',DS))
+}
+else{
+  isgood = FALSE
+  vp(cfg, sprintf('Unable to find NONMEM dataset >%s<',DS))
+}
+
+if(isgood){
+  # Checking the required columns to make sure they exist in the dataset
+  col_vars = c('col_ID', 'col_CMT', 'col_DV', 'col_TIME', 'col_AMT', 'col_RATE', 'col_EVID')
+  for(col_var in col_vars){
+    eval(parse(text=sprintf('col_val = %s', col_var))) 
+    if(!(col_val %in% names(cfg$data[[DS]]$values))){
+     isgood = FALSE
+     vp(cfg, sprintf('Error: Unable to find %s (%s)',col_var, col_val))
+    }
+  }
+
+  # Next we check the gruping column. If it's not null we see if it's in the
+  # dataset, if not we throw an error to the user
+  if(!is.null(col_GROUP)){
+    if(!(col_GROUP %in% names(cfg$data[[DS]]$values))){
+      isgood = FALSE
+      vp(cfg, sprintf('Error: The grouping column >%s< was not found in the dataset.', col_GROUP))
+    }
+  } 
+
+
+  if(isgood){
+    vp(cfg, sprintf('Dataset looks good'))
+    vp(cfg, sprintf('Time column (%s) should have units of %s', col_TIME, TSsys))
+  }
+}
+
+#---------------------------------------------------------------
+# Checking the inputs
+#
+if(is.null(INPUTS)){
+  if(!is.null(names(cfg$options$inputs))){
+    vp(cfg, 'Warning: No input mapping information was specified')
+    vp(cfg, '         but there are inputs in the system file'   )
+    mywarning = TRUE
+  }
+} else {
+  if(is.null(names(cfg$options$inputs))){
+    vp(cfg, 'Warning: Input mapping was specified but the system' )
+    vp(cfg, '         file has no inputs specified'   )
+    isgood = FALSE
+  }
+  else{
+    #
+    # Checking bolus inputs
+    #
+    if("bolus" %in% names(INPUTS)){
+      # is the species in cfg in INPUTS
+      for(name in names(cfg$options$inputs$bolus$species)){
+        if(!(name %in% names(INPUTS$bolus))){
+          vp(cfg, sprintf('Warning: %s - bolus defined in system but ', name))
+          vp(cfg, sprintf('         there is no input mapping defined'))
+          mywarning = TRUE
+        }
+      }
+    } else {
+      # Check to make sure there are inputs
+      if("bolus" %in% names(cfg$options$inputs)){
+        vp(cfg, 'Warning: No bolus input mapping was specified but ')
+        vp(cfg, '         bolus information was specified in the system file')
+        mywarning = TRUE
+      }
+    }
+
+    #
+    # Checking infusion rates
+    #
+    if("infusion_rates" %in% names(INPUTS)){
+      # is the rate in cfg in INPUTS
+      for(name in names(cfg$options$inputs$infusion_rates)){
+        if(!(name %in% names(INPUTS$infusion_rates))){
+          vp(cfg, sprintf('Warning: %s - rate defined in system but ', name))
+          vp(cfg, sprintf('         there is no input mapping defined'))
+          mywarning = TRUE
+        }
+      }
+    } else {
+      # Check to make sure there are inputs
+      if("infusion_rates" %in% names(cfg$options$inputs)){
+        vp(cfg, 'Warning: No infusion rate mapping was specified but ')
+        vp(cfg, '         infusion rate information was specified in ')
+        vp(cfg, '         the system file')
+        mywarning = TRUE
+      }
+    }
+
+    #
+    # Checking covariates
+    #
+    if("covariates" %in% names(INPUTS)){
+      # Checking for system covariates to see if there 
+      # is an input mapping defined in INPUTS
+      for(name in names(cfg$options$inputs$covariates)){
+        if(!(name %in% names(INPUTS$covariates))){
+          vp(cfg, sprintf('Warning: %s - covariate defined in system but ', name))
+          vp(cfg, sprintf('         there is no input mapping defined'))
+          mywarning = TRUE
+        }
+      }
+      # Checking each covariate in INPUTS 
+      for(name in names(INPUTS$covariates)){
+        # making sure col_COV was specified
+        if("col_COV" %in% names(INPUTS$covariates[[name]])){
+          # making sure the specified column was in the database
+          if(!(INPUTS$covariates[[name]]$col_COV %in% names(cfg$data[[DS]]$values))){
+            isgood = FALSE   
+            vp(cfg, sprintf('Error: %s - covariate column >%s<', name, INPUTS$covariates[[name]]$col_COV))
+            vp(cfg, sprintf('       does not exist in dataset'))
+          }
+        } else {
+          isgood = FALSE   
+          vp(cfg, sprintf('Error: %s - covariate does not have column mapping', name))
+          vp(cfg, sprintf(" INPUTS$covariates$%s$col_COV = 'COLNAME'         ", name))
+        }
+      }
+    } else {
+      # Check to make sure there are inputs
+      if("covariates" %in% names(cfg$options$inputs)){
+        vp(cfg, 'Warning: No covariates mapping was specified but ')
+        vp(cfg, '         covariates information was specified in ')
+        vp(cfg, '         the system file')
+        mywarning = TRUE
+      }
+    }
+  }
+}
+#---------------------------------------------------------------
+
+#---------------------------------------------------------------
+# Checking the outputs
+if(is.null(OBS)){
+  vp(cfg, 'Error: No observation mapping information was specified')
+  isgood = FALSE
+} else {
+
+  # Looping through each output and checking 
+  for(name in names(OBS)){
+
+    # making sure the output field exits
+    if(is.null(OBS[[name]]$output)){
+      vp(cfg, sprintf('Error: output mapping error for >%s<', name))
+      vp(cfg, sprintf('       no output field specified'))
+      vp(cfg, sprintf(' OBSMAP$%s$output    = "VALUE"', name))
+      isgood = FALSE
+    } else {
+      # Making sure the output has been defined in the system.txt file
+      if(!(OBS[[name]]$output %in% names(cfg$options$mi$outputs))){
+        vp(cfg, sprintf('Error: output mapping error for >%s<', name))
+        vp(cfg, sprintf('       the specified output >%s< ',OBS[[name]]$output))
+        vp(cfg, sprintf('       does not appear to have been defined in the system.txt file'))
+        vp(cfg, sprintf('       <O> %s = value ',OBS[[name]]$output))
+        isgood = FALSE
+      }
+    }
+  }
+}
+
+#---------------------------------------------------------------
+
+# creating the result
+result = list()
+result$isgood    = isgood
+result$mywarning = mywarning
+
+
+# Everythign checks out so far, so we start to add the cohorts
+if(isgood){
+  # Pulling out the raw data 
+  dsraw         = cfg$data[[DS]]$values
+
+  # If a filter has been specified we filter dsraw down 
+  if(!is.null(filter)){
+    dsraw      = nm_select_records(cfg, dsraw, filter) }
+
+  input_records = dsraw[dsraw[[col_EVID]] == 1, ]
+  obs_records   = dsraw[dsraw[[col_EVID]] == 0, ]
+
+  sids   = sort(unique(dsraw[[col_ID]]))
+
+  # Packing everything up together
+  result$dsraw         = dsraw
+  result$input_records = input_records
+  result$obs_records   = obs_records
+  result$sids          = sids
+  result$TSsys         = TSsys
+}
+
+  if(!isgood | mywarning){
+    vp(cfg, 'system_nm_check_ds()')
+  }
+result}
+# /system_nm_check_ds 
+# -------------------------------------------------------------------------
 

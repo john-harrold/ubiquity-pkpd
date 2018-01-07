@@ -9,6 +9,7 @@ required_packages= c("deSolve",
                      "ggplot2",
                      "foreach",
                      "shiny",
+                     "gdata",
                      "rmarkdown",     
                      "rhandsontable",
                      "rstudioapi",
@@ -17,6 +18,9 @@ required_packages= c("deSolve",
                      "doRNG")
 
 
+reccomended_packages = c( "GGally",
+                          "gridExtra",
+                          "gridGraphics")
 
 for(pkg in required_packages){
 
@@ -27,3 +31,11 @@ for(pkg in required_packages){
    }
 
 }
+
+
+# pkgs = search()
+
+# install.packages("devtools")
+# library("devtools")
+# require("devtools")
+# devtools::install_github("AnalytixWare/ShinySky")

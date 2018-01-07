@@ -10,7 +10,7 @@ options(show.error.locations = TRUE)
 graphics.off()
 library("deSolve")
 library("ggplot2")
-require("gdata")
+library("gdata")
 source("library/r_general/ubiquity.r");
 
 # Used for parallelizing 
@@ -83,12 +83,14 @@ som = run_simulation_ubiquity(parameters, cfg)
 # # replace TS     with a timescale (i.e. days) and 
 # #         OUTPUT with a named output  (i.e. Cp)
 #plot(som$simout$TS,        som$simout$OUTPUT)
-# myfig = ggplot() + 
+# p = ggplot() + 
 #         geom_line(data=som$simout, aes(x=ts.TS,   y=OUTPUT), color="red") 
-# print(myfig)
-# png('output/simulation.png', width=9.5, height=6, units="in", res=300)
-# print(myfig)
+# p = gg_log10_yaxis(p)
+# print(p)
+# png(file.path('output', 'simulation.png'), width=20,  height=14, units="cm", res=300)
+# print(p)
 # dev.off()
+# ggsave(plot=p, units='cm', width=20, height=14, filename=file.path('output', 'simulation.png'))
 # -------------------------------------------------------------------------
 
 

@@ -11,7 +11,7 @@ graphics.off()
 library("deSolve")
 library("ggplot2")
 library("optimx")
-require("gdata")
+library("gdata")
 source("library/r_general/ubiquity.r")
 
 # Used for parallelizing 
@@ -208,6 +208,69 @@ cohort$outputs$ONAME$options$marker_shape   = 16
 cohort$outputs$ONAME$options$marker_line    = 1 
 
 cfg = system_define_cohort(cfg, cohort)
+# -------------------------------------------------------------------------
+
+# -------------------------------------------------------------------------
+# Defining the cohorts with dosing from a NONMEM file
+# 
+#  DS - name of dataset defined using system_load_dataset
+# 
+# Include all records in the dataset
+#  filter = NULL
+# 
+# Include only records matching the following filter
+#  filter = list()
+#  filter$COLNAME = c()
+# 
+# Mapping information: 
+# 
+# Inputs:
+#  INPUTMAP = list()
+#  INPUTMAP$bolus$SPECIES$CMT_NUM            =  1
+#  INPUTMAP$infusion_rates$RATE$CMT_NUM      =  1
+#  INPUTMAP$covariates$CVNAME$col_COV        = 'CNAME'
+#
+# Outputs
+#  OBSMAP = list()
+#  OBSMAP$ONAME=list(variance     = 'PRED^2',
+#                    CMT          =  1,
+#                    output       = '<O>',
+#                    missing      =  NULL )
+#
+#  cfg = system_define_cohorts_nm(cfg        =  cfg, 
+#                                  filter    =  filter,
+#                                  INPUTS    =  INPUTMAP,
+#                                  OBS       =  OBSMAP,
+#                                  col_GROUP =  NULL,  
+#                                  group     =  FALSE)
+#
+# To overwrite column name mapping the following can be used
+#  col_ID    - unique subject identifier 
+#  col_CMT   - compartment
+#  col_DV    - observations
+#  col_TIME  - system time
+#  col_AMT   - infusion/dose amounts
+#               - these need to be in the same units specified in the system.txt file
+#  col_RATE  - rate of infusion or . for bolus
+#  col_EVID  - evid (0 - observation, 1 dose)
+#  col_GROUP - used to group subjects for plotting purposes. For example if
+#              the cohorts were grouped by dose and the column DOSE contained
+#              this information, then this will be set to 'DOSE'.
+# 
+#  cfg = system_define_cohorts_nm( cfg       = cfg, 
+#                                  DS        = 'DSNAME',
+#                                  col_ID    = 'ID',
+#                                  col_CMT   = 'CMT',
+#                                  col_DV    = 'DV',
+#                                  col_TIME  = 'TIME',
+#                                  col_AMT   = 'AMT',
+#                                  col_RATE  = 'RATE',
+#                                  col_EVID  = 'EVID',
+#                                  col_GROUP =  NULL,  
+#                                  filter    =  filter,
+#                                  INPUTS    =  INPUTMAP,
+#                                  OBS       =  OBSMAP,
+#                                  group     =  FALSE)
 
 # -------------------------------------------------------------------------
 # performing estimation or loading guess/previous results
