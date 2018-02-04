@@ -5692,7 +5692,7 @@ return(ppt)}
 # -------------------------------------------------------------------------
 # -------------------------------------------------------------------------
 # system_report_fetch
-# cfg = system_report_fetch(cfg, 
+# rpt = system_report_fetch(cfg, 
 #     rptname       =  "default")
 system_report_fetch = function (cfg,
                                rptname     = "default"){
@@ -5737,7 +5737,7 @@ system_report_set = function (cfg,
 
   if(!isgood){
     vp(cfg, sprintf("system_report_set()")) }
-return(rpt)}
+return(cfg)}
 # /system_report_fetch
 # -------------------------------------------------------------------------
 # -------------------------------------------------------------------------
