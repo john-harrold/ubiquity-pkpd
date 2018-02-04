@@ -26,7 +26,7 @@ library("doRNG")
 # flowctl       = 'estimate'
   flowctl       = 'plot guess'
 analysis_name   = 'ANAME'
-archive_results = FALSE
+archive_results = TRUE 
 
 # For documentation explaining how to modify the commands below
 # See the "R Workflow" section at the link below:
@@ -302,6 +302,10 @@ plot_opts = c()
 # plot_opts$outputs$ONAME$xlim     = c(0,1)   # NULL
 # plot_opts$outputs$ONAME$ylabel   = ''       # output ONAME
 # plot_opts$outputs$ONAME$xlabel   = ''       # cohort time units
+# plot_opts$tc$width               = 10       # width  of timecourse plot
+# plot_opts$tc$height              = 5.5      # height of timecourse plot
+# plot_opts$op$width               = 10       # width  of observed vs predicted
+# plot_opts$op$height              = 8.0      # height of observed vs predicted
 
 # Plotting the simulated results at the estimates 
 # These figures will be placed in output/

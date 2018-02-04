@@ -1299,7 +1299,7 @@ return(mystr)
 }
 
 
-var2string <- function(var,maxlength, nsig_e = 3, nsig_f = 4) {
+var2string <- function(var,maxlength=0, nsig_e = 3, nsig_f = 4) {
 #  str = var2string(var, 12) 
 #  converts the numerical value 'var' to a padded string 12 characters wide
 
@@ -3879,10 +3879,29 @@ def$ylim  = NULL
 
 # These are the dimensions of the timecourse (tc) and observed vs predicted
 # (op) figures that are generated
-def$dim$tc$width = 10;
-def$dim$tc$height= 5.5;
-def$dim$op$width = 10;
-def$dim$op$height= 8;
+if(!is.null(plot_opts$tc$width)){
+  def$dim$tc$width = plot_opts$tc$width
+} else {
+  def$dim$tc$width = 10 }
+
+if(!is.null(plot_opts$tc$height)){
+  def$dim$tc$height = plot_opts$tc$height
+} else {
+  def$dim$tc$height = 5.5 }
+
+if(!is.null(plot_opts$op$width)){
+  def$dim$op$width = plot_opts$op$width
+} else {
+  def$dim$op$width = 10 }
+
+if(!is.null(plot_opts$op$height)){
+  def$dim$op$height = plot_opts$op$height
+} else {
+  def$dim$op$height = 8.0 }
+
+#def$dim$tc$height= 5.5
+#def$dim$op$width = 10
+#def$dim$op$height= 8
 
 
 for(output in levels(erp$pred$OUTPUT)){
@@ -4591,7 +4610,7 @@ check_steady_state  <- function(cfg, som){
      state = som$simout[[sname]]
 
      state_max = max(abs(state))
-
+     
      # if the state has a value other than zero 
      # we look at it a little more closely
      if(state_max > 0){
@@ -4715,6 +4734,7 @@ gg_axis  = function(fo,
                      y_tick_label = TRUE){
   # If any of the limits are null we build out the figure object so we can
   # pull the limits from that object
+
   if(any(is.null(ylim_min),is.null(ylim_min),is.null(xlim_min), is.null(xlim_max))){
     fob = ggplot_build(fo) }
 
@@ -4842,7 +4862,6 @@ gg_axis  = function(fo,
   # Formatting the x axis
   #
   if(xaxis_scale){
-
     if(!is.null(data_xlim)){
       # Creating the major ticks
       xtick_major =  10^(log10(data_xlim[1]):log10(data_xlim[2]))
@@ -4887,6 +4906,7 @@ gg_axis  = function(fo,
     }
     fo = fo + annotation_logticks(sides='tb') 
   }
+
 
 
 
@@ -5362,6 +5382,20 @@ cfg}
 # /system_define_cohorts_nm 
 # -------------------------------------------------------------------------
 
+
+system_fetch_TSsys = function(cfg){
+# Pulling the timescales 
+time_scales = names(cfg$options$time_scales)
+time_scales = time_scales[time_scales != "time" ]
+TSsys   = NULL
+for(TS in time_scales){
+  if(cfg$options$time_scales[[TS]] == 1){
+    TSsys = TS
+  }
+}
+
+TSsys}
+
 # -------------------------------------------------------------------------
 # system_nm_check_ds - Takes mapping information from a NONMEM dataset and
 # checks it with specifications in the system.txt file
@@ -5382,15 +5416,7 @@ system_nm_check_ds = function(cfg,
 isgood    = TRUE
 mywarning = FALSE
 
-# Pulling the timescales 
-time_scales = names(cfg$options$time_scales)
-time_scales = time_scales[time_scales != "time" ]
-TSsys   = NULL
-for(TS in time_scales){
-  if(cfg$options$time_scales[[TS]] == 1){
-    TSsys = TS
-  }
-}
+TSsys = system_fetch_TSsys(cfg)
 
 if(is.null(TSsys)){
  isgood = FALSE
@@ -5603,4 +5629,641 @@ if(isgood){
 result}
 # /system_nm_check_ds 
 # -------------------------------------------------------------------------
+# -------------------------------------------------------------------------
+# system_report_view_layout
+# rpt = system_report_view_layout(cfg, 
+#                                 rptname       = "default",
+#                                 output_file   = "layout.pptx")
+system_report_view_layout = function(cfg,
+                                     rptname     = "default",
+                                     output_file = "layout.pptx"){
 
+# New document from the template
+ppt = read_pptx(cfg$reporting$reports[[rptname]]$template)
+
+# Pulling out all of the layouts stored in the template
+lay_sum = layout_summary(ppt)
+
+# Looping through each layout
+for(lidx in 1:length(lay_sum[,1])){
+
+   # Pulling out the layout properties
+   layout = lay_sum[lidx, 1]
+   master = lay_sum[lidx, 2]
+   lp = layout_properties ( x = ppt, layout = layout, master = master)
+
+   # Adding a slide for the current layout
+   ppt =  add_slide(x=ppt, layout = layout, master = master) 
+
+   # Blank slides have nothing
+   if(length(lp[,1] > 0)){
+
+     # Now we go through each placholder
+     for(pidx in 1:length(lp[,1])){
+
+        # If it's a text placeholder "body" or "title" we add text indicating
+        # the type and index. If it's title we put the layout and master
+        # information in there as well.
+        if(lp[pidx, ]$type == "body"){
+          textstr = sprintf('type="body", index =%d', pidx)
+          ppt =ph_with_text(x=ppt, type="body", index=pidx, str=textstr)  
+        } 
+        if(lp[pidx, ]$type %in% c("title", "ctrTitle", "subTitle")){
+          textstr = sprintf('layout ="%s", master = "%s", type="%s", index =%d', layout, master, lp[pidx, ]$type,  pidx)
+          ppt =ph_with_text(x=ppt, type=lp[pidx, ]$type, str=textstr)  
+        }
+     }
+   } 
+}
+
+ # If an output file name has been specified we dump that here
+ if(!is.null(output_file)){
+  print(ppt, output_file)
+  vp(cfg, "--------------------------------")
+  vp(cfg, sprintf("Generating annotated layout for a report template"))
+  vp(cfg, sprintf("Name:             %s", rptname))
+  vp(cfg, sprintf("Template:         %s", cfg$reporting$reports[[rptname]]$template))
+  vp(cfg, sprintf("Annotated layout: %s", output_file))
+  vp(cfg, "--------------------------------")
+
+ }
+return(ppt)}
+# /system_report_view_layout
+# -------------------------------------------------------------------------
+# -------------------------------------------------------------------------
+# system_report_fetch
+# cfg = system_report_fetch(cfg, 
+#     rptname       =  "default")
+system_report_fetch = function (cfg,
+                               rptname     = "default"){
+
+  rpt = NULL
+
+  if(cfg$reporting$enabled){
+    if(rptname %in% names(cfg$reporting$reports)){
+      rpt = cfg$reporting$reports[[rptname]]$report
+    } else {
+      vp(cfg, sprintf("system_report_fetch()"))
+      vp(cfg, sprintf("Error: The report name >%s< not found", rptname))
+    }
+  }
+return(rpt)}
+# /system_report_fetch
+# -------------------------------------------------------------------------
+# -------------------------------------------------------------------------
+# system_report_set  
+# cfg = system_report_set(cfg, 
+#     rptname =  "default",
+#     rpt     = NULL)
+system_report_set = function (cfg,
+                              rptname     = "default",
+                              rpt         = NULL){
+
+  isgood = TRUE
+
+  if(cfg$reporting$enabled){
+    if(rptname %in% names(cfg$reporting$reports)){
+      if(is.null(rpt)){
+        isgood = FALSE
+        vp(cfg, sprintf("Error: The report is NULL, need to specify an officer object"))
+      } else {
+        rpt = cfg$reporting$reports[[rptname]]$report
+      }
+    } else {
+      isgood = FALSE
+      vp(cfg, sprintf("Error: The report name >%s< not found", rptname))
+    }
+  }
+
+  if(!isgood){
+    vp(cfg, sprintf("system_report_set()")) }
+return(rpt)}
+# /system_report_fetch
+# -------------------------------------------------------------------------
+# -------------------------------------------------------------------------
+# system_report_save 
+# system_report_save(cfg, 
+#     rptname       =  "default",
+#     output_file   = "myreport.pptx")
+system_report_save = function (cfg,
+                               rptname     = "default",
+                               output_file = "myreport.pptx"){
+  if(cfg$reporting$enabled){
+    if(rptname %in% names(cfg$reporting$reports)){
+      print(cfg$reporting$reports[[rptname]]$report, output_file)
+    } else {
+      vp(cfg, sprintf("system_report_save()"))
+      vp(cfg, sprintf("Error: The report name >%s< not found", rptname))
+    }
+  }
+}
+# /system_report_save 
+# -------------------------------------------------------------------------
+# system_report_init 
+# cfg = system_report_init(cfg, 
+#     template = file.path("library", "templates", "report.pptx"),
+#     rptname  = "default",
+#     meta     = NULL)
+system_report_init = function (cfg,
+                               template = file.path("library", "templates", "report.pptx") ,
+                               rptname  = "default",
+                               meta     = NULL){
+isgood = TRUE
+
+vp(cfg, "--------------------------------")
+  if(require('officer')){
+    cfg$reporting$enabled = TRUE
+    # Checking to see if the template file exists
+    if(file.exists(template)){
+      # if no meta data has been specified then we pull the default meta data,
+      # otherwise we store the meta data provided
+      name_check = ubiquity_name_check(rptname)
+
+      if(name_check$isgood){
+        if(is.null(meta)){
+          cfg$reporting$reports[[rptname]]$meta  = cfg$reporting$meta
+        } else {
+          cfg$reporting$reports[[rptname]]$meta  = meta
+        }
+        # Storing the original template location and creating the empty report
+        cfg$reporting$reports[[rptname]]$template = template
+        cfg$reporting$reports[[rptname]]$report   = read_pptx(path=template)
+        vp(cfg, sprintf("Report initialized:"))
+        vp(cfg, sprintf("Name:     %s", rptname))
+        vp(cfg, sprintf("Template: %s", template))
+      } else {
+        isgood = FALSE
+        vp(cfg, sprintf('Error: report name >%s< is invalid', cohort$name))
+      }
+    
+    } else {
+      isgood = FALSE
+      vp(cfg, sprintf("Unable to find template file >%s<. ", template))
+    }
+  
+  } else {
+    vp(cfg, "Reporting is done through the 'officer' package. Unable to load ")
+    vp(cfg, "this package. Reporting will be disabled.")
+    cfg$reporting$enabled = FALSE
+  }
+
+  if(!isgood){
+    vp(cfg, "system_report_init()")
+    vp(cfg, sprintf("Report >%s< initialization failed.", rptname)) }
+vp(cfg, "--------------------------------")
+return(cfg)
+}
+# /system_report_init 
+# -------------------------------------------------------------------------
+
+# -------------------------------------------------------------------------
+# system_report_slide_content
+# cfg = system_report_slide_content(cfg,
+#        title          = "Title",
+#        sub_title      = NULL,    
+#        rptname        = "default",
+#        content_type   = "text", 
+#        content        = "Text")
+# Content dimensions:
+# ggsave(filename=imgfile, plot=p, height=5.15, width=9, units="in")
+system_report_slide_content = function (cfg,
+                               title                  = "Title",      
+                               sub_title              = NULL, 
+                               rptname                = "default",
+                               content_type           = 'text', 
+                               content                = 'Text'
+                               ){
+
+  # We only process this if reporting is enabled
+  if(cfg$reporting$enabled){
+    # checking to make sure the user has initialized the report
+    if(rptname %in% names(cfg$reporting$reports)){
+      # Pulling out the meta data for the report template
+      meta = cfg$reporting$reports[[rptname]]$meta 
+
+      # Pulling out the report to make it easier to deal with
+      tmprpt  = cfg$reporting$reports[[rptname]]$report
+
+      # Adding the slide
+      if(content_type %in% c("text", "imagefile", "ggplot")){
+        tmprpt = add_slide(x      = tmprpt, 
+                           layout = meta$content$layout$general,
+                           master = meta$content$master$general)
+        body_index      = meta$content$indices$content_body
+        sub_title_index = meta$content$indices$content_sub_title
+      }
+      else if(content_type == "list"){
+        tmprpt = add_slide(x      = tmprpt, 
+                           layout = meta$content$layout$list,
+                           master = meta$content$master$list)
+        body_index      = meta$content$indices$list_body
+        sub_title_index = meta$content$indices$list_sub_title
+      }
+
+      # Adding Slide title/subtitle information
+      if(!is.null(title)){
+        tmprpt = ph_with_text(x=tmprpt, type='title', str=title) } 
+      if(!is.null(sub_title_index) & !is.null(sub_title)){
+        tmprpt = ph_with_text(x=tmprpt, type='body', index=sub_title_index, str=sub_title) } 
+
+      # Adding the content
+      type   = "body"
+      tmprpt = system_report_ph_content(cfg          = cfg,          
+                                        rpt          = tmprpt, 
+                                        content_type = content_type, 
+                                        content      = content, 
+                                        type         = type,         
+                                        index        = body_index)
+  
+      # Putting the report back into cfg
+      cfg$reporting$reports[[rptname]]$report = tmprpt
+    } else {
+      vp(cfg, sprintf("system_report_slide_content_col() "))
+      vp(cfg, sprintf("Error: The report name >%s< not found", rptname))
+      vp(cfg, sprintf("       Slide not added"               ))
+    }
+  
+  }
+return(cfg)}
+#/system_report_slide_content
+# -------------------------------------------------------------------------
+# -------------------------------------------------------------------------
+# system_report_slide_two_col
+# Content dimensions:
+# Without header: units = inches, height = 5.08, width = 4.65
+# With header:    units = inches, height = 4.41, width = 4.65
+# cfg = system_report_slide_two_col = function (cfg,
+#        title                     = "Title",      
+#        sub_title                 = NULL, 
+#        rptname                   = "default",
+#        content_type              = 'text', 
+#        left_content              =  NULL,
+#        left_content_type         =  NULL, 
+#        right_content             =  NULL,
+#        right_content_type        =  NULL, 
+#        left_content_header       =  NULL,  
+#        left_content_header_type  = 'text', 
+#        right_content_header      =  NULL,
+#        right_content_header_type = 'text')
+# 
+system_report_slide_two_col = function (cfg,
+                               title                       = "Title",      
+                               sub_title                   = NULL, 
+                               rptname                     = "default",
+                               content_type                = 'text', 
+                               left_content                =  NULL,
+                               left_content_type           =  NULL, 
+                               right_content               =  NULL,
+                               right_content_type          =  NULL, 
+                               left_content_header         =  NULL,  
+                               left_content_header_type    = 'text', 
+                               right_content_header        =  NULL,
+                               right_content_header_type   = 'text'){
+
+  # Making sure reporting is enabled
+    # checking to make sure the user has initialized the report
+  # Making sure reporting is enabled
+  if(cfg$reporting$enabled){
+    # checking to make sure the user has initialized the report
+    if(rptname %in% names(cfg$reporting$reports)){
+      # Pulling out the meta data for the report template
+      meta = cfg$reporting$reports[[rptname]]$meta 
+      # Pulling out the report to make it easier to deal with
+      tmprpt  = cfg$reporting$reports[[rptname]]$report
+
+      #-------------------------------------------------------
+      #  here we initialize the correct slide and 
+      #  define the indices
+      #
+      if(content_type %in% c('text')){
+        if(is.null(left_content_header) & is.null(left_content_header)){
+          # Text without headers
+          tmprpt = add_slide(x      = tmprpt, 
+                             layout = meta$two_col$layout$text,
+                             master = meta$two_col$master$text)
+
+          left_index         = meta$two_col$indices$text_left
+          right_index        = meta$two_col$indices$text_right
+          left_title_index   = NULL
+          right_title_index  = NULL
+          sub_title_index    = meta$two_col$indices$text_sub_title
+        } else {
+          # Text with headers
+          tmprpt = add_slide(x      = tmprpt, 
+                             layout = meta$two_col$layout$text_head,
+                             master = meta$two_col$master$text_head)
+
+          left_index         = meta$two_col$indices$text_head_left
+          right_index        = meta$two_col$indices$text_head_right
+          left_title_index   = meta$two_col$indices$text_head_left_title
+          right_title_index  = meta$two_col$indices$text_head_right_title
+          sub_title_index    = meta$two_col$indices$text_head_sub_title
+        }
+      }else if(content_type %in% c('list')){
+        if(is.null(left_content_header) & is.null(left_content_header)){
+          # List without headers
+          tmprpt = add_slide(x      = tmprpt, 
+                             layout = meta$two_col$layout$list,
+                             master = meta$two_col$master$list)
+
+          left_index         = meta$two_col$indices$list_left
+          right_index        = meta$two_col$indices$list_right
+          left_title_index   = NULL
+          right_title_index  = NULL
+          sub_title_index    = meta$two_col$indices$list_sub_title
+        
+        } else {
+          # List with headers
+          tmprpt = add_slide(x      = tmprpt, 
+                             layout = meta$two_col$layout$list_head,
+                             master = meta$two_col$master$list_head)
+
+          left_index         = meta$two_col$indices$list_head_left
+          right_index        = meta$two_col$indices$list_head_right
+          left_title_index   = meta$two_col$indices$list_head_left_title
+          right_title_index  = meta$two_col$indices$list_head_right_title
+          sub_title_index    = meta$two_col$indices$list_head_sub_title
+        }
+      }
+
+      # If the content type hasn't been set then they inheret 
+      # the content type of the main slide
+      if(is.null(left_content_type)){
+        left_content_type = content_type }
+      if(is.null(right_content_type)){
+        right_content_type = content_type }
+      #-------------------------------------------------------
+
+      # Adding Slide title/subtitle information
+      if(!is.null(title)){
+        tmprpt = ph_with_text(x=tmprpt, type='title', str=title) } 
+      if(!is.null(sub_title_index) & !is.null(sub_title)){
+        tmprpt = ph_with_text(x=tmprpt, type='body', index=sub_title_index, str=sub_title) } 
+
+      # browser()
+
+      #
+      # Creating the headers
+      #
+      if(!is.null(left_content_header)){
+        tmprpt = system_report_ph_content(cfg          = cfg,          
+                                          rpt          = tmprpt, 
+                                          content_type = left_content_header_type, 
+                                          content      = left_content_header, 
+                                          type         = "body",         
+                                          index        = left_title_index)
+      }
+      if(!is.null(right_content_header)){
+        tmprpt = system_report_ph_content(cfg          = cfg,          
+                                          rpt          = tmprpt, 
+                                          content_type = right_content_header_type, 
+                                          content      = right_content_header, 
+                                          type         = "body",         
+                                          index        = right_title_index)
+      }
+
+      #
+      # Creating the main content
+      #
+      if(!is.null(left_content)){
+        tmprpt = system_report_ph_content(cfg          = cfg,          
+                                          rpt          = tmprpt, 
+                                          content_type = left_content_type, 
+                                          content      = left_content, 
+                                          type         = "body",         
+                                          index        = left_index)
+      }
+      if(!is.null(right_content)){
+        tmprpt = system_report_ph_content(cfg          = cfg,          
+                                          rpt          = tmprpt, 
+                                          content_type = right_content_type, 
+                                          content      = right_content, 
+                                          type         = "body",         
+                                          index        = right_index)
+      }
+
+
+      # Putting the report back into cfg
+      cfg$reporting$reports[[rptname]]$report = tmprpt
+    } else {
+      vp(cfg, sprintf("system_report_slide_two_col() "))
+      vp(cfg, sprintf("Error: The report name >%s< not found", rptname))
+      vp(cfg, sprintf("       Slide not added"               ))
+    }
+  }
+
+
+return(cfg)}
+#/system_report_slide_two_col
+# -------------------------------------------------------------------------
+
+# -------------------------------------------------------------------------
+# system_report_slide_section
+# Content dimensions:
+# units = inches, 
+# cfg = system_report_slide_section = function (cfg,
+#        title      = "Title",      
+#        sub_title  = NULL, 
+#        rptname    = "default")
+system_report_slide_section = function (cfg,
+                               title                  = "Title",      
+                               sub_title              = NULL, 
+                               rptname                = "default"){
+
+  isgood = TRUE
+  # We only process this if reporting is enabled
+  if(cfg$reporting$enabled){
+    # checking to make sure the user has initialized the report
+    if(rptname %in% names(cfg$reporting$reports)){
+      # Pulling out the meta data for the report template
+      meta = cfg$reporting$reports[[rptname]]$meta 
+      # Pulling out the report to make it easier to deal with
+      tmprpt  = cfg$reporting$reports[[rptname]]$report
+
+      # Adding the title slide
+      tmprpt = add_slide(x      = tmprpt, 
+                         layout = meta$section$layout$general,
+                         master = meta$section$master$general)
+
+
+      # Adding Slide title/subtitle information
+      if(!is.null(title)){
+        if(meta$section$type$title == "ctrTitle"){
+          tmprpt = ph_with_text(x=tmprpt, type='ctrTitle', str=title) 
+         } else if (meta$section$type$title == "body" & !is.null(meta$section$indices$title)) {
+          tmprpt = ph_with_text(x=tmprpt, type='body', index = meta$section$indices$title, str=title) 
+         } else {
+           isgood = FALSE
+         }
+       } 
+      if(!is.null(sub_title)){
+        if(meta$section$type$sub_title == "subTitle"){
+          tmprpt = ph_with_text(x=tmprpt, type="subTitle", str=sub_title) 
+         } else if (meta$section$type$sub_title == "body" & !is.null(meta$section$indices$sub_title)) {
+          tmprpt = ph_with_text(x=tmprpt, type='body', index = meta$section$indices$sub_title, str=sub_title) 
+         } else {
+           isgood = FALSE
+         }
+       }
+
+      # Putting the report back into cfg
+      cfg$reporting$reports[[rptname]]$report = tmprpt
+    } else {
+      isgood = FALSE
+    }
+  }
+
+  if(!isgood){
+    vp(cfg, sprintf("system_report_slide_section  () "))
+    vp(cfg, sprintf("Error: The report name >%s< not found", rptname))
+    vp(cfg, sprintf("       Slide not added"               ))
+  
+  }
+
+
+return(cfg)}
+#/system_report_slide_section
+# -------------------------------------------------------------------------
+# -------------------------------------------------------------------------
+# system_report_slide_title
+# Content dimensions:
+# units = inches, 
+# cfg = system_report_slide_title   = function (cfg,
+#         title     = "Title",      
+#         sub_title = NULL, 
+#         rptname   = "default")
+system_report_slide_title   = function (cfg,
+                               title                  = "Title",      
+                               sub_title              = NULL, 
+                               rptname                = "default"){
+
+  # We only process this if reporting is enabled
+  if(cfg$reporting$enabled){
+    # checking to make sure the user has initialized the report
+    if(rptname %in% names(cfg$reporting$reports)){
+      # Pulling out the meta data for the report template
+      meta = cfg$reporting$reports[[rptname]]$meta 
+      # Pulling out the report to make it easier to deal with
+      tmprpt  = cfg$reporting$reports[[rptname]]$report
+
+      # Adding the title slide
+      tmprpt = add_slide(x      = tmprpt, 
+                         layout = meta$title$layout$general,
+                         master = meta$title$master$general)
+
+      # Adding Slide title/subtitle information
+      if(meta$title$type$title == "ctrTitle"){
+        tmprpt = ph_with_text(x=tmprpt, type="ctrTitle", str=title) 
+       } else if (meta$title$type$title == "body" & !is.null(meta$title$indices$title)) {
+        tmprpt = ph_with_text(x=tmprpt, type='body', index = meta$title$indices$title, str=title) 
+       } else {
+         isgood = FALSE
+       }
+      if(!is.null(sub_title)){
+        if(meta$title$type$sub_title == "subTitle"){
+          tmprpt = ph_with_text(x=tmprpt, type="subTitle", str=sub_title) 
+         } else if (meta$title$type$sub_title == "body" & !is.null(meta$title$indices$sub_title)) {
+          tmprpt = ph_with_text(x=tmprpt, type='body', index = meta$title$indices$sub_title, str=sub_title) 
+         } else {
+           isgood = FALSE
+         }
+       }
+
+      # Putting the report back into cfg
+      cfg$reporting$reports[[rptname]]$report = tmprpt
+    } else {
+      vp(cfg, sprintf("system_report_slide_title  () "))
+      vp(cfg, sprintf("Error: The report name >%s< not found", rptname))
+      vp(cfg, sprintf("       Slide not added"               ))
+    }
+  }
+
+
+return(cfg)}
+#/system_report_slide_title  
+# -------------------------------------------------------------------------
+
+#  # -------------------------------------------------------------------------
+#  # system_report_slide_xxx
+#  # Content dimensions:
+#  # units = inches, 
+#  system_report_slide_xxx     = function (cfg,
+#                                 title                  = "Title",      
+#                                 sub_title              = NULL, 
+#                                 rptname                = "default",
+#                                 content_type           = 'text', 
+#                                 left_content           = 'Text',
+#                                 right_content          = 'Text',
+#                                 left_content_header    =  NULL,  
+#                                 right_content_header   =  NULL){
+#  
+#    # We only process this if reporting is enabled
+#    if(cfg$reporting$enabled){
+#      # checking to make sure the user has initialized the report
+#      if(rptname %in% names(cfg$reporting$reports)){
+#        # Pulling out the meta data for the report template
+#        meta = cfg$reporting$reports[[rptname]]$meta 
+#        # Pulling out the report to make it easier to deal with
+#        tmprpt  = cfg$reporting$reports[[rptname]]$report
+#  
+#        browser()
+#        # Adding the slide
+#        tmprpt = add_slide(x      = tmprpt, 
+#                           layout = meta$xxx$layout$general,
+#                           master = meta$xxx$master$general)
+#  
+#  
+#        # Adding Slide title/subtitle information
+#        if(!is.null(title)){
+#          tmprpt = ph_with_text(x=tmprpt, type='ctrTitle', str=title) } 
+#        if(!is.null(sub_title_index) & !is.null(sub_title)){
+#          tmprpt = ph_with_text(x=tmprpt, type='subTitle', str=sub_title) } 
+#        # Populate with content
+#  
+#
+#        # Putting the report back into cfg
+#        cfg$reporting$reports[[rptname]]$report = tmprpt
+#      } else {
+#        vp(cfg, sprintf("system_report_slide_xxx    () "))
+#        vp(cfg, sprintf("Error: The report name >%s< not found", rptname))
+#        vp(cfg, sprintf("       Slide not added"               ))
+#      }
+#    }
+#  
+#  
+#  return(cfg)}
+#  #/system_report_slide_xxx    
+#  # -------------------------------------------------------------------------
+
+# -------------------------------------------------------------------------
+system_report_ph_content = function (cfg, rpt, content_type, content, type, index){
+
+    if(content_type == "text"){
+      rpt = ph_with_text(x=rpt, type=type, index=index, str=content)
+    }
+    else if(content_type == "list"){
+      mcontent = matrix(data = content, ncol=2, byrow=TRUE)
+
+      
+      # Initializing the placeholder
+      rpt   = ph_empty(x=rpt, type=type, index=index)
+
+      # Getting the id_chr 
+      ss    = slide_summary(rpt)
+      id_chr= ss[length(ss[,1]),]$id
+      # Adding the bullets
+      for(lidx in 1:length(mcontent[,1])){
+        rpt = ph_add_par( x=rpt, id_chr= id_chr, level = as.numeric(mcontent[lidx, 1]))
+        rpt = ph_add_text(x=rpt, id_chr= id_chr, str   = mcontent[lidx, 2]) 
+      }
+    }
+    else if(content_type == "imagefile"){
+      rpt = ph_with_img(x=rpt, type = type, index = index, src = content)   
+    }
+    else if(content_type == "ggplot"){
+      rpt = ph_with_gg(x=rpt, type = type, index = index, value = content)   
+    }
+
+
+return(rpt)}
+# -------------------------------------------------------------------------

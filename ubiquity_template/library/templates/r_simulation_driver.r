@@ -44,11 +44,7 @@ parameters = system_fetch_parameters(cfg)
 #
 # parameters$PNAME = VALUE;
 
-<BOLUS>
-<INFUSION_RATES>
-<COVARIATES>
 <OUTPUT_TIMES>
-
 
 # The following applies to both individual and stochastic simulations:
 # Define the solver to use
@@ -76,6 +72,10 @@ cfg=system_set_option(cfg, group  = "simulation",
 # cfg=system_set_option(cfg, group  = "simulation", 
 #                            option = "integrate_with",
 #                            value  = "r-file")
+
+<BOLUS>
+<INFUSION_RATES>
+<COVARIATES>
 
 # -------------------------------------------------------------------------
 # Individual Simulation:
