@@ -803,8 +803,9 @@ simulation_state<- function(input, output, session){
         # If the current row has the string "NA" in the second column
         # then it's a row header/grouping row and we ignore it
         # If not then it's a parameter and we update that parameter
-        # in the parameter values
-        if(input$table_parameters$data[[pidx]][[2]] != "NA"){
+        # in the parameter valuess.
+        if(!is.null(input$table_parameters$data[[pidx]][[2]])){
+        if(!is.na(input$table_parameters$data[[pidx]][[2]])){
           # pulling out the parameter name
           pname = input$table_parameters$data[[pidx]][[1]] 
           pupdate = FALSE
@@ -836,6 +837,7 @@ simulation_state<- function(input, output, session){
               sim_status = 'Stale' 
               }
           }
+        }
         }
       }
     }

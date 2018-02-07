@@ -537,9 +537,11 @@
 # <VE:OUTPUT> expression
 # ----------------------
 #
-# Where the OUTPUT is the name of the output defined above (<O>) and
-# expression is the mathematical expression. For example to model the error of
-# an output Cp as proportional to the square of Cp we would use the following:
+# This describes the residual error in terms of a variance model. This is used
+# in ADAPT, Matlab and R. Where the OUTPUT is the name of the output defined
+# above (<O>) and expression is the mathematical expression. For example to
+# model the error of an output Cp as proportional to the square of Cp we would
+# use the following:
 #
 # <VE:Cp>   Slope_Cp*SIMINT_POWER[PRED][2.0]
 #

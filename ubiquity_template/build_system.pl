@@ -309,6 +309,9 @@ MAIN:
     if($line =~ '<VE:\S+>'){
       $cfg  = &parse_variance_equation($cfg, $line); }
 
+    if($line =~ '<DV:\S+>'){
+      $cfg  = &parse_error_equation($cfg, $line); }
+
    #if($line =~ '<VCVHEADER>'){
    #  $cfg  = &parse_vcv_header($cfg, $line); }
    #
@@ -505,6 +508,7 @@ my $cfg;
   $cfg->{times_scales}                               = {};
 
   $cfg->{variance}->{equations}                      = {};
+  $cfg->{error}->{equations}                         = {};
 
   $cfg->{sets}                                       = {};
   
@@ -978,6 +982,7 @@ foreach $parameter (@{$cfg->{parameters_index}}){
   # Compiled C Code
   $mo->{SYSTEM_PARAM} .= "#define $pname".&fetch_padding($pname, $cfg->{parameters_length})." parms[".($counter-1)."]\n";
   $counter = 1+$counter;
+
 }
 
 
@@ -1875,55 +1880,109 @@ sub dump_mrgsolve
   my ($cfg, $parameter_set) = @_;
   my $mc;
   my $text_string;
-  my $name;
-  my $parameter;
+  my ($name, $name2);
+  my ($parameter, $covariate);
+  my $output;
   my $template = &fetch_template_file('mrgsolve.cpp');
+  my ($counter, $counter2);
+
+  my $namespace_map;
 
   my $iiv_set     = 'default';
   if($cfg->{iiv_index}->{$parameter_set}){
      $iiv_set = $parameter_set; 
   }
 
+  my @cv_elements;
+  my $cv_set     = 'default';
+
+
+
   $mc->{SYSTEM_PARAMS} = '';
   $mc->{STATE_INIT}    = '';
   $mc->{STATE_IC}      = '';
   $mc->{IIV_SP}        = '';
-  $mc->{ODES}          = '';
+  $mc->{OMEGA}         = '';
+  $mc->{SIGMA}         = '';
+  $mc->{ODES}          = "\n//Defining the differential equations\n";
   $mc->{SSP}           = '';
   $mc->{DSP}           = '';
+  $mc->{DSPINIT}       = '';
+  $mc->{OUTPUTS}       = "\n";
+  $mc->{OUTPUTSINIT}   = "";
+  $mc->{CAPLIST}       = "";
 
   #
   # Dumping the system parameters
   #
+
   foreach $parameter (@{$cfg->{parameters_index}}){
     $name = $parameter;
 
-    if(defined($cfg->{iiv}->{$iiv_set}->{parameters}->{$name})){
-      $mc->{SYSTEM_PARAMS} .= "TV_".$name;
-      $mc->{SYSTEM_PARAMS} .= &fetch_padding("TV_".$name, $cfg->{parameters_length}); 
-      $mc->{SYSTEM_PARAMS} .= " = ";
+    # Only processing system parameters
+    if( $cfg->{parameters}->{$name}->{ptype} eq "system" ){
 
-      $text_string = &make_iiv($cfg, $name, 'nonmem', $iiv_set) ;
-      # substituting the placeholders
-      $text_string =~ s#SIMINT_PARAMETER_TV#TV_$name#g;
-      $text_string =~ s#SIMINT_IIV_VALUE#$cfg->{iiv}->{$iiv_set}->{parameters}->{$name}->{iiv_name}#g;
+      # If the parameter has IIV we define the TV of that parameter
+      if(defined($cfg->{iiv}->{$iiv_set}->{parameters}->{$name})){
+        $mc->{SYSTEM_PARAMS} .= "TV_".$name;
+        $mc->{SYSTEM_PARAMS} .= &fetch_padding("TV_".$name,20); 
+        $mc->{SYSTEM_PARAMS} .= " : ";
 
-      $mc->{IIV_SP}        .= "double ".$name;
-      $mc->{IIV_SP}        .= &fetch_padding("double ".$name, $cfg->{parameters_length}); 
-      $mc->{IIV_SP}        .= " = ";
-      $mc->{IIV_SP}        .= $text_string;
-      $mc->{IIV_SP}        .= ";\n";
+        $text_string = &make_iiv($cfg, $name, 'C', $iiv_set) ;
+        # substituting the placeholders
+        $text_string =~ s#SIMINT_PARAMETER_TV#TV_$name#g;
+        $text_string =~ s#SIMINT_IIV_VALUE#$cfg->{iiv}->{$iiv_set}->{parameters}->{$name}->{iiv_name}#g;
+
+        $mc->{IIV_SP}        .= "double ".$name;
+        $mc->{IIV_SP}        .= &fetch_padding("double $name", 30); 
+        $mc->{IIV_SP}        .= " = ";
+        $mc->{IIV_SP}        .= $text_string;
+        $mc->{IIV_SP}        .= ";\n";
+      }
+      else{
+        $mc->{SYSTEM_PARAMS} .= $name;
+        $mc->{SYSTEM_PARAMS} .= &fetch_padding($name, 20); 
+        $mc->{SYSTEM_PARAMS} .= " : ";
+      }
+      $mc->{SYSTEM_PARAMS} .= $cfg->{parameters}->{$name}->{value};
+      $mc->{SYSTEM_PARAMS} .= &fetch_padding($cfg->{parameters}->{$name}->{value}, 10);
+      $mc->{SYSTEM_PARAMS} .= " : ".$cfg->{parameters}->{$name}->{units};
+      $mc->{SYSTEM_PARAMS} .= "\n";
+    } elsif( $cfg->{parameters}->{$name}->{ptype} eq "variance" ){
+      # Defining the sigma value
+      if($mc->{SIGMA}  eq ""){
+        $mc->{SIGMA} = '$SIGMA @annotated'."\n";
+      }
+      $mc->{SIGMA} .= $name.&fetch_padding($name, 10)." : ";
+      $mc->{SIGMA} .= $cfg->{parameters}->{$name}->{value};
+      $mc->{SIGMA} .= &fetch_padding($cfg->{parameters}->{$name}->{value}, 10);
+      $mc->{SIGMA} .= " : ".$name."\n";
     }
-    else{
-      $mc->{SYSTEM_PARAMS} .= $name;
-      $mc->{SYSTEM_PARAMS} .= &fetch_padding($name, $cfg->{parameters_length}); 
-      $mc->{SYSTEM_PARAMS} .= " = ";
-    }
-    $mc->{SYSTEM_PARAMS} .= $cfg->{parameters}->{$name}->{value};
-    $mc->{SYSTEM_PARAMS} .= &fetch_padding($cfg->{parameters}->{$name}->{value}, $cfg->{parameters_length});
-    # $mc->{SYSTEM_PARAMS} .= "  // ".$cfg->{parameters}->{$name}->{units};
-    $mc->{SYSTEM_PARAMS} .= "\n";
   }
+
+  if((@{$cfg->{covariates_index}})){
+  foreach $covariate  (@{$cfg->{covariates_index}}){
+    $name = $covariate; 
+
+      if($cfg->{covariates}->{$name}->{parameter_sets}->{$parameter_set}){
+        $cv_set = $parameter_set; 
+      } else {
+        $cv_set = "default";
+      }
+
+      # Pulling out the values of the covariate
+      @cv_elements = &extract_elements($cfg->{covariates}->{$name}->{parameter_sets}->{$cv_set}->{values});
+     
+      $mc->{SYSTEM_PARAMS} .= $name;
+      $mc->{SYSTEM_PARAMS} .= &fetch_padding($name, 20); 
+      $mc->{SYSTEM_PARAMS} .= " : ";
+      $mc->{SYSTEM_PARAMS} .= $cv_elements[0];
+      $mc->{SYSTEM_PARAMS} .= &fetch_padding($cv_elements[0], 10);
+      $mc->{SYSTEM_PARAMS} .= " : ".$cfg->{covariates}->{$name}->{values}->{units}." (covariate)";
+      $mc->{SYSTEM_PARAMS} .= "\n";
+    }
+  }
+
 
   # 
   # Parsing the states
@@ -1931,8 +1990,8 @@ sub dump_mrgsolve
   foreach $name      (@{$cfg->{species_index}}){
     # initializing state names
     $mc->{STATE_INIT}    .= $name;
-    $mc->{STATE_INIT}    .= &fetch_padding($name, $cfg->{species_length}); 
-    $mc->{STATE_INIT}    .= " = 0.0 \n";
+    $mc->{STATE_INIT}    .= &fetch_padding($name, 20); 
+    $mc->{STATE_INIT}    .= " : -- \n";
 
     # Nonzero initial conditions
     if(defined($cfg->{initial_conditions}->{$name})){
@@ -1940,13 +1999,13 @@ sub dump_mrgsolve
       $text_string = &apply_format($cfg, $text_string, 'C');
 
       $mc->{STATE_IC} .= $name."_0";
-      $mc->{STATE_IC} .= &fetch_padding($name."_0", $cfg->{species_length})." = ";
+      $mc->{STATE_IC} .= &fetch_padding($name."_0", 20)." = ";
       $mc->{STATE_IC} .= $text_string;
       $mc->{STATE_IC} .= ";\n";
       }
 
     # Differential equations
-    $mc->{ODES}          .= "dxdt_$name".&fetch_padding("dxdt_$name", $cfg->{species_length})." = ".&make_ode($cfg, $name, 'C').";\n";
+    $mc->{ODES}          .= "dxdt_$name".&fetch_padding("dxdt_$name", 20)." = ".&make_ode($cfg, $name, 'C').";\n";
   }
 
   #
@@ -1957,7 +2016,7 @@ sub dump_mrgsolve
     foreach $parameter    (@{$cfg->{static_secondary_parameters_index}}){
       $name = $parameter;
       $mc->{SSP} .= "double ".$name;
-      $mc->{SSP} .= &fetch_padding("double ".$name, $cfg->{parameters_length})." = ";
+      $mc->{SSP} .= &fetch_padding("double $name", 30)." = ";
       $mc->{SSP} .= &apply_format($cfg, $cfg->{static_secondary_parameters}->{$name}, 'C').";\n"; 
       if(defined($cfg->{if_conditional}->{$name})){
         $mc->{SSP} .= &extract_conditional($cfg, $name, 'C');
@@ -1967,16 +2026,96 @@ sub dump_mrgsolve
 
   # Dynamic secondary parameters 
   if ((@{$cfg->{dynamic_secondary_parameters_index}})){
+    $mc->{DSPINIT} .= "// Initialzing dynamic secondary parmaeters\n";
+    $mc->{DSP}     .= "\n// Defining dynamic secondary parmaeters\n";
     foreach $parameter    (@{$cfg->{dynamic_secondary_parameters_index}}){
       $name = $parameter;
-      $mc->{DSP} .= "double ".$name;
-      $mc->{DSP} .= &fetch_padding("double ".$name, $cfg->{parameters_length})." = ";
+      # Initializing the dynamic secondary parameters
+      $mc->{DSPINIT} .= "double ".$name;
+      $mc->{DSPINIT} .= &fetch_padding("double $name", 30)." = 0.0; \n";
+
+      # Defining dynamic secondary parameters
+      $mc->{DSP} .= $name;
+      $mc->{DSP} .= &fetch_padding($name, 30)." = ";
       $mc->{DSP} .= &apply_format($cfg, $cfg->{dynamic_secondary_parameters}->{$name}, 'C')."; \n"; 
       if(defined($cfg->{if_conditional}->{$name})){
         $mc->{DSP} .= &extract_conditional($cfg, $name, 'C');
       }
     }
   }
+
+  #
+  # Processing iiv information
+  #
+  if(keys(%{$cfg->{iiv}})){
+
+    # mapping ETA()'s to IIV names and creating the header for the OMEGA block
+
+    # creating the OMEGA BLOCK() line:
+    $mc->{OMEGA} = '$OMEGA @annotated @block'."\n";
+
+    # creating the  variance/covariance matrix
+    $counter = 1;
+    foreach $name (@{$cfg->{iiv_index}->{$iiv_set}}){
+      $counter2 = 1;
+      foreach $name2 (@{$cfg->{iiv_index}->{$iiv_set}}){
+      if($counter2 le $counter){
+        if($counter2 == 1){
+           $mc->{OMEGA}       .= $name;
+           $mc->{OMEGA}       .= &fetch_padding($name,10);
+           $mc->{OMEGA}       .= " : ";
+           }
+        if(defined($cfg->{iiv}->{$iiv_set}->{vcv}->{$name}->{$name2})){
+          $mc->{OMEGA}       .= $cfg->{iiv}->{$iiv_set}->{vcv}->{$name}->{$name2}.&fetch_padding($cfg->{iiv}->{$iiv_set}->{vcv}->{$name}->{$name2}, 10); }
+        else{
+          $mc->{OMEGA}       .= '0'.&fetch_padding('0', 10); }
+
+        if($counter2 == $counter){
+           $mc->{OMEGA}       .= &fetch_padding('',10)x(@{$cfg->{iiv_index}->{$iiv_set}} - $counter);
+           $mc->{OMEGA}       .= " : ETA on  ".join(', ', @{$cfg->{iiv}->{$iiv_set}->{iivs}->{$name}->{parameters}})."\n";
+           }
+        $counter2 = $counter2 + 1; 
+        }
+      }
+      $counter = $counter + 1;
+    }
+  }
+
+
+
+
+  # Adding the outputs to the capture list
+  $mc->{CAPLIST} .= join(' ', @{$cfg->{outputs_index}});
+
+  $mc->{OUTPUTSINIT} = "// Initialzing model outputs\n";
+  foreach $output    (@{$cfg->{outputs_index}}){
+    $name = $output;
+    $mc->{OUTPUTS}           .= $name.&fetch_padding($name, 30)." = ";
+    $mc->{OUTPUTS}           .= &apply_format($cfg, $cfg->{outputs}->{$name}, 'C').";\n";
+
+    $mc->{OUTPUTSINIT} .= "double ".$name;
+    $mc->{OUTPUTSINIT} .= &fetch_padding("double $name", 30)." = 0.0; \n";
+
+    if($cfg->{error}->{equations}->{$name}){
+
+      # Initializing the output with the error
+      $mc->{OUTPUTSINIT} .= "double SIDV_".$name;
+      $mc->{OUTPUTSINIT} .= &fetch_padding("double SIDV_$name", 30)." = 0.0; \n";
+
+      # Defining the output with error
+      # pulling out the equation, swappign the actual name for PRED
+      $text_string = $cfg->{error}->{equations}->{$name};
+      my $namespace_map;
+      $namespace_map->{PRED} = $name;
+      $text_string = &remap_namespace($text_string, $namespace_map);
+      $text_string = &apply_format($cfg, $text_string, 'C');
+      $mc->{OUTPUTS} .= "SIDV_$name".&fetch_padding("SIDV_$name", 30)." = ".$text_string.";\n";
+      
+      # Adding it to the capture list
+      $mc->{CAPLIST} .= " SIDV_$name";
+    }
+  }
+
 
   #
   # Mapping the content to the template file
@@ -2243,7 +2382,6 @@ sub dump_nonmem
     }
   }
 
-
   #
   # Dynamic secondary parameters
   #
@@ -2265,7 +2403,6 @@ sub dump_nonmem
   #
   # states and ODES
   #
-
   if ((@{$cfg->{species_index}})){
     $counter = 1;
 
@@ -2278,9 +2415,6 @@ sub dump_nonmem
       if(defined($cfg->{options}->{amtify}->{cmt_to_amt}->{$name})){ 
         $name2 = $cfg->{options}->{amtify}->{cmt_to_amt}->{$name};
       }
-
-
-      
       $mc->{COMP_ASSIGNMENT} .= "COMP=($name2) ".&fetch_padding("COMP=($name2) ", 30)."; # $counter \n"; 
      
       $mc->{STATES_ASSIGNMENT} .= "$name2".&fetch_padding("$name", $cfg->{species_length})."=  A($counter) \n";
@@ -5142,6 +5276,30 @@ sub parse_parameter_set
   return $cfg;
 }
 
+
+sub parse_error_equation
+{
+  my ($cfg, $line) = @_;
+
+  # line contains odes
+  if($line =~ '<DV:\S+>\s*\S+'){
+    my $output   = $line;
+    my $equation = $line;
+    # pulling out the species and ode
+    $output   =~ s#\s*<DV:\s*(\S+)\s*>\s*\S+.+#$1#;
+    $equation =~ s#\s*<DV:\s*\S+\s*>\s*(\S+.+)#$1#;
+
+    $cfg->{error}->{equations}->{$output} = $equation;
+  }
+  else{
+      &mywarn("error equation entry found but format is unexpected" ); 
+      &mywarn("entry: -->$line<--"); }
+
+  return $cfg;
+}
+
+
+
 sub parse_variance_equation
 {
   my ($cfg, $line) = @_;
@@ -5767,6 +5925,15 @@ sub system_check{
     }
   
   }
+
+  foreach $name (keys %{$cfg->{error}->{equations}}){
+    if(not(defined($cfg->{outputs}->{$name}))){
+      &mywarn("Error equation specified for output: $name.");
+      &mywarn("However, there is no output by that name.");
+    }
+  
+  }
+
 
   # checking all of the components for name conflicts
   foreach $name (keys %{$cfg->{outputs}}){
