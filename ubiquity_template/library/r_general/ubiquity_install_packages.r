@@ -19,6 +19,8 @@ required_packages= c("deSolve",
 
 
 reccomended_packages = c( "GGally",
+                          "officer",
+                          "flextable",
                           "gridExtra",
                           "gridGraphics")
 

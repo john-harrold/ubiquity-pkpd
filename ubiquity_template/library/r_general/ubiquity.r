@@ -5845,7 +5845,7 @@ system_report_slide_content = function (cfg,
       tmprpt  = cfg$reporting$reports[[rptname]]$report
 
       # Adding the slide
-      if(content_type %in% c("text", "imagefile", "ggplot")){
+      if(content_type %in% c("text", "imagefile", "ggplot", "table", "flextable")){
         tmprpt = add_slide(x      = tmprpt, 
                            layout = meta$content$layout$general,
                            master = meta$content$master$general)
@@ -6263,6 +6263,95 @@ system_report_ph_content = function (cfg, rpt, content_type, content, type, inde
     else if(content_type == "ggplot"){
       rpt = ph_with_gg(x=rpt, type = type, index = index, value = content)   
     }
+    else if(content_type == "table"){
+      if('header' %in% names(content)){
+        header = content$header
+      } else {header = TRUE}
+      if('first_row' %in% names(content)){
+        first_row = content$first_row
+      } else {first_row = TRUE}
+      rpt = ph_with_table(x         = rpt,       type   = type, 
+                          index     = index,     header = header,
+                          first_row = first_row, value = content$table)   
+    }
+    else if(content_type == "flextable"){
+      # These are the default table options
+      # and they can be over written by specifying 
+      # the same fields of the content list
+      header_top            = NULL
+      header_middle         = NULL
+      header_bottom         = NULL
+      merge_header          = TRUE
+      table_body_alignment  ="center"
+      table_header_alignment  ="center"
+      table_autofit         = TRUE
+      table_theme           ="theme_vanilla"
+      cwidth                = 0.75
+      cheight               = 0.25
+
+      ftops = c("header_top",             "header_middle",    "header_bottom", 
+                "merge_header",           "table_theme",      "table_body_alignment",
+                "table_header_alignment", "table_autofit",    "cwidth", 
+                "cheight")
+
+
+      # Defining the user specified flextable options:
+      for(ftop in ftops){
+        if(!is.null(content[[ftop]])){
+          eval(parse(text=sprintf('%s = content[[ftop]]', ftop)))
+        }
+      }
+
+      # Creating the table
+      ft = regulartable(content$table,  cwidth = cwidth, cheight=cheight)
+      
+      # Adding headers
+      header_types = c("header_top", "header_middle", "header_bottom")
+      first_header = TRUE
+      for(header_type in header_types){
+       
+        if(!is.null(eval(parse(text=header_type)))){
+          eval(parse(text=sprintf("header =  %s", header_type)))
+          # Creating the header
+          if(!is.null(header)){
+            if(length(names(header)) > 0){
+              if(first_header){
+                first_header = FALSE
+                shstr = ' ft = set_header_labels(ft'
+              } else {
+                shstr = ' ft = add_header(ft'
+              }
+              for(hname in names(header)){
+                shstr = sprintf('%s, %s="%s"', shstr, hname, header[[hname]])
+              }
+              shstr = sprintf('%s, top=FALSE)', shstr)
+              eval(parse(text=shstr))
+            }
+          }
+        }
+      }
+      
+
+     # Setting the theme
+     if(!is.null(table_theme)){
+       eval(parse(text=sprintf('ft = %s(ft)', table_theme))) }
+     
+     # Merging headers
+     if(merge_header){
+       ft = merge_h(ft, part="header") }
+
+     if(table_autofit){
+       ft = autofit(ft) }
+
+     # Applying the aligment
+     ft = align(ft, align=table_header_alignment, part="header")
+     ft = align(ft, align=table_body_alignment,   part="body"  )
+
+     rpt = ph_with_flextable(x         = rpt,       type   = type, 
+                             index     = index,     value  = ft)
+
+    }
+   
 
 
 return(rpt)}
