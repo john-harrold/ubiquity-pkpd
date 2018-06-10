@@ -6,6 +6,22 @@ system_fetch_cfg = function(){
 # parameter values, system indices used, iniital condition assignments, etc.
 #
 
+#Creating the cfg variable
+cfg = list();
+
+# storing the location of the temporary directory and the distribution type
+cfg$options$misc$temp_directory = '<TEMP_DIRECTORY>'
+cfg$options$misc$distribution   = '<DISTRIBUTION>'
+cfg$options$misc$system_file    = '<SYSTEM_FILE>'
+
+if(cfg$options$misc$distribution  == "stand alone"){
+  cfg$options$misc$templates      = file.path(getwd(), 'library', 'templates')
+} else {
+  package_dir                = system.file("", package="ubiquity")
+  cfg$options$misc$templates = file.path(package_dir, 'ubinc', "templates")
+}
+
+
 # System parameter information
 <FETCH_SYS_PARAMS>
 
@@ -95,13 +111,14 @@ cfg$options$stochastic$sub_file         = NULL
 cfg$options$stochastic$sub_file_sample  = 'with replacement'
 
 # default logging options
-cfg$options$logging$enabled   = 'yes'
+cfg$options$logging$enabled   = TRUE 
 cfg$options$logging$file      = sprintf('transient%subiquity_log.txt', .Platform$file.sep)
-cfg$options$logging$timestamp = 'yes'
+cfg$options$logging$timestamp = TRUE 
 cfg$options$logging$ts_str    = "%Y-%m-%d %H:%M:%S"
+cfg$options$logging$debug     = FALSE
 
 # defaulting to verbose output
-cfg$options$verbose           = 'yes'
+cfg$options$logging$verbose   = TRUE
 
 # default estimation options
 cfg$estimation$options$observation_function   = 'system_od_general'
@@ -116,7 +133,7 @@ cfg$estimation$options$control                = list(trace=TRUE,
 # Set sub_title fields to NULL if they do not exist in the template
 #
 # this is the information the title slide
-cfg$reporting$meta$title$layout$general                   = "Title Slide"
+cfg$reporting$meta$title$layout$general                   = "title_slide"
 cfg$reporting$meta$title$master$general                   = "Office Theme"             
 cfg$reporting$meta$title$type$title                       = 'ctrTitle'
 cfg$reporting$meta$title$type$sub_title                   = 'subTitle'
@@ -124,7 +141,7 @@ cfg$reporting$meta$title$indices$title                    = NULL
 cfg$reporting$meta$title$indices$sub_title                = NULL
 
 # this is the information the title slide
-cfg$reporting$meta$section$layout$general                 = "Section Header"
+cfg$reporting$meta$section$layout$general                 = "section_slide"
 cfg$reporting$meta$section$master$general                 = "Office Theme"             
 cfg$reporting$meta$section$type$title                     = 'ctrTitle'
 cfg$reporting$meta$section$type$sub_title                 = 'subTitle'
@@ -133,51 +150,54 @@ cfg$reporting$meta$section$indices$sub_title              = NULL
 
 # these contain the mapping information for content in the template
 # units = inches, height = 5.09, width = 9.45
-cfg$reporting$meta$content$indices$list_body              = 2
-cfg$reporting$meta$content$indices$content_body           = 1 
-cfg$reporting$meta$content$indices$list_sub_title         = 4 
-cfg$reporting$meta$content$indices$content_sub_title      = 4 
-cfg$reporting$meta$content$layout$list                    = "Title and Content List"
+# List content
+cfg$reporting$meta$content$layout$list                    = "content_list"
 cfg$reporting$meta$content$master$list                    = "Office Theme"             
-cfg$reporting$meta$content$layout$general                 = "Title and Content Text"
+cfg$reporting$meta$content$indices$list_body              = 2
+cfg$reporting$meta$content$indices$list_sub_title         = 4 
+
+# Text content
+cfg$reporting$meta$content$layout$general                 = "content_text"   
 cfg$reporting$meta$content$master$general                 = "Office Theme"             
+cfg$reporting$meta$content$indices$content_body           = 1 
+cfg$reporting$meta$content$indices$content_sub_title      = 4 
 
 # Two column slide options
 # Each place holder has dimensions of:
 # units = inches, height = 5.08, width = 4.65
 # No headers with text
+cfg$reporting$meta$two_col$layout$text                    = "two_content_text"
+cfg$reporting$meta$two_col$master$text                    = "Office Theme"             
 cfg$reporting$meta$two_col$indices$text_sub_title         = 4 
 cfg$reporting$meta$two_col$indices$text_left              = 5 
 cfg$reporting$meta$two_col$indices$text_right             = 3 
-cfg$reporting$meta$two_col$layout$text                    = "Two Content Text"
-cfg$reporting$meta$two_col$master$text                    = "Office Theme"             
 
 # No headers with lists
+cfg$reporting$meta$two_col$layout$list                    = "two_content_list"
+cfg$reporting$meta$two_col$master$list                    = "Office Theme"             
 cfg$reporting$meta$two_col$indices$list_sub_title         = 1 
 cfg$reporting$meta$two_col$indices$list_left              = 5 
 cfg$reporting$meta$two_col$indices$list_right             = 4 
-cfg$reporting$meta$two_col$layout$list                    = "Two Content List"
-cfg$reporting$meta$two_col$master$list                    = "Office Theme"             
 
 # Headers with text
 # Each place holder has dimensions of:
 # units = inches, height = 4.41, width = 4.65
+cfg$reporting$meta$two_col$layout$text_head               = "two_content_header_text"
+cfg$reporting$meta$two_col$master$text_head               = "Office Theme"             
 cfg$reporting$meta$two_col$indices$text_head_sub_title    = 3
 cfg$reporting$meta$two_col$indices$text_head_left_title   = 4 
 cfg$reporting$meta$two_col$indices$text_head_left         = 6 
 cfg$reporting$meta$two_col$indices$text_head_right_title  = 7 
 cfg$reporting$meta$two_col$indices$text_head_right        = 2 
-cfg$reporting$meta$two_col$layout$text_head               = "Two Content Header Text"
-cfg$reporting$meta$two_col$master$text_head               = "Office Theme"             
 
 # Headers with text
+cfg$reporting$meta$two_col$layout$list_head               = "two_content_header_list"
+cfg$reporting$meta$two_col$master$list_head               = "Office Theme"             
 cfg$reporting$meta$two_col$indices$list_head_sub_title    = 6
 cfg$reporting$meta$two_col$indices$list_head_left_title   = 2 
 cfg$reporting$meta$two_col$indices$list_head_left         = 3 
 cfg$reporting$meta$two_col$indices$list_head_right_title  = 5 
 cfg$reporting$meta$two_col$indices$list_head_right        = 1 
-cfg$reporting$meta$two_col$layout$list_head               = "Two Content Header List"
-cfg$reporting$meta$two_col$master$list_head               = "Office Theme"             
 
 #--------------------------------------------------------------------
 
@@ -270,13 +290,15 @@ else{
   }
 
 
- SIMINT_events = data.frame(
-    var    = SIMINT_var, 
-    time   = SIMINT_time,
-    value  = SIMINT_value,
-    method = SIMINT_method)
+ # Making sure the time of the events is ordered
+ SIMINT_EO = order(SIMINT_time)
 
- #SIMINT_events = SIMINT_events[order(SIMINT_events$time),]
+ SIMINT_events = data.frame(
+    var    = SIMINT_var[SIMINT_EO], 
+    time   = SIMINT_time[SIMINT_EO],
+    value  = SIMINT_value[SIMINT_EO],
+    method = SIMINT_method[SIMINT_EO])
+
 
 
 return(SIMINT_events)
@@ -345,7 +367,7 @@ return(SIMINT_all_ICs);
 
 
 
-run_simulation_titrate  <- function(SIMINT_p, SIMINT_cfg){
+auto_run_simulation_titrate  <- function(SIMINT_p, SIMINT_cfg){
 #
 # This runs titration or rule based simulations 
 #
@@ -866,30 +888,6 @@ system_evaluate_input = function(tvals, lvals, etime, type){
   return(value)
 }
 
-sample_around = function(tvals, ot){
-
-# removing any duplicates
-tvals = unique(tvals)
-# calculating the total simulation time 
-# and using that as a basis for simulations
-tlength = abs(max(ot) - min(ot))
-tsample = c()
-delta   = 1e-8*tlength
-ffollow = 0.10 # percent to follow effects of event
-nfollow = 40   # number of sample times
-vfollow = seq(0, tlength*ffollow, tlength*ffollow/nfollow)
-for(tval in tvals){
-  # This samples just before and just after the sample time
-  tsample = c(tsample, (tval -delta), (tval + delta), (tval + 50*delta), (tval + 100*delta))
-
-  # now adding ffolow percent of the total time to the end
-  tsample = c(tsample, (vfollow + tval + 150*delta))
-}
-
-return(tsample)
-}
-
-
 #-------------------------------------------------------------------------
 
 # Looping through each output to add the error
@@ -936,68 +934,3 @@ SIMINT_simout = eval(parse(text=sprintf('cbind(SIMINT_simout, SIOE_%s=c(PRED+SIM
 
 return(SIMINT_simout)}
 
-#-------------------------------------------------------------------------
-
-make_forcing_function = function(times, values, type, name, output_times){
-#
-# Inputs:
-#
-# times - time values for the forcing function
-#
-# values - magnitude for each time (same length of time)
-#
-# type - type of forcing function can be one of the following:
-#         "step" for constant values that switch to new values at
-#                the times
-#         "linear" to linearly interpolate between the points
-#
-# cfg - System configuration variable generated in the following manner:
-#
-
-
-if("step" == type){
- counter = 1
- while( counter <= length(times)){
-  if(counter == 1){
-    myforce = matrix(ncol=2,byrow=TRUE,data=c(times[counter], values[counter]))
-  } else{
-    if(times[counter] == 0){
-      delta         = 250*.Machine$double.eps
-    } else {
-      delta         = 250*.Machine$double.eps*times[counter]
-    }
-    delta         = 250000*.Machine$double.eps
-
-   ## placing sample points in the constant region
-   #if(counter ==2){
-   # npts = 10
-   # tmp_tstart = myforce[length(myforce[,1]), 1] + 2*delta
-   # tmp_tstop  = times[counter] - 2*delta
-   # stimes  = seq(tmp_tstart, tmp_tstop, (tmp_tstop - tmp_tstart)/npts)
-   # svalues = rep(myforce[length(myforce[,1]), 2], npts)
-   # myforce = rbind(myforce, cbind(stimes, svalues))
-   #}
-    # just before the switching time it takes the previous value
-    myforce = (rbind(myforce, c((times[counter]-delta), values[counter-1])))
-    # just afterwards it takes on the next value
-    myforce = (rbind(myforce, c((times[counter]+delta), values[counter])))
-  }
-  counter = counter +1
- }
-
- # if the last switching time occurs before the end of the simulation
- # then we extend the last rate specified to the end of the simulation
- if(tail(myforce[,1], n=1) < tail(output_times, n=1)){
-   myforce = (rbind(myforce, c((tail(output_times, n=1)), tail(values, n=1) )))
-   }
-}else  if("linear" == type){
-   myforce = cbind(times, values)
- # if the last switching time occurs before the end of the simulation
- # then we extend the last rate specified to the end of the simulation
- if(tail(myforce[,1], n=1) < tail(output_times, n=1)){
-   myforce = (rbind(myforce, c((tail(output_times, n=1)), tail(values, n=1) )))
- }
-}
-
-return(myforce);
-}

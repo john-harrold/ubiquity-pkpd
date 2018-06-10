@@ -3,12 +3,13 @@ rm(list=ls())
 # Uncomment to set the script directory as the working directory
 # setwd(dirname(sys.frame(tail(grep('source',sys.calls()),n=1))$ofile))
 graphics.off()
-library("deSolve")
-library("ggplot2")
-require("gdata")
-library("foreach")
-library("doParallel")
-library("doRNG")
+
+require(deSolve)
+require(ggplot2)
+require(gdata)
+require(foreach)
+require(doParallel)
+require(doRNG)
 
 <user_def>
 
@@ -20,20 +21,20 @@ library("doRNG")
 
 # --------------------------------------------------------------
 # By default the system uses the stand-alone libraries generated
-# by the GUI during export:
+# by the ShinyApp during export:
 source("<libfile>");
-# --------------------------------------------------------------
-# # Uncomment this block to rebuild the system and incorporate
-# # modifications to the system.txt into the simulation results
-# source("library/r_general/ubiquity.r");
-# # Rebuilding the system (R scripts and compiling C code)
-# build_system()
-# # loading the different functions
-# source("transient/auto_rcomponents.r");
-# --------------------------------------------------------------
-
 # Loading the system information
 cfg = system_fetch_cfg()
+# --------------------------------------------------------------
+# # Comment out the block above above then uncomment this block 
+# # to rebuild the system and incorporate modifications to the 
+# # system file into the simulation results
+# if("ubiquity" %in% rownames(installed.packages())){require(ubiquity)} else 
+# {source(file.path('library', 'r_general', 'ubiquity.R')) }
+# # Rebuilding the system (R scripts and compiling C code)
+# cfg = build_system(system_file="<system_file>")
+# --------------------------------------------------------------
+
 cfg = system_select_set(cfg, "<pset>")
 
 <parameters>

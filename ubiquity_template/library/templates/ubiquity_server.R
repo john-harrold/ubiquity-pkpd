@@ -1,15 +1,31 @@
 rm(list=ls())
 
-library("shiny")
-library("rhandsontable")
-library("deSolve")
-library("ggplot2")
-library("foreach")
-library("doParallel")
-library("doRNG")
-source(sprintf("library%sr_general%subiquity.r", .Platform$file.sep, .Platform$file.sep))
-source(sprintf('transient%sauto_rcomponents.r', .Platform$file.sep))
 
+require(shiny)
+require(deSolve)
+require(ggplot2)
+require(gdata)
+require(foreach)
+require(doParallel)
+require(doRNG)
+require(rhandsontable)
+
+#
+# If we're operating out of a "stand alone" directory we load the files from
+# there. Otherwise we try to load the ubiquity package
+#
+
+if("ubiquity" %in% (.packages())){
+  ubiquity_distribution = "package"
+} else if(file.exists(file.path('library', 'r_general', 'ubiquity.R'))){
+  source(file.path('library', 'r_general', 'ubiquity.R'))
+  ubiquity_distribution = "stand alone"
+} else { 
+  library(ubiquity) 
+  ubiquity_distribution = "package"
+}
+
+source(file.path("transient", "auto_rcomponents.R"))
 
 #-----------------------------------------
 str2list = function(cfg, str){
@@ -139,74 +155,320 @@ select_point  = function(input, output, session){
       
      value})
 }
-#-----------------------------------------
-manage_downloads = function(input, output, session){
-  output$ui_link     <- renderUI({
-   input$button_save
+
+
+fetch_save_string = function(input, output, session){
    cfg=gui_fetch_cfg(session)
-   if(is.null(cfg$gui$save_simulation$fname_newzip_r_base)){
-     link_text = ''
-   } else {
-     link_text = downloadLink("link_download", label = cfg$gui$save_simulation$fname_newzip_r_base)}
+   ss = ""
+   # creating simulation save (ss) string
    
-   link_text})
+   # First we start with the save simlation text.
+   # If it's blank then we just use the generic my_simulation
+   # if it's not we strip out any white space
+   if(is.null(cfg$gui$text_save_sim)){
+     ss = 'my_simulation' }
+   else{
+     ss = gsub("[[:space:]]", "_", cfg$gui$text_save_sim) }
+   
+   # next we look for the timestamp
+   if(cfg$gui$check_timestamp){
+     ss = sprintf("%s_%s", ss, format(Sys.time(), format= "%Y_%m_%d_%H_%M_%S")) }
 
-   output$link_download <- downloadHandler(
-    filename = function() {
-      cfg=gui_fetch_cfg(session)
-      cfg$gui$save_simulation$fname_newzip_r_base
-    },
-    content = function(tmpfile) {
-      cfg=gui_fetch_cfg(session)
-      
-      # reading in the content of the zip file
-      zip_contents = c(cfg$gui$save_simulation$fname_newlib_r_full,
-                       cfg$gui$save_simulation$fname_newcsv_r_full,
-                       cfg$gui$save_simulation$fname_newrun_r_full)
+  return(ss)}
+#-----------------------------------------
+#
+# zipping up the important bits and pushing it to the user
+#
+download_simulation = function(input, output, session){
+    output$button_download <- downloadHandler(
+      filename = function() {
+        #
+        # The file name of the zip file to download
+        #
+        cfg=gui_fetch_cfg(session)
+           
+        # pulling out the save string
+        ss         = fetch_save_string(input, output, session)
+        zip_fname  = sprintf('%s.zip', ss)
 
-      if(cfg$gui$save$user_log){
-         zip_contents = c(zip_contents,
-                          cfg$options$logging$file)
-      }
+        # returning the zip file name
+        zip_fname },
+      content = function(fname) {
+        #
+        # The contents of the zip file
+        #
+        cfg      = gui_fetch_cfg(session)
+        user_dir = find_user_dir(session)
+        save_dir = fetch_save_dir(session)
+        # loading the data 
+        som=gui_fetch_som(session)
 
-      if(cfg$gui$save$system_txt){
-         zip_contents = c(zip_contents,
-                          sprintf('%s%s%s', cfg$gui$wd, .Platform$file.sep, 'system.txt'))
-      }
+        # pulling out the save string
+        ss         = fetch_save_string(input, output, session)
 
-      # if the report file isn't null then it exists and we add it
-      # to the zip file
-      if(!is.null(cfg$gui$save_simulation$fname_report_r_full_R1)){
-       zip_contents = c(zip_contents, cfg$gui$save_simulation$fname_report_r_full_R1) }
-      if(!is.null(cfg$gui$save_simulation$fname_report_r_full_R2)){
-       zip_contents = c(zip_contents, cfg$gui$save_simulation$fname_report_r_full_R2) }
-      if(!is.null(cfg$gui$save_simulation$fname_report_r_full_R3)){
-       zip_contents = c(zip_contents, cfg$gui$save_simulation$fname_report_r_full_R3) }
-      if(!is.null(cfg$gui$save_simulation$fname_report_r_full_R4)){
-       zip_contents = c(zip_contents, cfg$gui$save_simulation$fname_report_r_full_R4) }
-      if(!is.null(cfg$gui$save_simulation$fname_report_r_full_R5)){
-       zip_contents = c(zip_contents, cfg$gui$save_simulation$fname_report_r_full_R5) }
+        #
+        # Generate the file names to store the files that will be created
+        #
+        # general r libraries
+        if(cfg$options$misc$distribution == "stand alone"){
+          fname_ub_r     = file.path(cfg$gui$wd, "library", "r_general", "ubiquity.R")
+        } else {
+          fname_ub_r     = system.file("scripts", "ubiquity_fcns.R", package="ubiquity")
+        }
 
-      # same for the figures, if they're not null we add them
-      if(!is.null(cfg$gui$save_simulation$fname_timecourse_full)){
-       zip_contents = c(zip_contents, cfg$gui$save_simulation$fname_timecourse_full) 
-      }
+        # system specific functions
+        fname_arc_r      = file.path(cfg$gui$wd, "transient", "auto_rcomponents.R")
+        # export template
+        fname_save_r     = file.path(cfg$options$misc$templates, "r_gui_save.R")
+        
 
-      if(!is.null(cfg$gui$save_simulation$fname_paramdist_full)){
-       zip_contents = c(zip_contents, cfg$gui$save_simulation$fname_paramdist_full) 
-      }
+        # Library file
+        fname_newlib_r_full = sprintf('%s%sanalysis_%s_lib.r',                save_dir, .Platform$file.sep, ss)
+        fname_newlib_r_base = sprintf('analysis_%s_lib.r', ss)
+        
+        # Script file
+        fname_newrun_r_full = sprintf('%s%sanalysis_%s.r',                    save_dir, .Platform$file.sep, ss)
+        fname_newrun_r_base = sprintf('analysis_%s.r', ss)
+        
+        # CSV file
+        fname_newcsv_r_full = sprintf('%s%sanalysis_%s.csv',                  save_dir, .Platform$file.sep, ss)
+        fname_newcsv_r_base = sprintf('analysis_%s.csv', ss)
 
-      # Adding user defined files
-      if(!is.null(cfg$gui$functions$user_def)){
-        zip_contents = c(zip_contents, cfg$gui$functions$user_def)}
+        # Beginning of html report file names
+        fname_report_r_full = sprintf('%s%sanalysis_%s_report',               save_dir, .Platform$file.sep, ss)
+        fname_report_r_base = sprintf('analysis_%s_report', ss)
 
-      zip(tmpfile, zip_contents, flags = "-j",  zip = Sys.getenv("R_ZIPCMD", "zip"))
-    },
-    contentType = "application/zip")
+        # Figure files
+        fname_timecourse_full = sprintf('%s%sanalysis_%s_timecourse.png',     save_dir, .Platform$file.sep, ss)
+        fname_timecourse_base = sprintf('analysis_%s_timecourse.png',                                       ss)
+        fname_paramdist_full = sprintf('%s%sanalysis_%s_paramdist.png',       save_dir, .Platform$file.sep, ss)
+        fname_paramdist_base = sprintf('analysis_%s_paramdist.png',                                         ss)
 
 
+        # JMH Dont need these?
+        # fname_newzip_r_full = sprintf('%s%sanalysis_%s.zip',                  save_dir, .Platform$file.sep, ss)
+        # fname_newzip_r_base = sprintf('analysis_%s.zip', ss)
+
+
+        # making the csv save command based on the type of simulation
+        if(cfg$gui$check_variability){
+          save_csv = sprintf('write.csv(file = "%s", x=som$tcsummary)', fname_newcsv_r_full )}
+        else{
+          save_csv = sprintf('write.csv(file = "%s", x=som$simout)', fname_newcsv_r_full) }
+        
+
+
+        # contents of save files
+        lines_lib = c()
+        lines_run = c()
+
+        # reading in the data from library and run template files
+        # lib files
+        cfn = file(fname_ub_r, open="r")
+        lines_lib = c(lines_lib, readLines(cfn))
+        close(cfn)
+        
+        cfn = file(fname_arc_r, open="r")
+        lines_lib = c(lines_lib, readLines(cfn))
+        close(cfn)
+        
+        # run file
+        cfn = file(fname_save_r, open="r")
+        lines_run = c(lines_run, readLines(cfn))
+        close(cfn)
+
+        # loading user defined functions
+        if(!is.null(cfg$gui$functions$user_def)){
+          cfg$gui$sysel_simulate$user_def = sprintf('source("%s")',cfg$gui$functions$user_def)
+        } else{
+          cfg$gui$sysel_simulate$user_def = ''
+        }
+        # updating certain system elements
+        cfg$gui$sysel_simulate$libfile     = fname_newlib_r_base
+        cfg$gui$sysel_simulate$system_file = cfg$options$misc$system_file
+
+        # constructing the header labels
+        if(cfg$gui$sysel_simulate$iiv == ""){
+          cfg$gui$sysel_simulate$iheader = "" }
+        else{
+          cfg$gui$sysel_simulate$iheader = "#\n# Specifying the IIV elements\n#\n" }
+
+        if(cfg$gui$sysel_simulate$bolus == ""){
+          cfg$gui$sysel_simulate$bheader = "" }
+        else{
+          cfg$gui$sysel_simulate$bheader = "#\n# Specifying the bolus injections \n#\n" }
+
+        if(cfg$gui$sysel_simulate$infusion_rates == ""){
+          cfg$gui$sysel_simulate$rheader = "" }
+        else{
+          cfg$gui$sysel_simulate$rheader = "#\n# Specifying the infusion rates \n#\n" }
+
+        if(cfg$gui$sysel_simulate$covariates     == ""){
+          cfg$gui$sysel_simulate$cheader = "" }
+        else{
+          cfg$gui$sysel_simulate$cheader = "#\n# Specifying the covariates     \n#\n" }
+
+
+
+        # Substituting in the simulation script
+        # First each simulation element
+        for(sysel in names(cfg$gui$sysel_simulate)){
+           token_str = sprintf("<%s>", sysel)
+           lines_run = gsub(token_str, cfg$gui$sysel_simulate[[sysel]], lines_run)
+        }
+    
+        # defaulting the save variables to false
+        # will be updated to true of the save commands
+        # are successful
+        save_timecourse = FALSE
+        save_paramdist  = FALSE
+
+        # Generating the timecourse figure as a png file
+        # saving the figure to a file
+         tryCatch(
+          { 
+           PTC = generate_timecourse(input, output, session)
+           ggsave(fname_timecourse_full, PTC)
+           save_timecourse = TRUE
+          },
+           warning = function(w) {
+           # place warning stuff here
+          },
+           error = function(e) {
+             user_log_entry(cfg, sprintf('unable to save timecourse figure (%s)', fname_timecourse_base))
+          })
+
+        # Generating the parameter distribution figure as a png file
+        # saving the figure to a file
+         if(cfg$gui$check_variability){
+           tryCatch(
+            { 
+             PPD = generate_paramdist(input, output, session)
+             ggsave(fname_paramdist_full, PPD)
+             save_paramdist = TRUE
+            },
+             warning = function(w) {
+             # place warning stuff here
+            },
+             error = function(e) {
+               user_log_entry(cfg, sprintf('unable to save parameter distribution figure (%s)', fname_paramdist_base))
+            })
+         }
+
+         sysel_plot_timecourse = "";
+         sysel_plot_paramdist  = "";
+
+         # loading the generated plotting code
+         if(file.exists(sprintf("%s%sgui_plot_timecourse.RData", user_dir, .Platform$file.sep))){
+           load(sprintf("%s%sgui_plot_timecourse.RData", user_dir, .Platform$file.sep))}
+         else{
+           GUI_log_entry(cfg, 'Unable to find file: gui_plot_timecourse.RData') }
+
+         if(cfg$gui$check_variability){
+           if(file.exists(sprintf("%s%sgui_plot_paramdist.RData", user_dir, .Platform$file.sep))){
+             load(sprintf("%s%sgui_plot_paramdist.RData", user_dir, .Platform$file.sep))}
+           else{
+             GUI_log_entry(cfg, 'Unable to find file: gui_plot_paramdist.RData') }
+         }
+         
+
+         # making the csv save command based on the type of simulation
+         if(cfg$gui$check_variability){
+           save_csv      = sprintf('write.csv(file = "%s", x=som$tcsummary)', fname_newcsv_r_base )
+           save_csv_full = sprintf('write.csv(file = "%s", x=som$tcsummary)', fname_newcsv_r_full )}
+         else{
+           save_csv      = sprintf('write.csv(file = "%s", x=som$simout)', fname_newcsv_r_base) 
+           save_csv_full = sprintf('write.csv(file = "%s", x=som$simout)', fname_newcsv_r_full) }
+
+
+         # getting the plotting commands
+         lines_run = gsub("<plot_timecourse>", sysel_plot_timecourse, lines_run)
+         lines_run = gsub("<plot_paramdist>",  sysel_plot_paramdist , lines_run)
+         # getting the data save command
+         lines_run = gsub("<save_csv>",        save_csv,           lines_run)
+         
+         # writing the contents of lib, run and csv files
+         write(lines_run, file=fname_newrun_r_full, append=FALSE)
+         write(lines_lib, file=fname_newlib_r_full, append=FALSE)
+         eval(parse(text=save_csv_full)) 
+
+
+         # generating the reports
+
+         # By default we dont have any reports 
+         fname_report_r_full_R1 = NULL
+         fname_report_r_full_R2 = NULL
+         fname_report_r_full_R3 = NULL
+         fname_report_r_full_R4 = NULL
+         fname_report_r_full_R5 = NULL
+         # JMH delete
+         # save_simulation = list()
+         if(!is.null(cfg$gui$modelreport_files)){
+            # For each specified report we create a tab
+            for(report_name in names(cfg$gui$modelreport_files)){
+             mg      = generate_model_report(cfg, session, report_name)
+             if(mg$success){
+               # copying the report for to be included in export
+               file.copy(mg$htmlfile, sprintf('%s_%s.html', fname_report_r_full, report_name))
+               eval(parse(text=sprintf('fname_report_r_full_%s = "%s_%s.html"', report_name, fname_report_r_full, report_name)))
+               eval(parse(text=sprintf('fname_report_r_base_%s = "%s_%s.html"', report_name, fname_report_r_base, report_name)))
+             }
+           }
+         }
+        
+        # 
+        # Now we build up the contents of the zip file
+        # 
+
+
+        # reading in the content of the zip file
+        zip_contents = c(fname_newlib_r_full,
+                         fname_newcsv_r_full,
+                         fname_newrun_r_full)
+
+        
+        if(cfg$gui$save$user_log){
+           zip_contents = c(zip_contents, cfg$options$logging$file)
+        }
+
+        if(cfg$gui$save$system_txt){
+           zip_contents = c(zip_contents, file.path(cfg$gui$wd , cfg$options$misc$system_file))
+        }
+
+        # if the report file isn't null then it exists and we add it
+        # to the zip file
+        if(!is.null(fname_report_r_full_R1)){
+         zip_contents = c(zip_contents, fname_report_r_full_R1) }
+        if(!is.null(fname_report_r_full_R2)){
+         zip_contents = c(zip_contents, fname_report_r_full_R2) }
+        if(!is.null(fname_report_r_full_R3)){
+         zip_contents = c(zip_contents, fname_report_r_full_R3) }
+        if(!is.null(fname_report_r_full_R4)){
+         zip_contents = c(zip_contents, fname_report_r_full_R4) }
+        if(!is.null(fname_report_r_full_R5)){
+         zip_contents = c(zip_contents, fname_report_r_full_R5) }
+
+        # same for the figures, if they're not null we add them
+        if(!is.null(save_timecourse)){
+         zip_contents = c(zip_contents, fname_timecourse_full) 
+        }
+
+        if(!is.null(cfg$gui$save_paramdist)){
+         zip_contents = c(zip_contents, fname_paramdist_full) 
+        }
+
+        # Adding user defined files
+        if(!is.null(cfg$gui$functions$user_def)){
+          zip_contents = c(zip_contents, cfg$gui$functions$user_def)}
+
+        user_log_entry(cfg, "Simulation saved")
+        # writing zip file
+
+        zip(fname, zip_contents, flags = "-j",  zip = Sys.getenv("R_ZIPCMD", "zip"))
+      },
+      contentType = "application/zip"
+    )
 }
-
 
 #-----------------------------------------
 fetch_save_dir = function(session){
@@ -221,307 +483,6 @@ fetch_save_dir = function(session){
      save_dir = cfg$gui$wd 
    }
 }
-
-
-#-----------------------------------------
-save_simulation = function(input, output, session){
-   # loading the state
-   cfg=gui_fetch_cfg(session)
-   user_dir = find_user_dir(session)
-   save_dir = fetch_save_dir(session)
-
-   if(cfg$gui$sim_status == "Fresh"){
-
-     # loading the data 
-     som=gui_fetch_som(session)
-     
-     ss = ""
-     # creating simulation save (ss) string
-     
-     # First we start with the save simlation text.
-     # If it's blank then we just use the generic my_simulation
-     # if it's not we strip out any white space
-     if(is.null(cfg$gui$text_save_sim)){
-       ss = 'my_simulation' }
-     else{
-       ss = gsub("[[:space:]]", "_", cfg$gui$text_save_sim) }
-     
-     # next we look for the timestamp
-     if(cfg$gui$check_timestamp){
-       ss = sprintf("%s_%s", ss, format(Sys.time(), format= "%Y_%m_%d_%H_%M_%S")) }
-     
-     
-     # contents of save files
-     lines_lib = c();
-     lines_run = c();
-
-     # getting the relevant file names into strings
-     fname_ub_r          = sprintf('%s%slibrary%sr_general%subiquity.r',   cfg$gui$wd, .Platform$file.sep, .Platform$file.sep, .Platform$file.sep)
-     fname_arc_r         = sprintf('%s%stransient%sauto_rcomponents.r',    cfg$gui$wd, .Platform$file.sep, .Platform$file.sep)
-     fname_save_r        = sprintf('%s%slibrary%stemplates%sr_gui_save.r', cfg$gui$wd, .Platform$file.sep, .Platform$file.sep, .Platform$file.sep)
-     
-     fname_newlib_r_full = sprintf('%s%sanalysis_%s_lib.r',                save_dir, .Platform$file.sep, ss)
-     fname_newlib_r_base = sprintf('analysis_%s_lib.r', ss)
-     
-     fname_newrun_r_full = sprintf('%s%sanalysis_%s.r',                    save_dir, .Platform$file.sep, ss)
-     fname_newrun_r_base = sprintf('analysis_%s.r', ss)
-     
-     fname_newcsv_r_full = sprintf('%s%sanalysis_%s.csv',                  save_dir, .Platform$file.sep, ss)
-     fname_newcsv_r_base = sprintf('analysis_%s.csv', ss)
-
-     fname_report_r_full = sprintf('%s%sanalysis_%s_report',          save_dir, .Platform$file.sep, ss)
-     fname_report_r_base = sprintf('analysis_%s_report', ss)
-
-     fname_newzip_r_full = sprintf('%s%sanalysis_%s.zip',                  save_dir, .Platform$file.sep, ss)
-     fname_newzip_r_base = sprintf('analysis_%s.zip', ss)
-
-     fname_timecourse_full = sprintf('%s%sanalysis_%s_timecourse.png',            save_dir, .Platform$file.sep, ss)
-     fname_timecourse_base = sprintf('analysis_%s_timecourse.png',                                              ss)
-
-     fname_paramdist_full = sprintf('%s%sanalysis_%s_paramdist.png',            save_dir, .Platform$file.sep, ss)
-     fname_paramdist_base = sprintf('analysis_%s_paramdist.png',                                              ss)
-
-
-     
-     # making the csv save command based on the type of simulation
-     if(cfg$gui$check_variability){
-       save_csv = sprintf('write.csv(file = "%s", x=som$tcsummary)', fname_newcsv_r_full )}
-     else{
-       save_csv = sprintf('write.csv(file = "%s", x=som$simout)', fname_newcsv_r_full) }
-     
-     
-     # reading in the data from library and run template files
-     # lib files
-     cfn = file(fname_ub_r, open="r")
-     lines_lib = c(lines_lib, readLines(cfn))
-     close(cfn)
-     
-     cfn = file(fname_arc_r, open="r")
-     lines_lib = c(lines_lib, readLines(cfn))
-     close(cfn)
-     
-     # run file
-     cfn = file(fname_save_r, open="r")
-     lines_run = c(lines_run, readLines(cfn))
-     close(cfn)
-     
-     # loading user defined functions
-     if(!is.null(cfg$gui$functions$user_def)){
-       cfg$gui$sysel_simulate$user_def = sprintf('source("%s")',cfg$gui$functions$user_def)
-     } else{
-       cfg$gui$sysel_simulate$user_def = ''
-     }
-
-     # updating certain system elements
-     cfg$gui$sysel_simulate$libfile = fname_newlib_r_base
-
-     # constructing the header labels
-     if(cfg$gui$sysel_simulate$iiv == ""){
-       cfg$gui$sysel_simulate$iheader = "" }
-     else{
-       cfg$gui$sysel_simulate$iheader = "#\n# Specifying the IIV elements\n#\n" }
-
-     if(cfg$gui$sysel_simulate$bolus == ""){
-       cfg$gui$sysel_simulate$bheader = "" }
-     else{
-       cfg$gui$sysel_simulate$bheader = "#\n# Specifying the bolus injections \n#\n" }
-
-     if(cfg$gui$sysel_simulate$infusion_rates == ""){
-       cfg$gui$sysel_simulate$rheader = "" }
-     else{
-       cfg$gui$sysel_simulate$rheader = "#\n# Specifying the infusion rates \n#\n" }
-
-     if(cfg$gui$sysel_simulate$covariates     == ""){
-       cfg$gui$sysel_simulate$cheader = "" }
-     else{
-       cfg$gui$sysel_simulate$cheader = "#\n# Specifying the covariates     \n#\n" }
-
-     
-     # Substituting in the simulation script
-     # First each simulation element
-     for(sysel in names(cfg$gui$sysel_simulate)){
-        token_str = sprintf("<%s>", sysel)
-        lines_run = gsub(token_str, cfg$gui$sysel_simulate[[sysel]], lines_run)
-     }
-    
-     # defaulting the save variables to false
-     # will be updated to true of the save commands
-     # are successful
-     save_timecourse = FALSE
-     save_paramdist  = FALSE
-
-     # Generating the timecourse figure as a png file
-     # saving the figure to a file
-      tryCatch(
-       { 
-        PTC = generate_timecourse(input, output, session)
-        ggsave(fname_timecourse_full, PTC)
-        save_timecourse = TRUE
-       },
-        warning = function(w) {
-        # place warning stuff here
-       },
-        error = function(e) {
-          user_log_entry(cfg, sprintf('unable to save timecourse figure (%s)', fname_timecourse_base))
-       })
-
-     # Generating the parameter distribution figure as a png file
-     # saving the figure to a file
-      if(cfg$gui$check_variability){
-        tryCatch(
-         { 
-          PPD = generate_paramdist(input, output, session)
-          ggsave(fname_paramdist_full, PPD)
-          save_paramdist = TRUE
-         },
-          warning = function(w) {
-          # place warning stuff here
-         },
-          error = function(e) {
-            user_log_entry(cfg, sprintf('unable to save parameter distribution figure (%s)', fname_paramdist_base))
-         })
-      }
-
-     
-
-     sysel_plot_timecourse = "";
-     sysel_plot_paramdist  = "";
-
-     # loading the generated plotting code
-     if(file.exists(sprintf("%s%sgui_plot_timecourse.RData", user_dir, .Platform$file.sep))){
-       load(sprintf("%s%sgui_plot_timecourse.RData", user_dir, .Platform$file.sep))}
-     else{
-       GUI_log_entry(cfg, 'Unable to find file: gui_plot_timecourse.RData') }
-
-     if(cfg$gui$check_variability){
-       if(file.exists(sprintf("%s%sgui_plot_paramdist.RData", user_dir, .Platform$file.sep))){
-         load(sprintf("%s%sgui_plot_paramdist.RData", user_dir, .Platform$file.sep))}
-       else{
-         GUI_log_entry(cfg, 'Unable to find file: gui_plot_paramdist.RData') }
-     }
-     
-
-     # making the csv save command based on the type of simulation
-     if(cfg$gui$check_variability){
-       save_csv      = sprintf('write.csv(file = "%s", x=som$tcsummary)', fname_newcsv_r_base )
-       save_csv_full = sprintf('write.csv(file = "%s", x=som$tcsummary)', fname_newcsv_r_full )}
-     else{
-       save_csv      = sprintf('write.csv(file = "%s", x=som$simout)', fname_newcsv_r_base) 
-       save_csv_full = sprintf('write.csv(file = "%s", x=som$simout)', fname_newcsv_r_full) }
-
-
-     # getting the plotting commands
-     lines_run = gsub("<plot_timecourse>", sysel_plot_timecourse, lines_run)
-     lines_run = gsub("<plot_paramdist>",  sysel_plot_paramdist , lines_run)
-     # getting the data save command
-     lines_run = gsub("<save_csv>",        save_csv,           lines_run)
-     
-     # writing the contents of lib, run and csv files
-     write(lines_run, file=fname_newrun_r_full, append=FALSE)
-     write(lines_lib, file=fname_newlib_r_full, append=FALSE)
-     eval(parse(text=save_csv_full)) 
-
-
-     # generating the report
-     save_simulation = list()
-     if(!is.null(cfg$gui$modelreport_files)){
-        # For each specified report we create a tab
-        for(report_name in names(cfg$gui$modelreport_files)){
-         mg      = generate_model_report(cfg, session, report_name)
-         if(mg$success){
-           # copying the report for to be included in export
-           file.copy(mg$htmlfile, sprintf('%s_%s.html', fname_report_r_full, report_name))
-           save_simulation[[sprintf('fname_report_r_full_%s', report_name)]]  =  sprintf('%s_%s.html',fname_report_r_full, report_name)
-           save_simulation[[sprintf('fname_report_r_base_%s', report_name)]]  =  sprintf('%s_%s.html',fname_report_r_base, report_name)
-         }
-       }
-     }
-
-     # writing zip file
-     user_log_entry(cfg, "Simulation saved")
-
-     # if we are deployed we zip everything up and write a message to the user
-     if(cfg$gui$deployed){
-       user_log_entry(cfg, sprintf(" zip archive:  %s", fname_newzip_r_base))
-     } else{
-       # otherwise we we just write the individual files
-         user_log_entry(cfg, sprintf(" data file:            %s", fname_newcsv_r_base))
-         user_log_entry(cfg, sprintf(" script file:          %s", fname_newrun_r_base))
-         user_log_entry(cfg, sprintf(" library file:         %s", fname_newlib_r_base))
-     # if(mg$success){                                       
-     #   user_log_entry(cfg, sprintf(" report file:          %s", fname_report_r_base)) }
-       if(save_timecourse){                                  
-         user_log_entry(cfg, sprintf(" time-course (png):    %s", fname_timecourse_base)) }
-       if(save_paramdist){
-         user_log_entry(cfg, sprintf(" parameter dist (png): %s", fname_paramdist_base)) }
-
-       if(cfg$gui$save$user_log){
-           user_log_entry(cfg,       " user log:             user_log.txt") }
-
-       if(cfg$gui$save$system_txt){
-           user_log_entry(cfg,       " system file:          system.txt")   }
-     }
-
-     # the save_simulation list contains paths and filenames to the files
-     # saved with the simulation
-
-     save_simulation$fname_newlib_r_full  =  fname_newlib_r_full   
-     save_simulation$fname_newlib_r_base  =  fname_newlib_r_base  
-                                                                  
-     save_simulation$fname_newrun_r_full  =  fname_newrun_r_full  
-     save_simulation$fname_newrun_r_base  =  fname_newrun_r_base  
-                                                                  
-     save_simulation$fname_newcsv_r_full  =  fname_newcsv_r_full  
-     save_simulation$fname_newcsv_r_base  =  fname_newcsv_r_base  
-                                                                  
-     save_simulation$fname_newzip_r_full  =  fname_newzip_r_full  
-     save_simulation$fname_newzip_r_base  =  fname_newzip_r_base  
-
-#    if(mg$success){
-#      save_simulation$fname_report_r_full  =  fname_report_r_full  
-#      save_simulation$fname_report_r_base  =  fname_report_r_base  
-#      }
-#    else{
-#      save_simulation$fname_report_r_full  =  NULL
-#      save_simulation$fname_report_r_base  =  NULL
-#      }
-
-     if(save_timecourse){
-       save_simulation$fname_timecourse_full  =  fname_timecourse_full  
-       save_simulation$fname_timecourse_base  =  fname_timecourse_base  
-       }
-     else{
-       save_simulation$fname_timecourse_full  =  NULL
-       save_simulation$fname_timecourse_base  =  NULL
-       }
-
-     if(save_paramdist){
-       save_simulation$fname_paramdist_full  =  fname_paramdist_full  
-       save_simulation$fname_paramdist_base  =  fname_paramdist_base  
-       }
-     else{
-       save_simulation$fname_paramdist_full  =  NULL
-       save_simulation$fname_paramdist_base  =  NULL
-       }
-
-
-     cfg$gui$save_simulation = save_simulation
-
-
-     # saving the simulation file names   
-     gui_save_cfg(cfg, session)
-     
-   }
-   else{
-     user_log_entry(cfg, sprintf("Unable to save simulation, the current status is %s.", cfg$gui$sim_status))
-     user_log_entry(cfg, sprintf("Click on update plot to Freshen the simulation"))
-     user_log_entry(cfg, sprintf("and make the results current."))
-   }
-
-
-}
-#-----------------------------------------
-
 
 #-----------------------------------------
 gui_save_cfg = function(cfg, session){
@@ -2054,10 +2015,7 @@ initialize_session <- function(session) {
   # cfg variable into it
   dir.create(user_dir)
 
-  # copying the default gui state into the users directory
-  
-  file.copy(sprintf("%s%stransient%srgui%sgui_state.RData", getwd(), .Platform$file.sep , .Platform$file.sep, .Platform$file.sep),
-            sprintf('%s%sgui_state.RData', user_dir, .Platform$file.sep))
+  file.copy(file.path(getwd(), "transient", "rgui", "gui_state.RData"), file.path(user_dir, "gui_state.RData"))
 
   # loading the cfg variable
   cfg=gui_fetch_cfg(session)
@@ -2066,7 +2024,8 @@ initialize_session <- function(session) {
   cfg = system_set_option(cfg, 
                         group="logging", 
                         option="file",
-                        sprintf('%s%subiquity_log.txt', user_dir, .Platform$file.sep))
+                        file.path(user_dir, "ubiquity_log.txt"))
+                        # JMH del sprintf('%s%subiquity_log.txt', user_dir, .Platform$file.sep))
   cfg = system_log_init(cfg)
   GUI_log_entry(cfg, "server.R startup")
   
@@ -2078,9 +2037,9 @@ initialize_session <- function(session) {
   # Default to integrating with r scripts
   cfg$options$simulation_options$integrate_with  = "r-file"
   # If the dynamic library exists we try to load it
-  if(file.exists(paste("r_ode_model", .Platform$dynlib.ext, sep = ""))){
+  if(file.exists(file.path("transient", paste("r_ode_model", .Platform$dynlib.ext, sep = "")))){
     GUI_log_entry(cfg, "Found dynamic library attempting to load")
-    dyn.load(paste("r_ode_model", .Platform$dynlib.ext, sep = "")) }
+    dyn.load(file.path("transient", paste("r_ode_model", .Platform$dynlib.ext, sep = ""))) }
 
   # If the library has been loaded we switch to C
   if(is.null(getLoadedDLLs()$r_ode_model) == FALSE){
@@ -2435,7 +2394,7 @@ server <- function(input, output, session) {
 
   # initializing the plot
   if(cfg$gui$sim_status == "Initialization"){
-    user_log_entry(cfg, "Initial simulation based on default information")
+    user_log_entry(cfg, sprintf("Initial simulation based on default information (%s)", ubiquity_distribution))
     update_simulation(input,output, session)
     update_all_figures(input, output, session)
   }
@@ -2468,13 +2427,9 @@ server <- function(input, output, session) {
   observeEvent(input$tabset_figures,{
     update_all_figures(input, output, session) })
 
-  # Exporting the current simulation
-  observeEvent(input$button_save,{
-    save_simulation(input, output, session) })
 
-  # Creating the download link
-  manage_downloads(input, output, session)
-
+  # Downloading the current simulation
+  download_simulation(input, output, session)
 
   
 

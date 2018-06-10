@@ -100,7 +100,7 @@
 #
 #   Covariate Parameters JMH
 #
-#   Sample Covariates 
+#   Simple Covariates 
 #   For simulation purposes covariates (normally found in a data set) need to
 #   be defined. Covariates can be be either constant or change with time. The
 #   times must be the same scale as the system. The following defines the
@@ -118,7 +118,7 @@
 #   
 #   Next we can alter how the simulations will interpret these values. By
 #   setting the type of covariate. By default the weight will be linearly
-#   interpolated (type = 'linear'), however we can hold the weight constant
+#   interpolated (type = linear), however we can hold the weight constant
 #   until the next measurement is encountered by declaring the type as 'step'
 #   
 #   <CVTYPE:WGT> step

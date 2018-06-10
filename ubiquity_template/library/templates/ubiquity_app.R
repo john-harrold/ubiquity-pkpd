@@ -1,15 +1,14 @@
 #clearing the workspace
 rm(list=ls())
-library("shiny")
-library("rhandsontable")
-library("deSolve")
-library("ggplot2")
-library("foreach")
-library("doParallel")
-library("doRNG")
 
 # Set to TRUE if you wish to deploy the gui on a shiny server
 deploying = FALSE
+
+library("shiny")
+
+if("ubiquity" %in% rownames(installed.packages())){require(ubiquity)} else 
+{source(file.path('library', 'r_general', 'ubiquity.R')) }
+
 
 if(deploying){
   mywd = getwd()
@@ -18,23 +17,19 @@ if(deploying){
   setwd(mywd) }
 
 
-# loading the general functions
-source(sprintf("library%sr_general%subiquity.r", .Platform$file.sep, .Platform$file.sep))
 
 # Rebuilding the system (R scripts and compiling C code)
-build_system()
-source(sprintf('transient%sauto_rcomponents.r', .Platform$file.sep))
-cfg              = system_fetch_cfg()
+cfg = build_system()
 
 
 # Start Default:
-# The GUI Default values are set here, feel free to modify them 
+# The App Default values are set here, feel free to modify them 
 # 
 
 # Alter the parameter set at startup here:
 cfg              = system_select_set(cfg, 'default')
 
-# If you want to use the system paramters in the GUI defaults
+# If you want to use the system paramters in the App defaults
 # below uncomment the following line
 # parameters = system_fetch_parameters(cfg) 
 
@@ -236,7 +231,7 @@ cfg$gui$table_parameters_touched = TRUE
 cfg$gui$table_iiv_touched        = TRUE
 cfg$gui$table_covariates_touched = TRUE
 
-# The GUI is setup to run out of transient/rgui
+# The App is setup to run out of transient/rgui
 # So the following copies files into that directory 
 #
 # initializing the working directory
@@ -248,21 +243,11 @@ cfg$gui$wd                   = mywd
 cfg$gui$deployed = deploying
 
 # Clearing out the old working directory
-if(dir.exists( sprintf('%s%stransient%srgui', mywd, .Platform$file.sep, .Platform$file.sep))){
-  unlink(sprintf('%s%stransient%srgui', mywd, .Platform$file.sep, .Platform$file.sep), recursive=TRUE) }
+if(dir.exists(file.path(cfg$options$misc$temp_directory, 'rgui'))){
+  unlink(file.path(cfg$options$misc$temp_directory, 'rgui'), recursive=TRUE) }
 
 # Temporary files will be stored in transient/rgui
-dir.create(sprintf('%s%stransient%srgui', mywd, .Platform$file.sep, .Platform$file.sep), recursive=TRUE, showWarnings=FALSE)
-
-
-# removing old ui and server files
-file.remove(sprintf('%s%sui.R',     mywd, .Platform$file.sep))
-file.remove(sprintf('%s%sserver.R', mywd, .Platform$file.sep))
-# Copying the ui and server files to the current directory
-file.copy(sprintf('%s%slibrary%sr_general%sui.R',    mywd, .Platform$file.sep, .Platform$file.sep , .Platform$file.sep ),
-          sprintf('%s%s', mywd, .Platform$file.sep))
-file.copy(sprintf('%s%slibrary%sr_general%sserver.R',mywd, .Platform$file.sep, .Platform$file.sep , .Platform$file.sep ),
-          sprintf('%s%s', mywd, .Platform$file.sep))
+dir.create(file.path(cfg$options$misc$temp_directory, 'rgui'), recursive=TRUE, showWarnings=FALSE) 
 
 
 #
@@ -300,20 +285,8 @@ if( file.exists(sprintf('%s%ssystem.png', mywd, .Platform$file.sep))){
   cfg$gui$modeldiagram_file  = sprintf('%s%ssystem.png', mywd, .Platform$file.sep)
 }
 
-# if the user specified a model report file we make 
-# sure it exists 
-# if(!is.null(cfg$gui$modelreport_file)){
-#   if(!(file.exists(cfg$gui$modelreport_file))){
-#     vp(cfg, "To enable the Model Report tab copy the template:")
-#     vp(cfg, "Into the main directory and modfiy as needed")
-#     vp(cfg, sprintf("file.copy(from='library%stemplates%sr_system_report.Rmd', to='system_report.Rmd')", .Platform$file.sep, .Platform$file.sep))
-#     vp(cfg, cfg$gui$modelreport_file)
-#     cfg$gui$modelreport_file = NULL
-#   }
-# }
-
 # Lastly we identify to the underlying functions 
-# that we're running things through the GUI
+# that we're running things through the App
 cfg$options$misc$operating_environment = 'gui'
 
 # If no timescale has been set by the user
@@ -327,7 +300,8 @@ if(is.null(cfg$options$misc$TS)){
   }
 }
 
+  
 # Saving the system inforamtion/state to a file
-save(cfg, file=sprintf('%s%stransient%srgui%sgui_state.RData', mywd, .Platform$file.sep , .Platform$file.sep , .Platform$file.sep ))
+save(cfg, file=file.path(cfg$options$misc$temp_directory, 'rgui', 'gui_state.RData'))
 if(!deploying){
   runApp(mywd)} 

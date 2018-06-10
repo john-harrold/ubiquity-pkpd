@@ -10,17 +10,18 @@ required_packages= c("deSolve",
                      "foreach",
                      "shiny",
                      "gdata",
+                     "knitr"
                      "rmarkdown",     
                      "rhandsontable",
                      "rstudioapi",
                      "optimx",
+                     "officer",
+                     "flextable",
                      "doParallel",
                      "doRNG")
 
 
 reccomended_packages = c( "GGally",
-                          "officer",
-                          "flextable",
                           "gridExtra",
                           "gridGraphics")
 

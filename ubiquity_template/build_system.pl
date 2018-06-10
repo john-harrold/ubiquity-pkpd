@@ -9,35 +9,6 @@
 # NONMEM Target:
 #  I used the fortran functions and conditional format, this may be wrong, but
 #  the examples I have look fortranny 
-#  
-#  Todo: 
-#    -- Check Conditional statments
-#    -- Confirm that in the ERROR block things defined in PK will be available
-#    -- Check for namespace conflicts (reserved words)
-#    -- system check (WB and BC IIV check to make sure the specified parameters exist)
-#    -- define equation for BC transform
-#    -- Need to relate this to how outputs and variance models are used in adapt
-#    -- NONMEM options: Data omit lines
-#                       Tables outputs
-#
-#  Covariates
-#     make sure the matlab scripts are using:
-#        inputs.infusion_rate_names  
-#     create placeholders for covariates in:
-#       - berkeley madonna
-#       - potters wheel
-#     implement covariates in 
-#       - monolix
-#       - nonmem -- check to make sure they exist in the data set (when both
-#                   are specified)
-#       - adapt  
-#
-# R Target
-#      Todo
-#         - load data when file is specified (see matlab)
-#      Check 
-#         - conditionals
-#         - generic (SIMINT_) functions
 #
 #   Number of states:  scalar(@{$cfg->{species_index}}) 
 #
@@ -82,7 +53,6 @@
 #          $nsmap->{STRING} = 'replacement';
 #          remap_namespace(string, $nsmap);
 #
-#
 
 
 use strict;
@@ -106,17 +76,27 @@ MAIN:
 
     my $name;
 
+    # Applying command-line arguments
 
-    # Checking for user specified system file.
+    # First argument: system file:
     if(exists($ARGV[0])){
       $cfg->{files}->{system} = $ARGV[0]; }
 
+    # Second argument: temporary folder
+    if(exists($ARGV[1])){
+      $cfg->{files}->{temp_directory} = $ARGV[1]; }
 
+    # Third argument: template folder:
+    if(exists($ARGV[2])){
+      $cfg->{files}->{templates} = $ARGV[2]; }
+
+    # Fourth argument: distribution type:
+    if(exists($ARGV[3])){
+      $cfg->{files}->{distribution} = $ARGV[3]; }
 
     #
     # making sure the temporary directory is there
     #
-
     if (not(-d $cfg->{files}->{temp_directory})){
       mkdir($cfg->{files}->{temp_directory});}
 
@@ -195,15 +175,6 @@ MAIN:
     #
     # Processing dynamic equations
     #
-    # line contains an equilibrium relationship
-    if($line =~ '<KD:\S+>'){
-      push @{$cfg->{equations}}, $line; 
-      $cfg  = &parse_equation_KD($cfg, $line);
-      &mywarn('The KD notation has been discontinued');
-      &mywarn('And it will not work in fugure versions');
-      &mywarn('Change:     <KD:X> ');
-      &mywarn('To:     <=kon_X:koff_X=> ');
-     }
     # line contains compartment exchange information
     if($line =~ '<C>'){
       push @{$cfg->{equations}}, $line; 
@@ -411,9 +382,19 @@ sub fetch_cfg
 
 my $cfg; 
 
+  # default system file name
   $cfg->{files}->{system}                            = 'system.txt';
 
+  # default template for building a system
+  $cfg->{files}->{templates}                         =  &catfile('library', 'templates');
+
+  # temporary directory to store target files and autsim scripts
   $cfg->{files}->{temp_directory}                    = 'transient';
+
+  # indicates if ubiquity is running as a stand alone distribution  ("stand alone") or as 
+  # part of a package ("package")
+  $cfg->{files}->{distribution}                      = 'stand alone';
+
   # C files
   $cfg->{files}->{initialize}                        = 'auto_initial_sizes.h';
   $cfg->{files}->{common_block}                      = 'auto_common_block.h';
@@ -438,10 +419,10 @@ my $cfg;
   $cfg->{files}->{potterswheel3}                     = 'target_pw_3';
 
   # rproject
-  $cfg->{files}->{rproject}->{components}           = 'auto_rcomponents.r';
-  $cfg->{files}->{rproject}->{simulation_driver}    = 'auto_simulation_driver.r';
+  $cfg->{files}->{rproject}->{components}           = 'auto_rcomponents.R';
+  $cfg->{files}->{rproject}->{simulation_driver}    = 'auto_simulation_driver.R';
   $cfg->{files}->{rproject}->{compiled}             = 'r_ode_model.c';
-  $cfg->{files}->{rproject}->{analysis_estimation}  = 'auto_analysis_estimation.r';
+  $cfg->{files}->{rproject}->{analysis_estimation}  = 'auto_analysis_estimation.R';
 
   # berkeley_madonna output
   $cfg->{files}->{berkeley_madonna}                  = 'target_berkeley_madonna';
@@ -728,7 +709,7 @@ sub dump_rproject
   my $indent     = '   ';
   my $mc;
   #my $template_components = &fetch_rproject_components_template();
-  my $template_components = &fetch_template_file('r_components.r');
+  my $template_components = &fetch_template_file($cfg, 'r_components.R');
   $mc->{COMMENTS}                     = '';
   $mc->{FETCH_SYS_PARAMS}             = '';
   $mc->{FETCH_SYS_SSP}                = '';
@@ -757,10 +738,13 @@ sub dump_rproject
   $mc->{STATES}                       = '';
   $mc->{SYSTEM_PARAM}                 = '';
   $mc->{TIME_SCALES}                  = '';
+  $mc->{SYSTEM_FILE}                  = $cfg->{files}->{system};
+  $mc->{DISTRIBUTION}                 = $cfg->{files}->{distribution};
+  $mc->{TEMP_DIRECTORY}               = $cfg->{files}->{temp_directory};
 
   my $md;
   #my $template_driver     = &fetch_rproject_simulation_driver_template();
-  my $template_driver     = &fetch_template_file('r_simulation_driver.r');
+  my $template_driver     = &fetch_template_file($cfg, 'r_simulation_driver.R');
   $md->{PSETS}                 = '';
   $md->{BOLUS}                 = '';
   $md->{INFUSION_RATES}        = '';
@@ -769,13 +753,29 @@ sub dump_rproject
   $md->{SYSTEM_FILE}           = $cfg->{files}->{system};
 
 
+  my $ma;
+  my $template_analysis        = &fetch_template_file($cfg, 'r_analysis_estimation.R ');
+  $ma->{PSETS}                 = '';
+  $ma->{BOLUS}                 = '';
+  $ma->{INFUSION_RATES}        = '';
+  $ma->{COVARIATES}            = '';
+  $ma->{OUTPUT_TIMES}          = '';
+  $ma->{SYSTEM_FILE}           = $cfg->{files}->{system};
 
+  if($cfg->{files}->{distribution} eq "stand alone"){
+    $md->{DIST_HEADER}           = 'source(file.path("library", "r_general", "ubiquity.R"))'."\n";
+    $ma->{DIST_HEADER}           = 'source(file.path("library", "r_general", "ubiquity.R"))'."\n";
 
-  
+  } else {
+    $md->{DIST_HEADER}           = '# Uncomment the following to use with "stand alone" distribution'."\n";
+    $ma->{DIST_HEADER}           = '# Uncomment the following to use with "stand alone" distribution'."\n";
+    $md->{DIST_HEADER}          .= '# source(file.path("library", "r_general", "ubiquity.R"))'."\n";
+    $ma->{DIST_HEADER}          .= '# source(file.path("library", "r_general", "ubiquity.R"))'."\n";
+  }
 
   my $mo;
   #my $template_compiled   = &fetch_rproject_compiled_template();
-  my $template_compiled   = &fetch_template_file('r_odes.c');
+  my $template_compiled   = &fetch_template_file($cfg, 'r_odes.c');
   $mo->{SYSTEM_PARAM}          = '';
   $mo->{VARIABLE_INIT}         = '';
   $mo->{STATES}                = '';
@@ -791,14 +791,6 @@ sub dump_rproject
   $mo->{FORCE_PARAM}           = '';
   $mo->{FORCEDECLARE}          = '';
 
-  my $ma;
-  my $template_analysis        = &fetch_template_file('r_analysis_estimation.r ');
-  $ma->{PSETS}                 = '';
-  $ma->{BOLUS}                 = '';
-  $ma->{INFUSION_RATES}        = '';
-  $ma->{COVARIATES}            = '';
-  $ma->{OUTPUT_TIMES}          = '';
-  $ma->{SYSTEM_FILE}           = $cfg->{files}->{system};
 
 #
 # defining aspects of forcing functions in C
@@ -821,9 +813,7 @@ $mo->{FORCEDECLARE}   = "\nstatic double forc[".(2*scalar(@{$cfg->{covariates_in
 #
 # First we create the parameters field with the parameter 'matrix' first
 #
-$mc->{FETCH_SYS_PARAMS} = '#Creating the cfg variable
-cfg = list();
-# defining the matrix of parameter information
+$mc->{FETCH_SYS_PARAMS} = '# defining the matrix of parameter information
 cfg$parameters$matrix = data.frame('."\n";
 
 $mc->{FETCH_SYS_PARAMS} .= $indent."name".&fetch_padding("name", $cfg->{parameters_length})." = c(";
@@ -1390,8 +1380,8 @@ sub dump_adapt
 
   my $tmp_ode   = '';
 
-  my $template_fortran  = &fetch_template_file('adapt_system.for');
-  my $template_prm      = &fetch_template_file('adapt_parameters.prm');
+  my $template_fortran  = &fetch_template_file($cfg, 'adapt_system.for');
+  my $template_prm      = &fetch_template_file($cfg, 'adapt_parameters.prm');
   # hash to hold the model components
   my $mc = {};
 
@@ -1730,7 +1720,7 @@ sub dump_monolix
      $iiv_set = $parameter_set; 
   }
 
-  my $template = &fetch_template_file('monolix.txt');
+  my $template = &fetch_template_file($cfg, 'monolix.txt');
   # hash to hold the model components
   my $mc = {};
 
@@ -1883,7 +1873,7 @@ sub dump_mrgsolve
   my ($name, $name2);
   my ($parameter, $covariate);
   my $output;
-  my $template = &fetch_template_file('mrgsolve.cpp');
+  my $template = &fetch_template_file($cfg, 'mrgsolve.cpp');
   my ($counter, $counter2);
 
   my $namespace_map;
@@ -2164,7 +2154,7 @@ sub dump_nonmem
   my $namespace_map;
   $namespace_map->{SIMINT_TIME} = 'SIEB_TIME';
 
-  my $template = &fetch_template_file('nonmem.ctl');
+  my $template = &fetch_template_file($cfg, 'nonmem.ctl');
   # hash to hold the model components
 
   $mc->{INPUT}                             = '';
@@ -4394,8 +4384,9 @@ sub parse_amtify
      # Stripping off the delimiter
      $value =~ s#<AMTIFY>##;
      # pulling out the different components
-     if(scalar(split(';', $value)) == 3){
-       ($conc, $amt, $rel) = split(';', $value);
+     my @elements = split(';', $value);
+     if(scalar(@elements) == 3){
+       ($conc, $amt, $rel) = @elements;
        $cfg->{options}->{amtify}->{cmt_to_amt}->{$conc} = $amt;
        $cfg->{options}->{amtify}->{cmt_to_rel}->{$conc} = "($rel)";
      }
@@ -5376,12 +5367,93 @@ sub parse_if
     return $cfg;
 }
 
+sub extract_coeff       
+{
+  my ($ostr) = @_;
+
+  my $coeffs;
+
+  my $octr = 0;
+
+  $coeffs->{isgood} = 1;
+  $coeffs->{msg}    = "Init";
+
+
+
+
+  # Getting the number of ['s in ostr
+  my $nleft  = ($ostr =~ tr/\[//);
+  my $nright = ($ostr =~ tr/\]//);
+
+  # if the number of brackets don't match we give an error
+  if($nleft == $nright){
+    # indices of the brackets and plus
+    my $ridx = 0;
+    my $lidx = 0;
+    my $pidx = 0;
+
+    # offset to skip the last set of indices
+    my $offset = 0;
+
+    # current coefficient and species
+    my $coeff = '';
+    my $species = '';
+
+    # now we walk through the string extracting the coeff terms
+    while($octr < $nleft){
+
+      $lidx =  index($ostr, "[", $offset);
+      $ridx =  index($ostr, "]", $lidx);
+      $pidx =  index($ostr, "+", $ridx);
+
+
+      # First we pull out the coefficient
+      $coeff = substr($ostr, $lidx+1, $ridx-$lidx-1);
+
+      # Next we pull out the species
+      # If pidx is -1 then we've reached the last term and everything is
+      # relative to the length of the string. Otherwise it's relative to the
+      # location of the plus
+      if($pidx == -1){
+        $species = substr($ostr, $ridx+1, length($ostr)-$ridx);
+      } else {
+        $species = substr($ostr, $ridx+1, $pidx-$ridx-1);
+      }
+
+      print "$offset [$lidx ]$ridx +$pidx C>$coeff< S>$species<\n";
+
+      # Now we store the species/coeff
+      $coeffs->{species}->{$species} = $coeff;
+
+    
+      # updating the offset and counter
+      $offset = $pidx + 1;
+      $octr++;
+    }
+  } else {
+    $coeffs->{isgood} = 0;
+    $coeffs->{msg}    = "The number of '[' ($nleft) does not match the number of ']' ($nright)";
+  }
+
+  # Storing everything for debugging
+  $coeffs->{count}->{left}  = $nleft;
+  $coeffs->{count}->{right} = $nright;
+  $coeffs->{ostr} = $ostr;
+
+  return $coeffs;
+}
+
 sub parse_equation_rate
 {
     my ($cfg, $line) = @_;
 
     my $elements;
     my $species ;
+    my $coeffs;    # coefficient information extracted from string
+    my $spcoeff;   # coefficient for a specific species
+    my $ostr;
+    my @rels;      # array containing contributions to rate of individual species (rate elements)
+    my $rstr;      # consumption or production rate string for a species
 
     $elements->{rate}   = $line;
     $elements->{rate}   =~ s/.*=(\S+)=>.*/$1/;
@@ -5393,10 +5465,44 @@ sub parse_equation_rate
     $elements->{lhs} =~ s#\s+##g;
     $elements->{rhs} =~ s#\s+##g;
 
+    # looking to see if we have any coefficients
+    if($elements->{lhs} =~ m#\[# | $elements->{rhs} =~ m#\[#){
+      # finding the coeff terms
+      # $ ostr has both the RHS and the LHS catted together to
+      # create a string we can walk through
+      $ostr = $elements->{lhs}."+".$elements->{rhs};
+
+      # now we extract the coefficients that are not 1 for the different species
+      $coeffs = &extract_coeff($ostr);
+
+      # Stripping out the order terms
+      $elements->{lhs} =~ s#\[.*?\]##g;
+      $elements->{rhs} =~ s#\[.*?\]##g;
+    }
+
     # breaking up each side into the different species
     my @lhs_components =  split(/\+/,$elements->{lhs});
     my @rhs_components =  split(/\+/,$elements->{rhs});
     my @all_components   = (@lhs_components, @rhs_components);
+
+    #
+    # creating the rate from the lhs and coefficients from coeffs
+    #
+    foreach $species (@lhs_components){
+      # by default the coefficent will be 1
+      $spcoeff = '1';
+      if(defined($coeffs->{species}->{$species})){
+        $spcoeff = $coeffs->{species}->{$species};
+      }
+
+      # Adding the contribution of the reactants 
+      # to the rate
+      if($spcoeff == '1'){
+        push @rels, "$species";
+      } else {
+        push @rels, "SIMINT_POWER[$species][$spcoeff]";
+      }
+    }
 
     # making sure the data structure is present for each species
     foreach $species (@all_components){
@@ -5407,26 +5513,34 @@ sub parse_equation_rate
     # processing the left hand side
     #
     foreach $species (@lhs_components){
-      #
-      # adding the production and consumption terms 
-      #
-      # the left hand side is consumed at the specified rate 
-      push @{$cfg->{species}->{$species}->{consumption}},  $elements->{rate}."*".join("\*", @lhs_components);
+
+      # the rate string is the forward rate times the reactant contributions
+      $rstr = $elements->{rate}."*".join("\*", @rels);
+
+      # if there is a coefficient that is not 1 we add that here
+      if(defined($coeffs->{species}->{$species})){
+        $rstr =  "($coeffs->{species}->{$species})*$rstr";
+      }
+
+      # adding the consumption terms 
+      push @{$cfg->{species}->{$species}->{consumption}}, $rstr;
     }
 
     #
     # processing the right hand side
     #
     foreach $species (@rhs_components){
-      #
-      # adding the production and consumption terms 
-      #
-      # the left hand side is produced at the specified rate
-      push @{$cfg->{species}->{$species}->{production}},    $elements->{rate}."*".join("\*", @lhs_components);
-    }
+      # the rate string is the forward rate times the reactant contributions
+      $rstr = $elements->{rate}."*".join("\*", @rels);
 
-    # making sure each species present has been initialized
-    #$cfg = &initialize_species($cfg, $elements->{species});
+      # if there is a coefficient that is not 1 we add that here
+      if(defined($coeffs->{species}->{$species})){
+        $rstr =  "($coeffs->{species}->{$species})*$rstr";
+      }
+    
+      # the right hand side is produced at the specified rate
+      push @{$cfg->{species}->{$species}->{production}}, $rstr;
+    }
 
     return $cfg;
 }
@@ -5511,79 +5625,49 @@ sub parse_equation_C
     return $cfg;
 }
 
-sub parse_equation_KD
+sub parse_equation_fr_rate
 {
 
     my ($cfg, $line) = @_;
     my $elements;
-    my $species;
+    my $tmp_line;
 
     # stripping out spaces
     $line =~ s/\s//g;
 
-    # determining the kon, koff, 
-    # and KD governing this equation
-    $elements->{KD}   = $line;
-    $elements->{KD}   =~ s/.*<(\S+)>.*/$1/;
+    # determining the forward (kf), and reverse (kr) rates
+    $elements->{all_rates}   = $line;
+    $elements->{all_rates}   =~ s/.*<=(\S+)=>.*/$1/;
 
-    $elements->{kon}  = $elements->{KD};
-    $elements->{koff} = $elements->{KD};
+    $elements->{kf} = $elements->{all_rates};
+    $elements->{kr} = $elements->{all_rates};
 
-    $elements->{kon}  =~ s#KD:#kon#;
-    $elements->{koff} =~ s#KD:#koff#;
+    $elements->{kf}  =~ s#(\S+):\S+#$1#;
+    $elements->{kr}  =~ s#\S+:(\S+)#$1#;
 
-    my @equation =  split(/<\S+>/, $line);
+    my @equation =  split(/<=\S+=>/, $line);
 
     $elements->{lhs} = $equation[0];
     $elements->{rhs} = $equation[1]; 
 
-    #
-    # Now breaking each side up and gathering the indexed components
-    #
-    my @lhs_components   = split('\+', $elements->{lhs});
-    my @rhs_components   = split('\+', $elements->{rhs});
-    my @all_components   = (@lhs_components, @rhs_components);
+    # Converting the reversible reaction into two reactions
 
+    # Forward reaction:
+    $tmp_line = $elements->{lhs}."=".$elements->{kf}."=>".$elements->{rhs};
+    $cfg  = &parse_equation_rate($cfg, $tmp_line);
 
-    # making sure the data structure is present for each species
-    foreach $species (@all_components){
-       $cfg = &initialize_species($cfg, $species); }
+    # Reverse reaction:
+    $tmp_line = $elements->{rhs}."=".$elements->{kr}."=>".$elements->{lhs};
+    $cfg  = &parse_equation_rate($cfg, $tmp_line);
 
-    #
-    # processing the left hand side
-    #
-    foreach $species (@lhs_components){
-      #
-      # adding the production and consumption terms 
-      #
-      # the right hand side produces at a rate koff
-      push @{$cfg->{species}->{$species}->{production}},   $elements->{koff}."*".join("\*", @rhs_components);
-      # the left hand side is consumed at a rate kon
-      push @{$cfg->{species}->{$species}->{consumption}},  $elements->{kon} ."*".join("\*", @lhs_components);
-    }
-
-    #
-    # processing the right hand side
-    #
-    foreach $species (@rhs_components){
-      #
-      # adding the production and consumption terms 
-      #
-      # the right hand side is consumed at a rate koff
-      push @{$cfg->{species}->{$species}->{consumption}},   $elements->{koff}."*".join("\*", @rhs_components);
-      # the left hand side is produced at a rate kon
-      push @{$cfg->{species}->{$species}->{production}},  $elements->{kon} ."*".join("\*", @lhs_components);
-    }
-
-
-    #push @{$cfg->{reaction_elements}}, $elements; 
 
 
   return $cfg;
 
 
 }
-sub parse_equation_fr_rate
+
+sub parse_equation_fr_rate_old
 {
 
     my ($cfg, $line) = @_;
@@ -6246,12 +6330,14 @@ sub apply_function{
 #
 sub fetch_template_file{
 
-  my ($file_name) = @_;
+  my ($cfg, $file_name) = @_;
   my $template = '';
 
   
   # fetching the relative path
-  $file_name = &catfile('library', 'templates', $file_name);
+  # $file_name = &catfile('library', 'templates', $file_name);
+  $file_name = &catfile( $cfg->{files}->{templates}, $file_name);
+
 
   # reading the contents into template
   local $/ = undef;

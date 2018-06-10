@@ -1,35 +1,19 @@
 #clearing the workspace
 rm(list=ls())
-# Turning on more verbose error reporting
-options(error=traceback)
-options(show.error.locations = TRUE)
-# Uncomment to set the script directory as the working directory
-# This works when calling this file as a script:
-# R -e "source('thisfile.r')"
-# setwd(dirname(sys.frame(tail(grep('source',sys.calls()),n=1))$ofile))
 graphics.off()
-library("deSolve")
-library("ggplot2")
-library("gdata")
-source("library/r_general/ubiquity.r");
+options(show.error.locations = TRUE)
 
-# Used for parallelizing 
-library("foreach")
-library("doParallel")
-library("doRNG")
+# If we cannot load the ubiquity package we try the stand alone distribution
+if("ubiquity" %in% rownames(installed.packages())){require(ubiquity)} else 
+{source(file.path('library', 'r_general', 'ubiquity.R')) }
 
 # For documentation explaining how to modify the commands below
 # See the "R Workflow" section at the link below:
 # http://presentation.ubiquity.grok.tv
 
 # Rebuilding the system (R scripts and compiling C code)
-build_system(system_file="<SYSTEM_FILE>")
+cfg = build_system(system_file="<SYSTEM_FILE>")
 
-# loading the different functions
-source("transient/auto_rcomponents.r");
-
-# Loading the system information
-cfg = system_fetch_cfg()
 <PSETS>
 cfg = system_select_set(cfg, "default")
 
@@ -85,12 +69,31 @@ som = run_simulation_ubiquity(parameters, cfg)
 #plot(som$simout$TS,        som$simout$OUTPUT)
 # p = ggplot() + 
 #         geom_line(data=som$simout, aes(x=ts.TS,   y=OUTPUT), color="red") 
+# 
+# # This adds a log10 scale to the y axis
 # p = gg_log10_yaxis(p)
-# print(p)
+# 
+# # This pretties up the default figure layout for ggplot
+# p = prepare_figure('present', p)              
+#
+# # Dump the figure to a file:
 # png(file.path('output', 'simulation.png'), width=20,  height=14, units="cm", res=300)
 # print(p)
 # dev.off()
+# 
 # ggsave(plot=p, units='cm', width=20, height=14, filename=file.path('output', 'simulation.png'))
+# 
+# 
+# # To combine figures you can use gridExtra
+# library("grid", "gridExtra")
+# 
+# pdf("output/myfigure.pdf", height=7.0, width=13.5)
+# grid.arrange(p_PCT, p_NUM, ncol=2,
+#              bottom = textGrob("X",        gp=gpar(fontsize=15)), 
+#              right  = textGrob("Y-Right",  gp=gpar(fontsize=15), rot=90), 
+#              left   = textGrob("Y-Left",   gp=gpar(fontsize=15), rot=90))
+# 
+# dev.off()
 # -------------------------------------------------------------------------
 
 
@@ -148,4 +151,23 @@ som = run_simulation_ubiquity(parameters, cfg)
 #
 # print(p)
 # 
+# 
+# -------------------------------------------------------------------------
+
+# -------------------------------------------------------------------------
+# Reporting
+# cfg = system_report_init(cfg)
+# 
+# system_report_slide_title(cfg,
+#         title                  = "Presentation Title",      
+#         sub_title              = "Sub title")
+# 
+# tcontent = list()
+# tcontent$table = data.frame(col1 = c(1), col2 = c(2))
+# 
+# cfg = system_report_slide_content(cfg,
+#         title        = "Title Example",
+#         sub_title    = "Sub Title",
+#         content_type = "table", 
+#         content      = tcontent)
 # -------------------------------------------------------------------------

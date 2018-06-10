@@ -1,23 +1,11 @@
 #clearing the workspace
 rm(list=ls())
-# Turning on more verbose error reporting
-options(error=traceback)
-options(show.error.locations = TRUE)
-# Uncomment to set the script directory as the working directory
-# This works when calling this file as a script:
-# R -e "source('thisfile.r')"
-# setwd(dirname(sys.frame(tail(grep('source',sys.calls()),n=1))$ofile))
 graphics.off()
-library("deSolve")
-library("ggplot2")
-library("optimx")
-library("gdata")
-source("library/r_general/ubiquity.r")
+options(show.error.locations = TRUE)
 
-# Used for parallelizing 
-library("foreach")
-library("doParallel")
-library("doRNG")
+# If we cannot load the ubiquity package we try the stand alone distribution
+if("ubiquity" %in% rownames(installed.packages())){require(ubiquity)} else 
+{source(file.path('library', 'r_general', 'ubiquity.R')) }
 
 # -------------------------------------------------------------------------
 
@@ -34,19 +22,13 @@ archive_results = TRUE
 
 # -------------------------------------------------------------------------
 # Rebuilding the system (R scripts and compiling C code)
-build_system(system_file="<SYSTEM_FILE>")
+cfg = build_system(system_file="<SYSTEM_FILE>")
 
-# loading the different functions
-source("transient/auto_rcomponents.r")
-
-# Loading the system information
-cfg = system_fetch_cfg()
 # Initializing the log file ./transient/ubiquity.log
 cfg = system_log_init(cfg)
 # -------------------------------------------------------------------------
 
 <PSETS>
-
 
 # # The following will estimate a subset of the parameters:
 # pnames = c('PNAME1', 'PNAME2')
@@ -116,8 +98,6 @@ cfg = system_log_init(cfg)
 #
 # To use particle swarm optimization use the following:
 #
-# library("pso")
-#
 # cfg = system_set_option(cfg, group  = "estimation",
 #                              option = "optimizer", 
 #                              value  = "pso")
@@ -127,8 +107,6 @@ cfg = system_log_init(cfg)
 #                              value  = "psoptim")
 #
 # The following will use the genetic algorithm:
-#
-# library("GA")
 #
 # cfg = system_set_option(cfg, group  = "estimation",
 #                              option = "optimizer", 
@@ -271,7 +249,7 @@ cfg = system_define_cohort(cfg, cohort)
 #                                  INPUTS    =  INPUTMAP,
 #                                  OBS       =  OBSMAP,
 #                                  group     =  FALSE)
-
+#
 # -------------------------------------------------------------------------
 # performing estimation or loading guess/previous results
 pest = system_estimate_parameters(cfg, 
@@ -309,4 +287,8 @@ plot_opts = c()
 
 # Plotting the simulated results at the estimates 
 # These figures will be placed in output/
-system_plot_cohorts(erp, plot_opts, cfg, prefix=analysis_name)
+pr = system_plot_cohorts(erp, plot_opts, cfg, prefix=analysis_name)
+
+# Uncomment to save the plot objects to a file for loading later
+# save(pr, file=sprintf('output%s%s_pr.RData', .Platform$file.sep, analysis_name))
+

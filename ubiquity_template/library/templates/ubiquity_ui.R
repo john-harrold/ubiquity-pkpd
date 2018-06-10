@@ -91,10 +91,9 @@ ui = fluidPage(
            )
           ,fluidRow(
              column(12, 
-               actionButton("button_save",   "Save Simulation"), 
+               downloadButton("button_download", label = "Save"),
                div(style="display:inline-block; max-width:200px", textInput('text_save_sim', label=NULL, value=cfg$gui$text_save_sim)),
-               div(style="display:inline-block", checkboxInput('check_timestamp', 'Timestamp', value=cfg$gui$check_timestamp)),
-               div(style="display:inline-block", uiOutput("ui_link"))
+               div(style="display:inline-block", checkboxInput('check_timestamp', 'Timestamp', value=cfg$gui$check_timestamp))
              )
            )
           ,fluidRow(
