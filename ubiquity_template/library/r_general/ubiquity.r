@@ -199,7 +199,7 @@ if(file.exists(system_file)){
     if(verbose == TRUE){
       cat("#> C model not available. Compile manually using the\n") 
       cat("#> following command to debug:           \n") 
-      cat(sprintf("#> system('R CMD SHLIB %s%sr_ode_model.c') \n", temp_directory, .Platform$file.sep))
+      cat(sprintf("#> system('R CMD SHLIB \"%s%sr_ode_model.c\"') \n", temp_directory, .Platform$file.sep))
     }
     
     }
@@ -352,8 +352,15 @@ return(res)}
 #'
 #' \itemize{
 #'   \item \code{"template"} - Empty system file template
+#'   \item \code{"two_cmt_macro"} - Two compartment model parameterized in terms of clearances (macro constants)
+#'   \item \code{"one_cmt_macro"} - One compartment model parameterized in terms of clearances (macro constants)
+#'   \item \code{"two_cmt_micro"} - Two compartment model parameterized in terms of rates (micro constants)
+#'   \item \code{"one_cmt_micro"} - One compartment model parameterized in terms of rates (micro constants)
+#'   \item \code{"adapt"} - Parent/metabolite model taken from the adapt manual used in estimation examples
 #'   \item \code{"mab_pk"} - General compartmental model of mAb PK from Davda 2014 http://doi.org/10.4161/mabs.29095
 #'   \item \code{"pbpk"} - PBPK model of mAb disposition in mice from Shah 2012 
+#'   \item \code{"tmdd"} - Model of antibody with target-mediated drug disposition
+#'   \item \code{"pwc"} - Example showing how to make if/then or piece-wise continuous variables  
 #' }
 #'
 #'@param file_name name of the new file to create   
@@ -364,15 +371,24 @@ return(res)}
 #'
 #'@examples
 #' # To create an empty template:
-#' system_new("system.txt", TRUE)
+#' system_new()
+#' # To create a compartmental model of mAb PK, 
+#' # build the system, and create a simulation 
+#' # template:
+#' system_new(file_name="system-mabs.txt", system_file="mab_pk", overwrite=TRUE)
+#' cfg = build_system("system-mabs.txt")
+#' system_fetch_template(cfg, template = "Simulation")
+
 system_new  <- function(file_name="system.txt", system_file="template", overwrite=FALSE){
 
- allowed = c("template", "mab_pk", "pbpk", "pwc", "tmdd", "adapt")
+ allowed = c("template",      "mab_pk",         "pbpk",          "pwc", 
+             "tmdd",          "adapt",          "one_cmt_micro", "one_cmt_macro",  
+             "two_cmt_micro", "two_cmt_macro")
 
  isgood = FALSE
 
  # first we look to see if the package is installed, if it's not
- # we look for the system_template.txt file 
+ # we look for files in the stand alone distribution locations
  if("ubiquity" %in% rownames(installed.packages())){
    if(system_file == "template"){
      file_path       = system.file("ubinc",    "templates", "system_template.txt", package="ubiquity")
@@ -443,7 +459,7 @@ system_fetch_template  <- function(cfg, template="Simulation", overwrite=FALSE){
  # These are the allowed templates:
  allowed = c("Simulation", "Estimation", 
              "ShinyApp",   "Shiny Rmd Report",
-             "mrgsolve",   "Berkley Madonna", 
+             "mrgsolve",   "Berkeley Madonna", 
              "Adapt",      "myOrg", 
              "Model Diagram")
 
@@ -498,12 +514,12 @@ system_fetch_template  <- function(cfg, template="Simulation", overwrite=FALSE){
      destinations = c("system_mrgsolve.cpp")
      write_file   = c(TRUE)
    }
-   if(template == "Berkley Madonna"){
+   if(template == "Berkeley Madonna"){
      sources      = c(file.path(temp_directory, sprintf("target_berkeley_madonna-%s.txt",current_set)))
      destinations = c("system_berkeley_madonna.txt")
      write_file   = c(TRUE)
    }
-   if(template == "Adapt 5"){
+   if(template == "Adapt"){
      sources      = c(file.path(temp_directory, sprintf("target_adapt_5.for")),
                       file.path(temp_directory, sprintf("target_adpat_5-%s.prm",current_set)))
      destinations = c("system_adapt.for", "system_adapt.prm")
@@ -607,19 +623,27 @@ system_load_data <- function(cfg, dsname, data_file, data_sheet){
   }
   else{
     # Reading the data based on the file extension
-    if(regexpr(".xls$", as.character(data_file), ignore.case=TRUE) > 0){
-      cfg$data[[dsname]]$values = as.data.frame(gdata::read.xls(data_file, sheet=data_sheet))
-      cfg$data[[dsname]]$data_file$sheet  = data_sheet
-    }
+    if(file.exists(data_file)){
+      if(regexpr(".xls$", as.character(data_file), ignore.case=TRUE) > 0){
+        cfg$data[[dsname]]$values = as.data.frame(gdata::read.xls(data_file, sheet=data_sheet))
+        cfg$data[[dsname]]$data_file$sheet  = data_sheet
+      }
 
-    if(regexpr(".csv$", as.character(data_file), ignore.case=TRUE) > 0){
-      cfg$data[[dsname]]$values = read.csv(data_file, header=TRUE)
-    }
+      if(regexpr(".csv$", as.character(data_file), ignore.case=TRUE) > 0){
+        cfg$data[[dsname]]$values = read.csv(data_file, header=TRUE)
+      }
 
-    if(regexpr(".tab$", as.character(data_file), ignore.case=TRUE) > 0){
-      cfg$data[[dsname]]$values = read.delim(data_file, header=TRUE)
+      if(regexpr(".tab$", as.character(data_file), ignore.case=TRUE) > 0){
+        cfg$data[[dsname]]$values = read.delim(data_file, header=TRUE)
+      }
+      cfg$data[[dsname]]$data_file$name  = data_file
+    } else {
+      cat(sprintf("#> ------------------------------------\n")) 
+      vp(cfg, "system_load_data()") 
+      vp(cfg, sprintf("unable to find the specified file >%s<", data_file)) 
+      cat(sprintf("#> ------------------------------------\n")) 
+    
     }
-    cfg$data[[dsname]]$data_file$name  = data_file
   }
 
   return(cfg)
@@ -843,8 +867,8 @@ return(VALUE)}
 #' apply ony the subsequently specified inputs. 
 #'
 #'@param cfg ubiquity system object    
-#'@param bolus boolean value indicating weather bolus inputs should be set to zero
-#'@param rates boolean value indicating weather infusion rate inputs should be set to zero
+#'@param bolus Boolean value indicating weather bolus inputs should be set to zero
+#'@param rates Boolean value indicating weather infusion rate inputs should be set to zero
 #'
 #'@return Ubiquity system object with the specified inputs set to zero
 #'
@@ -983,9 +1007,9 @@ return(cfg)}
 #'
 #' \itemize{
 #' \item \code{"enabled"}   = Boolean variable to control logging: \code{TRUE}
-#' \item \code{"file"}      = String containing the name of the log file: file.path("transient", "ubiquity_log.txt")
+#' \item \code{"file"}      = String containing the name of the log file: \code{file.path("transient", "ubiquity_log.txt")}
 #' \item \code{"timestamp"} = Boolean switch to control appending a time stamp to log entries: \code{TRUE}
-#' \item \code{"ts_str"}    = String format of timestamp: \code{"%Y-%m-%d %H:%M:%S"}
+#' \item \code{"ts_str"}    = String format of timestamp: "%Y-%m-%d %H:%M:%S"
 #' \item \code{"debug"}     = Boolean switch to control debugging (see below): \code{FALSE}
 #' \item \code{"verbose"}   = Boolean switch to control printing to the console \code{FALSE}
 #' }
@@ -5210,8 +5234,6 @@ calculate_objective <- function(parameters, cfg, estimation=TRUE){
     objmult = .Machine$double.xmax/1e6
   }
 
-  # JMH
-
 
   # Trying to pull out the observations
   # if we fail we throw an error and flip the error flag
@@ -5529,6 +5551,15 @@ odtest = calculate_objective(cfg$estimation$parameters$guess, cfg, estimation=FA
          pidx = pidx+1
        }
     }
+
+   # Making sure the parameters are within the bounds
+   if(any(pest$estimate < cfg$estimation$parameters$matrix$lower_bound)){
+     pest$estimate[pest$estimate < cfg$estimation$parameters$matrix$lower_bound] = cfg$estimation$parameters$matrix$lower_bound[pest$estimate < cfg$estimation$parameters$matrix$lower_bound]
+   }
+
+   if(any(pest$estimate > cfg$estimation$parameters$matrix$upper_bound)){
+     pest$estimate[pest$estimate > cfg$estimation$parameters$matrix$upper_bound] = cfg$estimation$parameters$matrix$upper_bound[pest$estimate > cfg$estimation$parameters$matrix$upper_bound]
+   }
 
    pest$statistics_est = NULL
    tCcode = '
@@ -6649,16 +6680,142 @@ res}
 
 
 #'@export
+#'@title Verify System Steady State 
+#'
+#'@description Takes the ubiquity system object and other optional inputs to verify the system is running at steady state. This also provides information that can be helpful in debugging systems not running at steady state. 
+#'
+#'@param cfg ubiquity system object    
+#'@param zero_rates Boolean value to control removing all rate inputs (\code{TRUE})
+#'@param zero_bolus Boolean value to control removing all bolus inputs (\code{TRUE})
+#'@param output_times sequence of output times to simulate for offset determination (\code{seq(0,100,1)})
+#'@param offset_tol        maximum percent offset to be considered zero (\code{.Machine$double.eps*100})
+#'@param derivative_tol    maximum derivative value to be considered zero (\code{.Machine$double.eps*100})
+#'@param derivative_time   time to evaluate derivatives to identify deviations, set to \code{NULL} to skip derivative evaluation
+#'@return list with name \code{steady_state} (boolean indicating weather the system was at steady state) and \code{states} a vector of states that have steady state offset.  
+system_check_steady_state  <- function(cfg, 
+                                       parameters        = NULL, 
+                                       zero_rates        = TRUE,
+                                       zero_bolus        = TRUE,
+                                       output_times      = seq(0,100,1),
+                                       offset_tol        = .Machine$double.eps*100,
+                                       derivative_tol    = .Machine$double.eps*100, 
+                                       derivative_time   = 0){ 
+
+  vp(cfg, sprintf('--------------------------'))
+  vp(cfg, sprintf(' Checking for steady state offset'))
+  res = list()
+  res$states_simulation = c()
+  res$states_derivative = c()
+
+  derivative_offset_found = FALSE
+  simulation_offset_found = FALSE
+
+  if(is.null(parameters)){
+    parameters = system_fetch_parameters(cfg)
+  }
+
+  #
+  # Clearing out inputs
+  #
+  if(zero_rates){
+    cfg = system_zero_inputs(cfg, bolus=FALSE, rates=TRUE)
+    vp(cfg, sprintf('   - Removing infusion inputs'))
+  }
+  if(zero_bolus){
+    cfg = system_zero_inputs(cfg, bolus=TRUE, rates=FALSE)
+    vp(cfg, sprintf('   - Removing bolus inputs'))
+  }
+
+  if(!is.null(output_times)){
+    cfg=system_set_option(cfg, group  = "simulation", 
+                               option = "output_times", 
+                               output_times)
+    vp(cfg, sprintf('   - Setting simulation times: %s', var2string_gen(output_times)))
+  }
+  
+  vp(cfg, sprintf(' '))
+
+  # Calculating the derivatives
+  if(!is.null(derivative_time)){
+    # First we calculate the initial conditions
+    SIMINT_IC = system_IC(cfg, parameters)
+
+    # Next we evaluate the derivative at that 
+    # initial condition and the specified time
+    SIMINT_DER = system_DYDT(derivative_time, SIMINT_IC, cfg)
+    vp(cfg, sprintf(' First we analyze the derivatives, values of the ODEs, at time %s',var2string(derivative_time) ))
+    vp(cfg, sprintf(' with a derivative_tol = %.3e', derivative_tol))
+    vp(cfg, sprintf(' '))
+    if(any(abs(SIMINT_DER$dy) > derivative_tol)){
+      vp(cfg, sprintf(' Derivatives were found that were larger than the tolerance'))
+      vp(cfg, sprintf(' ---------------------'))
+      vp(cfg, sprintf('       dx/dt  | state  '))
+      vp(cfg, sprintf(' ---------------------'))
+      derivative_offset_found = TRUE
+      stctr = 1
+      for(sname in names(cfg$options$mi$states)){
+        if(abs(SIMINT_DER$dy[stctr]) > derivative_tol){
+         dxdtstr = sprintf("%s ", var2string(maxlength=13, nsig_e=3, nsig_f=2, vars=SIMINT_DER$dy[stctr]))
+         vp(cfg, sprintf('%s| %s', dxdtstr, sname))
+        } 
+        stctr = stctr +1
+      }
+      vp(cfg, sprintf(' '))
+    } else {
+      vp(cfg, sprintf(' The magnitudes of all derivatives were below the tolerance'))
+      vp(cfg, sprintf(' '))
+    }
+  }
+
+  # Simulating the system
+  som = run_simulation_ubiquity(parameters, cfg, FALSE)
+  vp(cfg, sprintf(' Next we simulate (from time = %s to %s) and calculate the percent ',  
+        var2string(min(cfg$options$simulation_options$output_times, nsig_f=1, nsig_e=2)),  
+        var2string(max(cfg$options$simulation_options$output_times, nsig_f=1, nsig_e=2))))
+  vp(cfg, sprintf(' of steady state offset as compared to the maximum observed value:'))
+  vp(cfg, sprintf(' Percent Offset = 100*(|max|-|min|)/|max|'))
+  vp(cfg, sprintf(' Time course analysis: offset_tol = %.3e', offset_tol))
+  vp(cfg, sprintf(' '))
+  for(sname in names(cfg$options$mi$states)){
+     state = som$simout[[sname]]
+
+     state_max = max(abs(state))
+     
+     # if the state has a value other than zero 
+     # we look at it a little more closely
+     if(state_max > 0){
+       offset = abs(range(state)[2]-range(state)[1])
+       pct_offset = offset/state_max*100
+       if( pct_offset > offset_tol){
+         if(!simulation_offset_found){
+           vp(cfg, sprintf(' Possible steady state offset'))
+           vp(cfg, sprintf(' range       |             | Percent     | state'))
+           vp(cfg, sprintf(' |max|-|min| | max(|state|)| Offset      | name '))
+           vp(cfg, sprintf(' -------------------------------------------------'))
+           simulation_offset_found = TRUE                               
+        }
+        vp(cfg, sprintf(' %.3e   | %.3e   | %.3e   | %s', offset, state_max, pct_offset, sname))
+        res$states_simulation = c(res$states_simulation, sname)
+       }
+     }
+  }
+
+  res$steady_state = !simulation_offset_found & !derivative_offset_found
+
+res}
+
+
+#'@export
 #'@title Make ggplot Figure Pretty
 #'@description Takes a ggplot object and alters the line thicknesses and makes
 #' other cosmetic changes to make it more appropriate for exporting. 
 #'
 #'@param purpose either \code{"present"}, \code{"print"} or \code{"shiny"}
 #'@param fo ggplot figure object
-#'@param y_tick_minor boolean value to control grid lines
-#'@param y_tick_major boolean value to control grid lines
-#'@param x_tick_minor boolean value to control grid lines
-#'@param x_tick_major boolean value to control grid lines
+#'@param y_tick_minor Boolean value to control grid lines
+#'@param y_tick_major Boolean value to control grid lines
+#'@param x_tick_minor Boolean value to control grid lines
+#'@param x_tick_major Boolean value to control grid lines
 #'
 #'@return ggplot object 
 prepare_figure = function(purpose, fo,
@@ -7039,7 +7196,7 @@ fo}
 #'
 #'@param test_name string containing the name to be tested
 #'
-#'@return List with boolean element \code{isgood} that is \code{TRUE} when the name tests correct, \code{FALSE} when it fails. The element \code{msgs} contains a verbose message on why it fails.
+#'@return List with Boolean element \code{isgood} that is \code{TRUE} when the name tests correct, \code{FALSE} when it fails. The element \code{msgs} contains a verbose message on why it fails.
 ubiquity_name_check = function(test_name){
 #
 # Error checking function to make sure the test_name 
@@ -7948,6 +8105,9 @@ system_report_save = function (cfg,
   if(cfg$reporting$enabled){
     if(rptname %in% names(cfg$reporting$reports)){
       print(cfg$reporting$reports[[rptname]]$report, output_file)
+      vp(cfg, "--------------------------------")
+      vp(cfg, sprintf("Report saved to: %s", output_file))
+      vp(cfg, "--------------------------------")
     } else {
       vp(cfg, sprintf("system_report_save()"))
       vp(cfg, sprintf("Error: The report name >%s< not found", rptname))
@@ -8964,4 +9124,280 @@ void derivs (int *neq, double *t, double *y, double *ydot,
 res}
 
 #-------------------------------------------------------------------------
+#'@export 
+#'@title Add NCA output to ubiquity report
+#'@description Performs NCA in an automated fashion subsetting the data using muleiple criteria 
+#'
+#'@param cfg ubiquity system object
+#'@param ncares result of (\code{\link{system_nca_run}}) 
+#'@param maxrow maximum number of rows per slide for tables
+#'@param label_data Boolean variable to control labeling of data on plots (\code{FALSE})
+#'@param rptname optional name of the report (\code{"default"})
+#'
+#'@details 
+#'
+system_nca_report = function(cfg, 
+                             ncares      = NULL,
+                             maxrow      = 15,
+                             label_data  = FALSE,
+                             rptname     ="default"){
 
+  #------------------------- 
+  # Adding the nca table
+
+  # remaining nca summary results:
+  ncasum_rem = ncares$ncasum
+
+  while(!is.null(ncasum_rem) > 0){
+   if(nrow(ncasum_rem) > maxrow){
+     # pulling off the top rows (1 to maxrow):
+     tmprows    = head(ncasum_rem, n=maxrow)
+     #remmoving those rows from the remaing:
+     ncasum_rem = tail(ncasum_rem, n=-maxrow)
+   
+   } else {
+     tmprows    = ncasum_rem
+     ncasum_rem = NULL
+   }
+
+   ntab = list(table=tmprows)
+   cfg = system_report_slide_content(cfg, 
+       rptname      = rptname, 
+       title        = "NCA",
+       content_type = "table",
+       content      = ntab)
+  }
+  #------------------------- 
+
+
+  #-------------------------
+  # For each scenario we'll show the results with the PK
+  for(res_name in names(ncares$scenres)){
+    res = ncares$scenres[[res_name]]
+
+    # building the bulleted list of NCA metrics
+    res_list = c()
+    for(nca_metric in names(res$ncasum)){
+      if(is.na(res$ncasum[[nca_metric]])){
+         res$ncasum[[nca_metric]] = "NA"
+      }
+      res_list = c(res_list, 1, paste(nca_metric, ": ", var2string(res$ncasum[[nca_metric]], nsig_f=2), sep=""))
+    }
+
+    # plotting the actual data
+    p = ggplot() 
+    p = p  + geom_point(data=NULL, aes(x=res$time, res$conc))
+    p = p  + geom_line(data=NULL, aes(x=res$time, res$conc))
+    p = prepare_figure(fo=p, purpose="print")
+    p = p + xlab(ncares$obs$time) + ylab(ncares$obs$conc )
+    p = p +ggtitle(res$row_str)
+    if(label_data){
+      label_str = paste("[", var2string(res$time, nsig_f=1, nsig_e=1), ",", var2string(res$conc, nsig_f=1, nsig_e=1),"]", sep="")
+      p = p + ggrepel::geom_text_repel(aes(x=res$time, y=res$conc, label=label_str)) }
+
+    cfg = system_report_slide_two_col(cfg, 
+         rptname            = rptname, 
+         title              = res$row_str,
+         content_type       = 'list',
+         left_content_type  = "ggplot",
+         left_content       = p,
+         right_content      = res_list)
+  
+  }
+
+  #-------------------------
+
+
+return(cfg)}
+#-------------------------------------------------------------------------
+#'@export 
+#'@title Automatic NCA
+#'@description Performs NCA in an automated fashion subsetting the data using muleiple criteria 
+#'
+#'@param cfg ubiquity system object
+#'@param DSNAME name of dataset loaded with (\code{\link{system_load_data}})
+#'@param dscale factor to multiply the dose to get it into the same units as concentration:
+#' if you are dosing in mg/kg and your concentrations is in ng/ml, then \code{dscale = 1e6}
+#'@param ssby list specifying how to subset the data, with list names being
+#' column names from the dataset and values being those used for subsetting (note
+#' every combination will be considered when performing NCA:
+#'         If your dataset specifies the dose number (\code{dose_number}) for subjects and you want to perform NCA on doses 1 and 5 for subjects (\code{id}) 2, 8 and 120 then ssby would look like:
+#'\preformatted{
+#'  ssby = list(id=c(2,8,120),  dose_number=c(1,5))
+#' }
+#'@param obs list with names specifying the time, concentration, dose, and id columns to use when performing NCA
+#'@param dsinc character vector of columns from the dataset to include in the output summary: These should be constant for the combinations specified in \code{ssby}
+#'
+system_nca_run = function(cfg, 
+                          DSNAME="PKDS", 
+                          dscale = 1,
+                          ssby=list(id=c(1,2,3), dose_number=c(1,2)),
+                          obs=list(time="TIME", conc="DV", dose="AMT", id="ID",
+                          dsinc=NULL)){
+                      
+
+  ncares = list()
+  ncasum = list()
+  scenres = list()
+  isgood = TRUE
+  
+  if(DSNAME %in% names(cfg$data)){
+    DS = cfg$data[[DSNAME]]$values
+  } else {
+    isgood = FALSE
+    vp(cfg, paste("Error: Dataset >", DSNAME, "< was not found use system_load_data() to create this dataset", sep=""))
+  }
+  
+  
+  # Checking the subset columns 
+  for(cn in names(ssby)){
+    if(!(cn %in% names(DS))){
+      isgood = FALSE
+      vp(cfg, paste("Error: Subset column >", cn, "< was not found in the provided dataset", sep=""))
+    }
+  }
+
+
+  if(isgood){
+    # Checking the obs information
+    obscols = c("time", "conc", "dose")
+    for(cn in obscols){
+      # Checking to see if correct names were specified in obs
+      if(cn %in% names(obs)){
+
+        # Now making sure they exist in the dataset
+        if(!(obs[[cn]] %in% names(DS))){
+          isgood = FALSE
+          vp(cfg, paste("Error: Observation column ", obs[[cn]], " was not found in the dataset ",DSNAME, sep=""))
+        }
+      } else {
+        isgood = FALSE
+        vp(cfg, paste("Error: Observation column >", cn, "< was not found",sep=""))
+        vp(cfg, paste("        obs$",cn, ' = "colname"',sep=""))
+      }
+    }
+
+    # checking the data set columns to include in the summary output 
+    if(!is.null(dsinc)){
+      for(cn in dsinc){
+        if(!(cn %in% names(DS))) {
+          isgood = FALSE
+          vp(cfg, paste("Error: Column name >", cn, "< to include in summary output was not found in the dataset",sep=""))
+        }
+      }
+    }
+  }
+  
+  # If everything checks out we'll go through and 
+  if(isgood){
+  
+    # taking all of the different subset values and expanding them into all the
+    # possible scenarios
+    eval(parse(text=sprintf(' scenarios = expand.grid(%s)',  paste(sprintf("ssby$%s", names(ssby)), collapse=", "))))
+    colnames(scenarios) = names(ssby)
+    
+    for(ridx in 1:nrow(scenarios)){
+      # Current row 
+      sr  = scenarios[ridx,]
+    
+      # filtering the dataset down to rows that match the scenarios
+      tds = DS
+      sr_str = NULL
+      for(cn in names(sr)){
+        tds = tds[tds[[cn]] == sr[[cn]],]
+    
+        # Creating a verbose string from the current scenario row
+        # to be used in the output and (optionally) the reporting below
+        if(is.null(sr_str)){
+          sr_str = paste(cn, " = ", sr[[cn]])
+        } else {
+          sr_str = paste(sr_str, ",", cn, " = ", sr[[cn]])
+        }
+      }
+    
+      # If there are at least four records we calculate the NCA
+      if(nrow(tds) >= 4){
+
+        AUC_times = tds[[obs$time]]
+        AUC_times = AUC_times[AUC_times> 0]
+     
+        eval(parse(text=paste("d.dose   = data.frame(",obs$dose," = unique(tds$",obs$dose,")[1]*dscale, ",obs$time," = min(AUC_times), ",obs$id," = unique(tds$",obs$id,"))", sep="")))
+        eval(parse(text=paste("dose_obj <- PKNCAdose(d.dose, ",obs$dose,"~",obs$time,"|",obs$id,")", sep="")))
+        eval(parse(text=paste("conc_obj <- PKNCAconc(tds, ",obs$conc,"~",obs$time,"|",obs$id,")", sep="")))
+   
+        data_obj <- PKNCAdata(data.conc=conc_obj,
+                              data.dose = dose_obj,
+                              intervals=data.frame(start=min(AUC_times),
+                                                   end=max(AUC_times),
+                                                   aucall=TRUE,
+                                                   auclast=TRUE,
+                                                   cmax = TRUE, 
+                                                   vss.obs = TRUE,
+                                                   vss.pred = TRUE,
+                                                   cl.pred = TRUE,
+                                                   cl.obs = TRUE,
+                                                   aucinf.pred=TRUE,
+                                                   aucinf.obs=TRUE))
+        res         <- pk.nca(data_obj)
+        AUC_last = res$result[res$result$PPTESTCD == "auclast",   ]$PPORRES
+        AUC_all  = res$result[res$result$PPTESTCD == "aucall",    ]$PPORRES
+        Cmax     = res$result[res$result$PPTESTCD == "cmax",      ]$PPORRES
+        Tmax     = res$result[res$result$PPTESTCD == "tmax",      ]$PPORRES
+
+        Vss_obs  = res$result[res$result$PPTESTCD == "vss.obs",   ]$PPORRES
+        Vss_pred = res$result[res$result$PPTESTCD == "vss.pred",  ]$PPORRES
+        CL_obs   = res$result[res$result$PPTESTCD == "cl.obs" ,   ]$PPORRES
+        CL_pred  = res$result[res$result$PPTESTCD == "cl.pred",   ]$PPORRES
+        HL       = res$result[res$result$PPTESTCD == "half.life", ]$PPORRES
+
+        Cmax_obs = max(tds[[obs$conc]])
+        Tmax_obs = tds[tds[[obs$conc]] == Cmax_obs, ][[obs$time]][1]
+
+        tmpdf = data.frame(AUC_last = AUC_last,
+                           AUC_all  = AUC_all,
+                           Tmax     = Tmax,
+                           Cmax     = Cmax,
+                           Tmax_obs = Tmax_obs,
+                           Cmax_obs = Cmax_obs)
+
+        # Now we add the columsn from the dataset we want to retain in our NCA
+        # summary table
+        for(tdsinc in dsinc){
+           tmpdf[[tdsinc]] = tds[[tdsinc]][1] }
+
+        tmpdf$Vss_obs =  Vss_obs
+        tmpdf$Vss_pred=  Vss_pred
+        tmpdf$CL_obs  =  CL_obs
+        tmpdf$CL_pred =  CL_pred
+        tmpdf$HL      =  HL
+
+        if(is.null(ncasum)){
+          ncasum = tmpdf
+        } else {
+          ncasum = rbind(ncasum, tmpdf)
+        }
+
+        # storing the results of this scenario 
+        eval(parse(text=paste("scenres$res_", ridx, "$row     = sr",                    sep="")))
+        eval(parse(text=paste("scenres$res_", ridx, "$row_str = sr_str",                sep="")))
+        eval(parse(text=paste("scenres$res_", ridx, "$res     = res",                   sep="")))
+        eval(parse(text=paste("scenres$res_", ridx, "$tds     = tds",                   sep="")))
+        eval(parse(text=paste("scenres$res_", ridx, "$time    = tds$", obs$time,        sep="")))
+        eval(parse(text=paste("scenres$res_", ridx, "$conc    = tds$", obs$conc,        sep="")))
+        eval(parse(text=paste("scenres$res_", ridx, "$dose    = tds$", obs$dose,        sep="")))
+        eval(parse(text=paste("scenres$res_", ridx, "$id      = tds$", obs$id  ,        sep="")))
+        eval(parse(text=paste("scenres$res_", ridx, "$ncasum  = tmpdf"         ,        sep="")))
+      
+      } else {
+        vp(cfg, paste("Warning: Subset ", sr_str, " has no insufficient records, skipping"))
+      }
+    }
+  }
+
+  ncares$DSNAME  = DSNAME
+  ncares$obs     = obs
+  ncares$isgood  = isgood
+  ncares$scenres = scenres
+  ncares$ncasum  = ncasum
+return(ncares)}
+#-------------------------------------------------------------------------

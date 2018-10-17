@@ -30,14 +30,13 @@ cfg = system_log_init(cfg)
 
 <PSETS>
 
-# # The following will estimate a subset of the parameters:
-# pnames = c('PNAME1', 'PNAME2')
-# cfg = system_select_set(cfg, "default", pnames)
-#
 # # This will estiamte all parameters:
 # cfg = system_select_set(cfg, "default")
 
-#
+# # To fix parameters, simply specify only those you want to estimate here:
+# pnames = c('PNAME1', 'PNAME2')
+# cfg = system_select_set(cfg, "default", pnames)
+ 
 # Change initial guess for parameter PNAME to VALUE. The lower bound (lb) and
 # upper bound (ub) can also be changed as well
 #
@@ -265,6 +264,10 @@ pest = system_estimate_parameters(cfg,
 # cfg=system_set_option(cfg, group  = "simulation", 
 #                            option = "output_times", 
 #                            seq(0,100,1))
+
+# Any cohorts added here will be plotted by will not have been used to
+# estimate parameters. This allows you to see how the current estimates
+# predict data (validation)
 
 # Simulating the system at the estimates
 erp = system_simulate_estimation_results(pest = pest, cfg = cfg) 
