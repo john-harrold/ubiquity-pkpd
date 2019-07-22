@@ -1,8 +1,8 @@
-function [result] = AUC_Bailors_method(data)
-% function [result] = AUC_Bailors_method(data)
+function [result] = AUC_Bailers_method(data)
+% function [result] = AUC_Bailers_method(data)
 % 
 % 
-%  This is an implementation of Bailors method for calculating AUCs with
+%  This is an implementation of Bailer's method for calculating AUCs with
 %  sparse sampling. It is taken from the following publication:
 % 
 %  Nedelman, J. R., Gibiansky, E., & Lau, D. T. (1995). Applying Bailer's
