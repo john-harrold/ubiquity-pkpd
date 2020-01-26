@@ -9,6 +9,8 @@ system_fetch_cfg = function(){
 #Creating the cfg variable
 cfg = list();
 
+c_libfile_base = "<MODEL_PREFIX>"
+
 # storing the location of the temporary directory and the distribution type
 cfg$options$misc$temp_directory = '<TEMP_DIRECTORY>'
 cfg$options$misc$distribution   = '<DISTRIBUTION>'
@@ -69,6 +71,7 @@ cfg$parameters$current_set = 'default';
 # misc options
 <FETCH_SYS_MISC>
 
+cfg$options$misc$c_libfile_base   = c_libfile_base
 
 # titration options
 cfg$titration$titrate = FALSE
@@ -87,8 +90,8 @@ cfg$options$simulation_options$integrate_with  = "r-file"
 cfg$options$simulation_options$initial_conditions = NA   
 
 # If the library has been loaded we switch to C
-if(is.null(getLoadedDLLs()$r_ode_model) == FALSE){
-  if(getLoadedDLLs()$r_ode_model[["dynamicLookup"]] == TRUE){
+if(is.null(getLoadedDLLs()[[c_libfile_base]]) == FALSE){
+  if(getLoadedDLLs()[[c_libfile_base]][["dynamicLookup"]] == TRUE){
     cfg$options$simulation_options$integrate_with  = "c-file"
   }
 }
@@ -112,7 +115,7 @@ cfg$options$stochastic$sub_file_sample  = 'with replacement'
 
 # default logging options
 cfg$options$logging$enabled   = TRUE 
-cfg$options$logging$file      = sprintf('transient%subiquity_log.txt', .Platform$file.sep)
+cfg$options$logging$file      = file.path(cfg$options$misc$temp_directory,"ubiquity_log.txt")
 cfg$options$logging$timestamp = TRUE 
 cfg$options$logging$ts_str    = "%Y-%m-%d %H:%M:%S"
 cfg$options$logging$debug     = FALSE
@@ -231,20 +234,28 @@ cfg$reporting$meta_pptx$two_col$ph_labels$text_right              = "Content Pla
 
 #--------------------------------------------------------------------
 # default reporting options for Word
-cfg$reporting$meta_docx$ph_content$HEADER_LEFT$location  = "header"
-cfg$reporting$meta_docx$ph_content$HEADER_LEFT$content   = ""
-cfg$reporting$meta_docx$ph_content$HEADER_RIGHT$location = "header"
-cfg$reporting$meta_docx$ph_content$HEADER_RIGHT$content  = ""
-cfg$reporting$meta_docx$ph_content$FOOTER_LEFT$location  = "footer"
-cfg$reporting$meta_docx$ph_content$FOOTER_LEFT$content   = ""
+cfg$reporting$meta_docx$ph_content$HeaderLeft$location   = "header"
+cfg$reporting$meta_docx$ph_content$HeaderLeft$content    = ""
+cfg$reporting$meta_docx$ph_content$HeaderRight$location  = "header"
+cfg$reporting$meta_docx$ph_content$HeaderRight$content   = ""
+cfg$reporting$meta_docx$ph_content$FooterLeft$location   = "footer"
+cfg$reporting$meta_docx$ph_content$FooterLeft$content    = ""
+cfg$reporting$meta_docx$ph_content$FooterRight$location  = "footer"
+cfg$reporting$meta_docx$ph_content$FooterRight$content   = ""
 cfg$reporting$meta_docx$styles$Normal                    = "Normal"
+cfg$reporting$meta_docx$styles$Code                      = "Code"
 cfg$reporting$meta_docx$styles$Default                   = "Default"
-cfg$reporting$meta_docx$styles$Title                     = "Title" 
-cfg$reporting$meta_docx$styles$Caption_Figure            = "Caption" 
-cfg$reporting$meta_docx$styles$Caption_Table             = "Caption" 
-cfg$reporting$meta_docx$styles$Heading_1                 = "Heading 1"
-cfg$reporting$meta_docx$styles$Heading_2                 = "Heading 2"
-cfg$reporting$meta_docx$styles$Heading_3                 = "Heading 3"
+cfg$reporting$meta_docx$styles$TOC                       = "toc 1" 
+cfg$reporting$meta_docx$styles$Heading_1                 = "heading 1"
+cfg$reporting$meta_docx$styles$Heading_2                 = "heading 2"
+cfg$reporting$meta_docx$styles$Heading_3                 = "heading 3"
+cfg$reporting$meta_docx$styles$Table                     = "Table Grid"
+cfg$reporting$meta_docx$styles$Table_Caption             = "table title"
+cfg$reporting$meta_docx$styles$Table_Caption_Location    = "top" 
+cfg$reporting$meta_docx$styles$Figure_Caption            = "graphic title" 
+cfg$reporting$meta_docx$styles$Figure_Caption_Location   = "bottom" 
+cfg$reporting$meta_docx$styles$Figure_Width              = 6.0
+cfg$reporting$meta_docx$styles$Figure_Height             = 5.0
 
 
 

@@ -125,6 +125,7 @@ som = run_simulation_ubiquity(parameters, cfg)
 #                            value  = "with replacement")
 #
 # # To parallelize the simulations uncomment the following:
+#  library(doParallel)
 #  cfg=system_set_option(cfg, group  = "simulation",
 #                             option = "parallel",    
 #                             value  = "multicore")
@@ -161,9 +162,9 @@ som = run_simulation_ubiquity(parameters, cfg)
 
 # -------------------------------------------------------------------------
 # Reporting
-#
-# Powerpoint
-# cfg = system_report_init(cfg)
+# See Reporting vignette for more information
+# # PowerPoint
+# cfg = system_report_init(cfg, rpttype="PowerPoint")
 # 
 # cfg = system_report_slide_title(cfg,
 #         title                  = "Presentation Title",      
@@ -178,5 +179,15 @@ som = run_simulation_ubiquity(parameters, cfg)
 #         content_type = "table", 
 #         content      = tcontent)
 #
+# system_report_save(cfg, output_file=file.path("output", "report.pptx"))
+#
+# # Word
+# cfg = system_report_init(cfg, rpttype="Word")
+#
+# cfg = system_report_doc_add_content(cfg, 
+#   content_type  = "text",
+#   content       = list(style   = "normal",
+#                        text    = "This is a Word report"))
+# 
 # system_report_save(cfg, output_file=file.path("output", "report.pptx"))
 # -------------------------------------------------------------------------

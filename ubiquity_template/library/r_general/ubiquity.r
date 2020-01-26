@@ -1,6 +1,5 @@
 #'@import deSolve
 #'@import doParallel
-#'@import doRNG
 #'@import flextable
 #'@import foreach
 #'@import gdata
@@ -13,10 +12,12 @@
 #'@import rmarkdown
 #'@import rhandsontable
 #'@import rstudioapi
+#'@import stringr
+#'@importFrom digest digest
 #'@importFrom parallel stopCluster makeCluster
 #'@importFrom grid pushViewport viewport grid.newpage grid.layout
 #'@importFrom gridExtra grid.arrange
-#'@importFrom utils installed.packages read.csv read.delim txtProgressBar setTxtProgressBar write.csv tail packageVersion
+#'@importFrom utils read.csv read.delim txtProgressBar setTxtProgressBar write.csv tail packageVersion
 #'@importFrom stats median qt
 #'@importFrom MASS mvrnorm
 
@@ -33,21 +34,57 @@
 #' will use the package. Otherwise, it will assume a \code{"sand alone"} distribution.
 #'@param perlcmd system command to run perl ("perl")
 #'@param output_directory location to store analysis outputs (\code{file.path(".", "output")})
+#'@param temporary_directory location to templates and otehr files after building the system (\code{file.path(".", "transient")})
 #'@param verbose enable verbose messaging   (\code{TRUE})
+#'@param ubiquity_app set to \code{TRUE} when building the system to be used with the ubiquty App (\code{FALSE})
 #'@param debug Boolean variable indicating if debugging information should be displayed (\code{TRUE})
+#'@return initialized ubiquity system object
 #'@examples
 #' \donttest{
-#' cfg = build_system()
+#' fr = system_new(file_name        = "system.txt", 
+#'                 system_file      = "mab_pk", 
+#'                 overwrite        = TRUE, 
+#'                 output_directory = tempdir())
+#' cfg = build_system(system_file  = file.path(tempdir(), "system.txt"),
+#'       output_directory          = file.path(tempdir(), "output"),
+#'       temporary_directory       = tempdir())
 #'}
-build_system <- function(system_file       = "system.txt",
-                         distribution      = "automatic",
-                         perlcmd           = "perl",
-                         output_directory  = file.path(".", "output"),
-                         verbose           =  TRUE,
-                         debug             =  TRUE){
+build_system <- function(system_file          = "system.txt",
+                         distribution         = "automatic",
+                         perlcmd              = "perl",
+                         output_directory     = file.path(".", "output"),
+                         temporary_directory  = file.path(".", "transient"),
+                         verbose              =  TRUE,
+                         ubiquity_app         =  FALSE,
+                         debug                =  TRUE){
 
+# If we cannot find a system file we create an empty one 
+if(!file.exists(system_file)){
+  message(paste("#> Unable to find system file >",system_file, "<", sep=""))
+  message("#> --------------------------")
+  message("#> Creating an empty template")
+  message("#> --------------------------")
+  sys_new_res = system_new(system_file="template", file_name=system_file)
+}
 
  
+# model base file used for the c library
+if(ubiquity_app){
+  system_checksum = "app_base"
+} else {
+  system_checksum = as.character(digest::digest(system_file, algo=c("md5")))
+}
+
+c_libfile_base    =  paste("ubiquity_", system_checksum, sep="")
+c_libfile_base_c  =  paste("ubiquity_", system_checksum, ".c", sep="")
+c_libfile_base_o  =  paste("ubiquity_", system_checksum, ".o", sep="")
+
+temp_directory  = file.path(temporary_directory, system_checksum)
+
+# if the temporary directory does not exist we create it
+if(!dir.exists(temp_directory)){
+  dir.create(temp_directory, recursive=TRUE)
+}
 
 # If the distribution is set to automatic we see if the package is loaded
 # If not we see if the stand alone library file is present, lastly we try to
@@ -62,12 +99,11 @@ if(distribution == "automatic"){
 } else if(distribution == "package"){
   # If it's set to package we make sure the package is installed and
   # if ti's not we default to stand alone
-  if(!("ubiquity" %in% rownames(installed.packages()))){
+  if(system.file(package="ubiquity") == ""){
     message("#> Warning: package selected but not found")
     distribution = "stand alone" }
 }
 
-temp_directory  = file.path(getwd(), "transient")
 
 if(verbose == TRUE){
   message("#> Ubiquity: (https://ubiquity.tools)")
@@ -98,33 +134,15 @@ if(distribution == "package"){
 }
 
 
-# Basic commands:
-# system("cp transient/r_ode_model.c  .")
-# system("R CMD SHLIB r_ode_model.c")
-# dyn.load(paste("r_ode_model", .Platform$dynlib.ext, sep = ""))
-# This will check to see if the library is loaded:
-# getLoadedDLLs()$r_ode_model[["dynamicLookup"]];
-  
-# turning off warnings so we don't get a lot of
-# stuff from the system commands below
-
 cfg = list()
 
-# If we cannot find a system file we create an empty one 
-if(!file.exists(system_file)){
-  message(paste("#> Unable to find system file >",system_file, "<", sep=""))
-  message("#> --------------------------")
-  message("#> Creating an empty template")
-  message("#> --------------------------")
-  sys_new_res = system_new(system_file="template", file_name=system_file)
-}
 
 if(file.exists(system_file)){
   if(verbose == TRUE){
     message(paste("#> Building the system:    ", system_file, sep=""))
   }
   
-  build_command = sprintf('%s "%s" "%s" "%s" "%s" "%s"', perlcmd, build_script_pl, system_file, temp_directory, templates, distribution)
+  build_command = sprintf('%s "%s" "%s" "%s" "%s" "%s" "%s"', perlcmd, build_script_pl, system_file, temp_directory, templates, distribution, c_libfile_base)
   output = system(build_command, intern=TRUE)
   
   # CFILE is used to indicate if we have compiled and loaded the CFILE successfully 
@@ -147,23 +165,23 @@ if(file.exists(system_file)){
   # Cleaning up any older versions of the C file
   #
   # if it's loaded we remove it from memory:
-  if(('r_ode_model' %in% names(getLoadedDLLs()))){
-    dyn.unload(getLoadedDLLs()$r_ode_model[["path"]])}
+  if((c_libfile_base %in% names(getLoadedDLLs()))){
+    dyn.unload(getLoadedDLLs()[[c_libfile_base]][["path"]])
+    }
   
   # making the output directory to store generated information
-  if(!file.exists('output')){
+  if(!file.exists(output_directory)){
     if(verbose == TRUE){
       message("#> Creating output directory")
     }
-    dir.create(output_directory)
+    dir.create(output_directory, recursive=TRUE)
   }
   
   #next we remove any files to make sure we start from scratch
-  if(file.exists(file.path(temp_directory, paste("r_ode_model", .Platform$dynlib.ext, sep = "")))){
-     file.remove(file.path(temp_directory, paste("r_ode_model", .Platform$dynlib.ext, sep = ""))) }
-  if(file.exists(file.path(temp_directory, "r_ode_model.o"))){
-     file.remove(file.path(temp_directory, "r_ode_model.o")) }
-  
+  if(file.exists(file.path(temp_directory, paste(c_libfile_base, .Platform$dynlib.ext, sep = "")))){
+     file.remove(file.path(temp_directory, paste(c_libfile_base, .Platform$dynlib.ext, sep = ""))) }
+  if(file.exists(file.path(temp_directory, c_libfile_base_o))){
+     file.remove(file.path(temp_directory, c_libfile_base_o)) }
   
   # Now we compile the C file
   if(verbose == TRUE){
@@ -174,10 +192,12 @@ if(file.exists(system_file)){
     # changing the working directory to the
     # temp directory to avoid weird issues
     # with spaces in file names and paths
-    mywd = getwd()
-    setwd(temp_directory)
+    # Copying the generated c file to the checksummed base file name
+    file.copy(from =file.path(temp_directory, "r_ode_model.c"), 
+              to   =file.path(temp_directory, c_libfile_base_c), 
+              overwrite=TRUE)
     # Compling the C file
-    output =  system('R CMD SHLIB r_ode_model.c', intern=TRUE) 
+    output =  system(paste('R CMD SHLIB "', file.path(temp_directory, c_libfile_base_c), '"', sep=""), intern=TRUE) 
     if("status" %in% names(attributes(output))){
       if(verbose == TRUE){
         if(debug == TRUE){
@@ -195,12 +215,8 @@ if(file.exists(system_file)){
       # Loading the shared library
       if(verbose == TRUE){
         message("#> Loading the shared C library") }
-      dyn.load(paste("r_ode_model", .Platform$dynlib.ext, sep = ""))
+      dyn.load(file.path(temp_directory, paste(c_libfile_base, .Platform$dynlib.ext, sep = "")))
     }
-    # Returning to the working directory
-    setwd(mywd)
-  
-  
     if(verbose == TRUE){
       message('#> System built, to fetch a new template use the following commands:')
       message('#>   fr = system_fetch_template(cfg, template = "Simulation")')
@@ -208,7 +224,7 @@ if(file.exists(system_file)){
     }
   }else{
     if(verbose == TRUE){
-      message(paste("#> Failed: file", file.path(temp_directory, "r_ode_model.c"), " not found "))
+      message(paste("#> Failed: file", file.path(temp_directory, c_libfile_base_c), " not found "))
     }
     CFILE = FALSE
   }
@@ -219,21 +235,20 @@ if(file.exists(system_file)){
       message("#> following command to debug:          ") 
       message(sprintf("#> system('R CMD SHLIB \"%s%sr_ode_model.c\"')", temp_directory, .Platform$file.sep))
     }
-    
-    }
+  }
   
   # Returning the ubiquity model object:
   if(file.exists(file.path(temp_directory, "auto_rcomponents.R"))){
     source(file.path(temp_directory, "auto_rcomponents.R"))
     eval(parse(text="cfg = system_fetch_cfg()"))
 
-    # Storing the output directory in the cfg variable
-    cfg$options$misc$output_directory = output_directory
+    # storing the output directory
+    cfg$options$misc$output_directory =  output_directory 
   } 
   
-  } else {
+} else {
   message(paste("#> Still unable to find system file >", system_file,"<", sep=""))
-  }
+}
 return(cfg)}
 
 # -------------------------------------------------------------------------
@@ -242,22 +257,26 @@ return(cfg)}
 #'@description With the ubiquity package this function can be used to fetch
 #' example files for different sections of the workshop.
 #'
-#'@param section Name of the section of workshop to retrieve 
+#'@param section Name of the section of workshop to retrieve  ("Simulation")
 #'@param overwrite if \code{TRUE} the new system file will overwrite any existing files present
+#'@param output_directory directory where workshop files will be placed (getwd())
 #'@details Valid sections are "Simulation", "Estimation", "Titration" "Reporting", and "NCA"
 #'
 #'@return list
 #'@examples
 #' \donttest{
-#' workshop_fetch("Estimation")
+#' workshop_fetch("Estimation", output_directory=tempdir(), overwrite=TRUE)
 #'}
-workshop_fetch <- function(section="Simulation", overwrite=FALSE){
+workshop_fetch <- function(section          = "Simulation", 
+                           overwrite        = FALSE,
+                           output_directory = getwd()){
   res = list()
   allowed = c("Simulation", "Estimation", "Titration", "Reporting", "Testing", "NCA")
 
   isgood = TRUE
   # This function only works if we're using the package
-  if("ubiquity" %in% rownames(installed.packages())){
+  if(!(system.file(package="ubiquity") == "")){
+
     if(section %in% allowed){
     
       src_dir = system.file("ubinc", "scripts", package="ubiquity")
@@ -347,7 +366,7 @@ workshop_fetch <- function(section="Simulation", overwrite=FALSE){
       # up an error.
       if(!overwrite){
         for(fidx in 1:length(destinations)){
-          if(file.exists(destinations[fidx])){
+          if(file.exists(file.path(output_directory, destinations[fidx]))){
             write_file[fidx] = FALSE 
           }
         }
@@ -361,11 +380,11 @@ workshop_fetch <- function(section="Simulation", overwrite=FALSE){
       # next we write the files that are TRUE
       for(fidx in 1:length(destinations)){
         if(write_file[fidx]){
-          file.copy(sources[fidx], destinations[fidx], overwrite=TRUE)
-          message(paste("#> Creating file:", destinations[fidx] ))
+          file.copy(sources[fidx], file.path(output_directory, destinations[fidx]), overwrite=TRUE)
+          message(paste("#> Creating file:", file.path(output_directory, destinations[fidx] )))
         } else {
           isgood = FALSE
-          message(paste("#> File:", destinations[fidx], "exists, and was not copied."))
+          message(paste("#> File:", file.path(output_directory, destinations[fidx]), "exists, and was not copied."))
           message(      "#> Set overwrite=TRUE to force this file to be copied.")
         }
       }
@@ -407,15 +426,22 @@ return(res)}
 #'@param file_name name of the new file to create   
 #'@param system_file name of the system file to copy
 #'@param overwrite if \code{TRUE} the new system file will overwrite any existing files present
+#'@param output_directory \code{getwd()} directory where system file will be placed
 #'
 #'@return \code{TRUE} if the new file was created and \code{FALSE} otherwise
 #'
 #'@examples
 #' \donttest{
 #' # To create an example system file named example_system.txt:
-#' system_new(system_file="mab_pk", file_name="system_example.txt", overwrite=TRUE)
+#' system_new(system_file      = "mab_pk", 
+#'            file_name        = "system_example.txt", 
+#'            overwrite        = TRUE,  
+#'            output_directory = tempdir())
 #'}
-system_new  <- function(file_name="system.txt", system_file="template", overwrite=FALSE){
+system_new  <- function(file_name        = "system.txt", 
+                        system_file      ="template", 
+                        overwrite        = FALSE,  
+                        output_directory = getwd()){
 
  allowed = c("template",      "mab_pk",         "pbpk",          "pwc", 
              "tmdd",          "adapt",          "one_cmt_micro", "one_cmt_macro",  
@@ -423,9 +449,11 @@ system_new  <- function(file_name="system.txt", system_file="template", overwrit
 
  isgood = FALSE
 
+ output_file = file.path(output_directory, file_name)
+
  # first we look to see if the package is installed, if it's not
  # we look for files in the stand alone distribution locations
- if("ubiquity" %in% rownames(installed.packages())){
+ if((system.file(package="ubiquity") != "")){
    if(system_file == "template"){
      file_path       = system.file("ubinc",    "templates", "system_template.txt", package="ubiquity")
    } else {
@@ -444,15 +472,15 @@ system_new  <- function(file_name="system.txt", system_file="template", overwrit
  # if ovewrite is false we check to see if the destination file exists. If it
  # does exist, we ste write_file to false
  if(!overwrite){
-   if(file.exists(file_name)){
-     message(paste("#> Error the file >", file_name, "< exists set overwrite=TRUE to overwrite", sep=""))
+   if(file.exists(output_file)){
+     message(paste("#> Error the file >", output_file, "< exists set overwrite=TRUE to overwrite", sep=""))
      write_file = FALSE}
  }
 
   # if the source file exists and write_file is true then
   # we try to copy the file
   if(file.exists(file_path) & write_file){
-    isgood = file.copy(file_path, file_name, overwrite=TRUE)
+    isgood = file.copy(file_path, output_file, overwrite=TRUE)
   }
 isgood}
 # -------------------------------------------------------------------------
@@ -468,6 +496,7 @@ isgood}
 #'@param cfg ubiquity system object    
 #'@param template template type  
 #'@param overwrite if \code{TRUE} the new system file will overwrite any existing files present
+#'@param output_directory directory where workshop files will be placed (getwd())
 #'
 #'@return List with vectors of template \code{sources}, \code{destinations}
 #' and corresponding write success (\code{write_file}), also a list element
@@ -491,15 +520,22 @@ isgood}
 #'@examples
 #' \donttest{
 #' # Creating a system file from the mab_pk example
-#' system_new(system_file="mab_pk", file_name="system_example.txt", overwrite=TRUE)
+#' fr = system_new(file_name        = "system.txt", 
+#'                 system_file      = "mab_pk", 
+#'                 overwrite        = TRUE, 
+#'                 output_directory = tempdir())
 #'
 #' # Building the system 
-#' cfg = build_system("system_example.txt")
+#' cfg = build_system(system_file  = file.path(tempdir(), "system.txt"),
+#'       output_directory          = file.path(tempdir(), "output"),
+#'       temporary_directory       = tempdir())
 #'
 #' # Creating a simulation template
-#' fr =  system_fetch_template(cfg, template="Simulation")
+#' fr =  system_fetch_template(cfg, 
+#'       template         = "Simulation", 
+#'       output_directory = tempdir())
 #'}
-system_fetch_template  <- function(cfg, template="Simulation", overwrite=FALSE){
+system_fetch_template  <- function(cfg, template="Simulation", overwrite=FALSE, output_directory=getwd()){
 
  res = list()
  # These are the allowed templates:
@@ -517,11 +553,11 @@ system_fetch_template  <- function(cfg, template="Simulation", overwrite=FALSE){
  if(template %in% allowed){
    # first we look to see if the package is installed, if it's not
    # we look for the system_template.txt file 
-   if("ubiquity" %in% rownames(installed.packages())){
+   if((system.file(package="ubiquity") != "")){
      template_dir = system.file("ubinc", "templates", package="ubiquity")
    } 
    else {
-     template_dir    = file.path('library', 'templates')
+     template_dir = file.path('library', 'templates')
    }
    temp_directory = cfg$options$misc$temp_directory
 
@@ -594,7 +630,7 @@ system_fetch_template  <- function(cfg, template="Simulation", overwrite=FALSE){
    # up an error.
    if(!overwrite){
      for(fidx in 1:length(destinations)){
-       if(file.exists(destinations[fidx])){
+       if(file.exists(file.path(output_directory, destinations[fidx]))){
          write_file[fidx] = FALSE 
        }
      }
@@ -609,11 +645,11 @@ system_fetch_template  <- function(cfg, template="Simulation", overwrite=FALSE){
    # next we write the files that are TRUE
    for(fidx in 1:length(destinations)){
      if(write_file[fidx]){
-       file.copy(sources[fidx], destinations[fidx], overwrite=TRUE)
-       vp(cfg, sprintf("Creating file: %s", destinations[fidx] ))
+       file.copy(sources[fidx], file.path(output_directory, destinations[fidx]), overwrite=TRUE)
+       vp(cfg, sprintf("Creating file: %s", file.path(output_directory, destinations[fidx])))
      } else {
        isgood = FALSE
-       vp(cfg, sprintf("File: %s, exists, and was not copied.", destinations[fidx] ))
+       vp(cfg, sprintf("File: %s, exists, and was not copied.", file.path(output_directory, destinations[fidx])))
        vp(cfg, sprintf("Set overwrite=TRUE to force this file to be copied."))
      }
    }
@@ -706,10 +742,15 @@ system_load_data <- function(cfg, dsname, data_file, data_sheet){
 #'@examples
 #' \donttest{
 #' # Creating a system file from the mab_pk example
-#' system_new(system_file="mab_pk", file_name="system_example.txt", overwrite=TRUE)
+#' fr = system_new(file_name        = "system.txt", 
+#'                 system_file      = "mab_pk", 
+#'                 overwrite        = TRUE, 
+#'                 output_directory = tempdir())
 #' 
 #' # Building the system 
-#' cfg = build_system("system_example.txt")
+#' cfg = build_system(system_file  = file.path(tempdir(), "system.txt"),
+#'       output_directory          = file.path(tempdir(), "output"),
+#'       temporary_directory       = tempdir())
 #' 
 #' # Selecting the default parameter set
 #' cfg = system_select_set(cfg, "default")
@@ -859,10 +900,15 @@ return(cfg)
 #'@examples
 #' \donttest{
 #' # Creating a system file from the mab_pk example
-#' system_new(system_file="mab_pk", file_name="system_example.txt", overwrite=TRUE)
-#'
+#' fr = system_new(file_name        = "system.txt", 
+#'                 system_file      = "mab_pk", 
+#'                 overwrite        = TRUE, 
+#'                 output_directory = tempdir())
+#' 
 #' # Building the system 
-#' cfg = build_system("system_example.txt")
+#' cfg = build_system(system_file  = file.path(tempdir(), "system.txt"),
+#'       output_directory          = file.path(tempdir(), "output"),
+#'       temporary_directory       = tempdir())
 #'
 #' # Fetching the default parameter set
 #' parameters = system_fetch_parameters(cfg)
@@ -884,10 +930,15 @@ system_fetch_parameters <- function(cfg){
 #'@examples
 #' \donttest{
 #' # Creating a system file from the mab_pk example
-#' system_new(system_file="mab_pk", file_name="system_example.txt", overwrite=TRUE)
-#'
+#' fr = system_new(file_name        = "system.txt", 
+#'                 system_file      = "mab_pk", 
+#'                 overwrite        = TRUE, 
+#'                 output_directory = tempdir())
+#' 
 #' # Building the system 
-#' cfg = build_system("system_example.txt")
+#' cfg = build_system(system_file  = file.path(tempdir(), "system.txt"),
+#'       output_directory          = file.path(tempdir(), "output"),
+#'       temporary_directory       = tempdir())
 #'
 #' # Covariance term for ETACL and ETAVc
 #' val = system_fetch_iiv(cfg, IIV1="ETACL", IIV2="ETAVc")
@@ -933,10 +984,15 @@ return(VALUE)}
 #'@examples
 #' \donttest{
 #' # Creating a system file from the mab_pk example
-#' system_new(system_file="mab_pk", file_name="system_example.txt", overwrite=TRUE)
-#'
+#' fr = system_new(file_name        = "system.txt", 
+#'                 system_file      = "mab_pk", 
+#'                 overwrite        = TRUE, 
+#'                 output_directory = tempdir())
+#' 
 #' # Building the system 
-#' cfg = build_system("system_example.txt")
+#' cfg = build_system(system_file  = file.path(tempdir(), "system.txt"),
+#'       output_directory          = file.path(tempdir(), "output"),
+#'       temporary_directory       = tempdir())
 #'
 #' # Clear only infusion rates
 #' cfg = system_zero_inputs(cfg, bolus=TRUE, rates=FALSE)
@@ -983,10 +1039,15 @@ return(cfg)}
 #'@examples
 #' \donttest{
 #' # Creating a system file from the mab_pk example
-#' system_new(system_file="mab_pk", file_name="system_example.txt", overwrite=TRUE)
-#'
+#' fr = system_new(file_name        = "system.txt", 
+#'                 system_file      = "mab_pk", 
+#'                 overwrite        = TRUE, 
+#'                 output_directory = tempdir())
+#' 
 #' # Building the system 
-#' cfg = build_system("system_example.txt")
+#' cfg = build_system(system_file  = file.path(tempdir(), "system.txt"),
+#'       output_directory          = file.path(tempdir(), "output"),
+#'       temporary_directory       = tempdir())
 #'
 #' # Setting the covariate WT to 50
 #' cfg = system_set_covariate(cfg, 
@@ -1028,10 +1089,15 @@ return(cfg)}
 #'@examples
 #' \donttest{
 #' # Creating a system file from the mab_pk example
-#' system_new(system_file="mab_pk", file_name="system_example.txt", overwrite=TRUE)
-#'
+#' fr = system_new(file_name        = "system.txt", 
+#'                 system_file      = "mab_pk", 
+#'                 overwrite        = TRUE, 
+#'                 output_directory = tempdir())
+#' 
 #' # Building the system 
-#' cfg = build_system("system_example.txt")
+#' cfg = build_system(system_file  = file.path(tempdir(), "system.txt"),
+#'       output_directory          = file.path(tempdir(), "output"),
+#'       temporary_directory       = tempdir())
 #'
 #' # Clearing all inputs
 #' cfg = system_zero_inputs(cfg)
@@ -1319,12 +1385,6 @@ system_set_option <- function(cfg, group, option, value){
           errormsgs = c(errormsgs, "Unable to load the foreach package")
           errormsgs = c(errormsgs, 'install.packages("foreach")')
         }
-        if(!system_req("doRNG")){
-          isgood = FALSE
-          errormsgs =  c(errormsgs, "Unable to load the doRNG package")
-          errormsgs =  c(errormsgs, 'install.packages("doRNG")')
-        }
-
         if(!isgood){
           errormsgs = c(errormsgs, "Unable to load one or more packages needed for the  multicore option") }
       }
@@ -2130,10 +2190,15 @@ return(cfg)
 #'@examples
 #' \donttest{
 #' # Creating a system file from the mab_pk example
-#' system_new(system_file="mab_pk", file_name="system_example.txt", overwrite=TRUE)
-#'
+#' fr = system_new(file_name        = "system.txt", 
+#'                 system_file      = "mab_pk", 
+#'                 overwrite        = TRUE, 
+#'                 output_directory = tempdir())
+#' 
 #' # Building the system 
-#' cfg = build_system("system_example.txt")
+#' cfg = build_system(system_file  = file.path(tempdir(), "system.txt"),
+#'       output_directory          = file.path(tempdir(), "output"),
+#'       temporary_directory       = tempdir())
 #'
 #' # Clearing all inputs
 #' cfg = system_zero_inputs(cfg)
@@ -2141,7 +2206,7 @@ return(cfg)
 #' # SC dose of 200 mg
 #' cfg = system_set_bolus(cfg, state   ="At", 
 #'                             times   = c(  0.0),  #  day
-#'                             values  = c(400.0))  #  mg
+#'                             values  = c(200.0))  #  mg
 #'}
 #'@seealso \code{\link{system_zero_inputs}}
 system_set_bolus <- function(cfg, state, times, values){
@@ -2261,10 +2326,15 @@ return(cfg)}
 #'@examples
 #' \donttest{
 #' # Creating a system file from the mab_pk example
-#' system_new(system_file="mab_pk", file_name="system_example.txt", overwrite=TRUE)
-#'
+#' fr = system_new(file_name        = "system.txt", 
+#'                 system_file      = "mab_pk", 
+#'                 overwrite        = TRUE, 
+#'                 output_directory = tempdir())
+#' 
 #' # Building the system 
-#' cfg = build_system("system_example.txt")
+#' cfg = build_system(system_file  = file.path(tempdir(), "system.txt"),
+#'       output_directory          = file.path(tempdir(), "output"),
+#'       temporary_directory       = tempdir())
 #'
 #' # Clearing all inputs
 #' cfg = system_zero_inputs(cfg)
@@ -2308,6 +2378,8 @@ return(cfg)}
 #'@param gcFirst controls garbage collection
 #'@param type can be either \code{"elapsed"} \code{"user.self"} or \code{"sys.self"} 
 #'
+#'@return time tic was called
+#'
 #'@examples
 #' tic()
 #' Sys.sleep(3)
@@ -2329,6 +2401,7 @@ tic <- function(gcFirst = TRUE, type=c("elapsed", "user.self", "sys.self"))
 #' when code is executed. Adapted from:
 #' http://stackoverflow.com/questions/1716012/stopwatch-function-in-r
 #'
+#'@return time in seconds since tic() was called
 #'
 #'@examples
 #' tic()
@@ -2371,7 +2444,17 @@ toc <- function()
 #'@examples
 #' # To log and display the current system information:
 #' \donttest{
-#' cfg = build_system()
+#' # Creating a system file from the mab_pk example
+#' fr = system_new(file_name        = "system.txt", 
+#'                 system_file      = "mab_pk", 
+#'                 overwrite        = TRUE, 
+#'                 output_directory = tempdir())
+#' 
+#' # Building the system 
+#' cfg = build_system(system_file  = file.path(tempdir(), "system.txt"),
+#'       output_directory          = file.path(tempdir(), "output"),
+#'       temporary_directory       = tempdir())
+#'
 #' vp(cfg, system_view(cfg))
 #' }
 system_view <- function(cfg,field="all") {
@@ -2588,7 +2671,7 @@ system_view <- function(cfg,field="all") {
        for(ch_name   in names(cfg$cohorts)){
          msgs = c(msgs,sprintf(" Cohort: %s", ch_name))
          msgs = c(msgs, paste(replicate(20, "-"), collapse = ""))
-         msgs = c(msgs,sprintf(" dataset: %s", cfg$cohorts[[ch_name]]$dataset))
+         msgs = c(msgs,sprintf(" dataset: %s; (%s)", cfg$cohorts[[ch_name]]$dataset, cfg$data[[cfg$cohorts[[ch_name]]$dataset]]$data_file$name))
          msgs = c(msgs,sprintf(" Cohort options (options) "))
          #options
          if('options' %in% names(cfg$cohorts[[ch_name]])){
@@ -2611,7 +2694,7 @@ system_view <- function(cfg,field="all") {
          }
          msgs = c(msgs, " ")
 
-         msgs = c(msgs, " Cohort-specific parametrers (cp)")
+         msgs = c(msgs, " Cohort-specific parameters (cp)")
          if('cp' %in% names(cfg$cohorts[[ch_name]])){
            for(pname in names(cfg$cohorts[[ch_name]]$cp)){
              msgs = msgs(sprintf("     %s = %s", pname, toString(cfg$cohorts[[ch_name]]$cp[[pname]])))
@@ -2776,19 +2859,25 @@ return(str)}
 #'@param parameters list containing the typical value of parameters
 #'@param cfg ubiquity system object    
 #'@param progress_message text string to prepend when called from the ShinyApp
+#'@param show_progress Boolean value controlling the display of a progress indicator (\code{TRUE})
 #'
 #'@return Mapped simulation output with individual predictions, individual
 #' parameters, and summary statistics of the parameters. The Vignettes below
-#' details on the format of the output.
+#' details on the format of the output. 
 #'
 #'@details 
 #'
-#'For more information on setting options for population simulation see the
-#'stochastic section of the \code{\link{system_set_option}} help file.
+#' Failures due to numerical instability or other integration errors will be
+#' captured within the function. Data for those subjects will be removed from the
+#' output. Their IDs will be displayed as messages and stored in the output. 
+#'
+#'
+#' For more information on setting options for population simulation see the
+#' stochastic section of the \code{\link{system_set_option}} help file.
 #'
 #'
 #'@seealso Vignette on simulation (\code{vignette("Simulation", package = "ubiquity")}) titration (\code{vignette("Titration", package = "ubiquity")}) as well as \code{\link{som_to_df}}
-simulate_subjects = function (parameters, cfg, progress_message = "Simulating Subjects:"){
+simulate_subjects = function (parameters, cfg, show_progress = TRUE, progress_message = "Simulating Subjects:"){
 #function [predictions] = simulate_subjects(parameters, cfg)
 #
 # Inputs:
@@ -2916,7 +3005,6 @@ if("stochastic" %in% names(cfg$options)){
 }
 
 
-max_errors = 100;
 
 isgood = TRUE;
 
@@ -3099,11 +3187,13 @@ if("iiv" %in% names(cfg) | !is.null(sub_file)){
       # Initialzing progress bar
       # If we're running as a script we display this in the console
       # otherwise we initialize a shiny onject
-      if(cfg$options$misc$operating_environment == 'script'){
-        pb = txtProgressBar(min=0, max=1, width=12, style=3, char='.') 
-        # JMH for parallel
-        myprogress <- function(n) setTxtProgressBar(pb, n)
-        }
+      if(show_progress){
+        if(cfg$options$misc$operating_environment == 'script'){
+          pb = txtProgressBar(min=0, max=1, width=12, style=3, char='.') 
+          # JMH for parallel
+          myprogress <- function(n) setTxtProgressBar(pb, n)
+          }
+      }
     
       if(cfg$options$misc$operating_environment == 'gui'){
         pb <- shiny::Progress$new()
@@ -3135,18 +3225,25 @@ if("iiv" %in% names(cfg) | !is.null(sub_file)){
         somall <- foreach(sub_idx=1:nsub,
                           .verbose = FALSE,
                           .errorhandling='pass',
-                          .options.snow=list(progress = myprogress),
+                       #  .options.snow=list(progress = myprogress),
                           .packages=foreach_packages) %dopar% {
+
+
+          # Setting the seed based on the subject ID and the 
+          # user specified seed: this applies to subject level 
+          set.seed(cfg$options$stochastic$seed + sub_idx)
     
           # If we're using the c-file we tell the spawned instances to load
-          # them.
+          # the library 
           if(cfg$options$simulation_options$integrate_with == "c-file"){
-            dyn.load(file.path(cfg$options$misc$temp_directory, paste("r_ode_model", .Platform$dynlib.ext, sep = "")))
+            dyn.load(file.path(cfg$options$misc$temp_directory, paste( cfg$options$misc$c_libfile_base, .Platform$dynlib.ext, sep = "")))
           }
     
+          # If we're running a stand alone distribution we load the functions
           if(cfg$options$misc$distribution == "stand alone"){
             source(file.path("library","r_general","ubiquity.R"))}
     
+          # now we load the system specific functions
           source(file.path(cfg$options$misc$temp_directory, "auto_rcomponents.R"))
         
           # Pulling out subject level parameters
@@ -3171,19 +3268,46 @@ if("iiv" %in% names(cfg) | !is.null(sub_file)){
         
           # Running either titration or normal simulation
           if(cfg$titration$titrate){
-            exec.time = system.time((som = run_simulation_titrate(parameters_subject, cfg_sub)))
-            #som = run_simulation_titrate(parameters_subject, cfg)
+            tcres = tryCatch(
+              { 
+               exec.time = system.time((som = run_simulation_titrate(parameters_subject, cfg_sub)))
+               list(exec.time = exec.time, som=som, msg="success")},
+             error = function(e) {
+               list(exec.time = NULL, som=NULL, error=NULL, msg="error")})
             }
           else{
-            exec.time = system.time((som = run_simulation_ubiquity(parameters_subject, cfg_sub)))
-            #som = run_simulation_ubiquity(parameters_subject, cfg)
+            tcres = tryCatch(
+              { 
+               exec.time = system.time((som = run_simulation_ubiquity(parameters_subject, cfg_sub)))
+               list(exec.time = exec.time, som=som, msg="success")},
+             error = function(e) {
+               list(exec.time = NULL, som=NULL, error=e, msg="error")})
             }
+
+
+          som       = tcres$som
+          msg       = tcres$msg
+
+          #tmp = run_simulation_ubiquity(parameters_subject, cfg_sub)
+
+          if(msg== "error"){
+          # Checking for integration failure
+            som$simout      = NULL
+            som$skip_reason = "Integration failure"
+          } else if(any(is.nan(as.matrix((som$simout))))){
+          # checking to see if any of the results returned NAN
+            som$simout      = NULL
+            som$skip_reason = "NAN values in simulation output"
+          }
         
           # Storing the subject id
-          som$sub_idx = sub_idx
+          som$sub_idx   = sub_idx
         
           # saving the execution time
-          som$exec.time = exec.time
+          som$exec.time = tcres$exec.time
+
+          # storing the result of trycatch error
+          som$error     = tcres$error
         
        #  if(cfg$options$misc$operating_environment == 'gui'){
        #    pb$inc(1/nsub, detail = sprintf('%d/%d (%d %%)', sub_idx, nsub, floor(100*sub_idx/nsub))) }
@@ -3205,8 +3329,7 @@ if("iiv" %in% names(cfg) | !is.null(sub_file)){
         
           # Setting the seed based on the subject ID and the 
           # user specified seed: this applies to subject level 
-          # measurement error 
-          # set.seed(seed+sub_idx)
+          set.seed(cfg$options$stochastic$seed + sub_idx)
         
           # Pulling out subject level parameters
           parameters_subject = p$subjects$parameters[sub_idx,]
@@ -3229,26 +3352,53 @@ if("iiv" %in% names(cfg) | !is.null(sub_file)){
         
           # Running either titration or normal simulation
           if(cfg$titration$titrate){
-            exec.time = system.time((som = run_simulation_titrate(parameters_subject, cfg_sub)))
-            #som = run_simulation_titrate(parameters_subject, cfg)
+            tcres = tryCatch(
+              { 
+               exec.time = system.time((som = run_simulation_titrate(parameters_subject, cfg_sub)))
+               list(exec.time = exec.time, som=som, msg="success")},
+             error = function(e) {
+               list(exec.time = NULL, error=NULL, som=NULL, msg="error")})
             }
           else{
-            exec.time = system.time((som = run_simulation_ubiquity(parameters_subject, cfg_sub)))
-            #som = run_simulation_ubiquity(parameters_subject, cfg)
+            tcres = tryCatch(
+              { 
+               exec.time = system.time((som = run_simulation_ubiquity(parameters_subject, cfg_sub)))
+               list(exec.time = exec.time, som=som, msg="success")},
+             error = function(e) {
+               list(exec.time = NULL, error=e, som=NULL, msg="error")})
             }
+          som       = tcres$som
+          msg       = tcres$msg
         
+          if(msg== "error"){
+          # Checking for integration failure
+            som$simout      = NULL
+            som$skip_reason = "Integration failure"
+          } else if(any(is.nan(as.matrix((som$simout))))){
+          # checking to see if any of the results returned NAN
+            som$simout      = NULL
+            som$skip_reason = "NAN values in simulation output"
+          }
+
           # Storing the subject id
           som$sub_idx = sub_idx
         
           # saving the execution time
-          som$exec.time = exec.time
+          som$exec.time = tcres$exec.time
+
+          # storing the result of trycatch error
+          som$error  = tcres$error
         
           # Updating progress indicators
-          if(cfg$options$misc$operating_environment == 'script'){
-            myprogress(sub_idx/nsub) }
+          if(show_progress){
+            if(cfg$options$misc$operating_environment == 'script'){
+              myprogress(sub_idx/nsub) }
+           }
         
-          if(cfg$options$misc$operating_environment == 'gui'){
-            pb$inc(1/nsub, detail = sprintf('%d/%d (%d %%)', sub_idx, nsub, floor(100*sub_idx/nsub))) }
+          if(show_progress){
+            if(cfg$options$misc$operating_environment == 'gui'){
+              pb$inc(1/nsub, detail = sprintf('%d/%d (%d %%)', sub_idx, nsub, floor(100*sub_idx/nsub))) }
+          }
         
           som }
       }
@@ -3284,28 +3434,76 @@ if("iiv" %in% names(cfg) | !is.null(sub_file)){
        timescale_name = sprintf('ts.%s', timescale_name)
        p$times[[timescale_name]] = c(som$simout[[timescale_name]])
       }
+
+      subs_skipped = NULL
     
       for(som in somall){
         sub_idx = som$sub_idx
       
-        # storing the secondary parameters
-        p$subjects$secondary_parameters[sub_idx,] = som$simout[1,names(cfg$options$ssp)]
-    
-        # Storing the states, outputs and titration information
-        for(state_name   in state_names){
-          p$states[[state_name]][sub_idx,] = som$simout[[state_name]] }
-        
-        for(output_name   in output_names){
-          p$outputs[[output_name]][sub_idx,] = som$simout[[output_name]] }
-    
-        for(titration_name   in names(som$titration)){
-          p$titration[[titration_name]][sub_idx,] = som$titration[[titration_name]]}
+        # If som$simout is null it needs to be skipped 
+        # so we capture that information here:
+        if(is.null(som$simout)){
+         # Storing the id of the subject being skipped
+         subs_skipped = rbind(subs_skipped, 
+                   data.frame(id     = sub_idx,
+                              reason = som$skip_reason))
+        } else {
+          # storing the secondary parameters
+          p$subjects$secondary_parameters[sub_idx,] = som$simout[1,names(cfg$options$ssp)]
+         
+          # Storing the states, outputs and titration information
+          for(state_name   in state_names){
+            p$states[[state_name]][sub_idx,] = som$simout[[state_name]] }
+          
+          for(output_name   in output_names){
+            p$outputs[[output_name]][sub_idx,] = som$simout[[output_name]] }
+         
+          for(titration_name   in names(som$titration)){
+            p$titration[[titration_name]][sub_idx,] = som$titration[[titration_name]]}
+        }
         sub_idx = sub_idx + 1;
       }
+
+
+      #------------------------------------
+      # Processing skipped subjects
+      if(!is.null(subs_skipped)){
+        # Saving the parameter combinations that caused the problems
+        subs_skipped$parmaeters = p$subjects$parameters[as.numeric(subs_skipped$id),]
+
+        # Removing the rows associated with skipped subjects from the
+        # Parameters
+        p$subjects$parameters = p$subjects$parameters[-as.numeric(subs_skipped$id), ]
+        # Secondary parameters
+        p$subjects$secondary_parameters = p$subjects$secondary_parameters[-as.numeric(subs_skipped$id), ]
+        # States
+        for(state_name   in state_names){
+          p$states[[state_name]][-as.numeric(subs_skipped$id),]
+        }
+        # Outputs
+        for(output_name   in output_names){
+          p$outputs[[output_name]][-as.numeric(subs_skipped$id),]
+        }
+        # Titration names
+        for(titration_name   in  names(som$titration)){
+          p$titrations[[titration_name]][-as.numeric(subs_skipped$id),]
+        }
+
+        vp(cfg, "")
+        vp(cfg, "The following subjects were skipped")
+        for(sub_idx in subs_skipped$id){
+          vp(cfg, paste(" ", sub_idx, subs_skipped[subs_skipped$id == sub_idx, ]$reason))
+        }
+        vp(cfg, paste("The results will only include", nrow(p$subjects$parameters), "subjects"))
+      }
+      p$subs_skipped = subs_skipped
+      #------------------------------------
     
       # Cleaning up the progress bar objects
-      if(cfg$options$misc$operating_environment == 'script'){
-        close(pb)}
+      if(show_progress){
+        if(cfg$options$misc$operating_environment == 'script'){
+          close(pb)}
+      }
       if(cfg$options$misc$operating_environment == 'gui'){
           pb$close()}
       
@@ -3324,14 +3522,16 @@ if("iiv" %in% names(cfg) | !is.null(sub_file)){
         }
       }
       for(state_name   in names(p$states)){
-        tc = timecourse_stats(p$states[[state_name]],ci)
+        mymat = p$states[[state_name]]
+        tc = timecourse_stats(mymat,ci)
         eval(parse(text=sprintf('p$tcsummary[["s.%s.lb_ci"]]   = tc$stats$lb_ci',   state_name))) 
         eval(parse(text=sprintf('p$tcsummary[["s.%s.ub_ci"]]   = tc$stats$ub_ci',   state_name))) 
         eval(parse(text=sprintf('p$tcsummary[["s.%s.mean"]]    = tc$stats$mean',    state_name))) 
         eval(parse(text=sprintf('p$tcsummary[["s.%s.median"]]  = tc$stats$median',  state_name))) 
         }
       for(output_name   in names(p$outputs)){
-        tc = timecourse_stats(p$outputs[[output_name]],ci)
+        mymat = p$outputs[[output_name]]
+        tc = timecourse_stats(mymat,ci)
         eval(parse(text=sprintf('p$tcsummary[["o.%s.lb_ci"]]   = tc$stats$lb_ci',   output_name))) 
         eval(parse(text=sprintf('p$tcsummary[["o.%s.ub_ci"]]   = tc$stats$ub_ci',   output_name))) 
         eval(parse(text=sprintf('p$tcsummary[["o.%s.mean"]]    = tc$stats$mean',    output_name))) 
@@ -3543,10 +3743,15 @@ generate_parameter = function (SIMINT_parameters, SIMINT_cfg, SIMINT_PARAMETER_T
 #'@examples
 #' \donttest{
 #' # Creating a system file from the mab_pk example
-#' system_new(system_file="mab_pk", file_name="system_example.txt", overwrite=TRUE)
-#'
+#' fr = system_new(file_name        = "system.txt", 
+#'                 system_file      = "mab_pk", 
+#'                 overwrite        = TRUE, 
+#'                 output_directory = tempdir())
+#' 
 #' # Building the system 
-#' cfg = build_system("system_example.txt")
+#' cfg = build_system(system_file  = file.path(tempdir(), "system.txt"),
+#'       output_directory          = file.path(tempdir(), "output"),
+#'       temporary_directory       = tempdir())
 #'
 #' # Initialzing the log file
 #' system_log_init(cfg)
@@ -3561,6 +3766,59 @@ system_log_init = function (cfg){
 return(cfg)
 }
 
+#-------------------------------------------------------------------------
+#'@export
+#'@title Save variables to files     
+#'@description Triggered when debugging is enabled, this function will save
+#' all of the supplied inputs to the specified file name in the ubiquity
+#' temporary directory 
+#'@param cfg ubiquity system object    
+#'@param file_name name of the save file without the ".RData" extension
+#'@param values named list of variables to save
+#'
+#'@return Boolean variable indicating success 
+#'
+#'@examples
+#' \donttest{
+#' # Creating a system file from the mab_pk example
+#' fr = system_new(file_name        = "system.txt", 
+#'                 system_file      = "mab_pk", 
+#'                 overwrite        = TRUE, 
+#'                 output_directory = tempdir())
+#'
+#' # Building the system 
+#' cfg = build_system(system_file  = file.path(tempdir(), "system.txt"),
+#'       output_directory          = file.path(tempdir(), "output"),
+#'       temporary_directory       = tempdir())
+#'
+#' # enable debugging:
+#' cfg=system_set_option(cfg,group = "logging", 
+#'                          option = "debug", 
+#'                          value  = TRUE)
+#'
+#' # Saving the cfg variable 
+#' system_log_debug_save(cfg, 
+#'    file_name = 'my_file',
+#'    values = list(cfg=cfg))
+#'
+#'}
+system_log_debug_save = function (cfg, file_name = "my_file", values = NULL){
+
+   isgood = TRUE
+
+   if(cfg$options$logging$debug){
+     if(is.null(values)){
+       isgood = FALSE
+       vp(cfg, 'system_log_debug_save()')
+       vp(cfg, "values set to NULL")
+     
+     } else if(!is.null(values)){
+       save(values, file=file.path(cfg$options$misc$temp_directory, paste(file_name, ".RData", sep="")))
+     }
+   }
+
+isgood}
+#-------------------------------------------------------------------------
 #'@export
 #'@title Add Log Entry
 #'@description Appends a specified line to the analysis log
@@ -3569,18 +3827,27 @@ return(cfg)
 #'@param cfg ubiquity system object    
 #'@param entry string containing the log entry
 #'
+#'@return Boolean variable indicating success (\code{TRUE}) or failure (\code{FALSE})
+#'
 #'@examples
 #' \donttest{
 #' # Creating a system file from the mab_pk example
-#' system_new(system_file="mab_pk", file_name="system_example.txt", overwrite=TRUE)
-#'
+#' fr = system_new(file_name        = "system.txt", 
+#'                 system_file      = "mab_pk", 
+#'                 overwrite        = TRUE, 
+#'                 output_directory = tempdir())
+#' 
 #' # Building the system 
-#' cfg = build_system("system_example.txt")
+#' cfg = build_system(system_file  = file.path(tempdir(), "system.txt"),
+#'       output_directory          = file.path(tempdir(), "output"),
+#'       temporary_directory       = tempdir())
 #'
 #' # Initialzing the log file
 #' system_log_entry(cfg, "Text of log entry")
 #'}
 system_log_entry = function(cfg, entry){
+
+isgood = FALSE
 
 # if logging is disabled we don't do anything 
 if(cfg$options$logging$enabled ==  TRUE){
@@ -3595,9 +3862,9 @@ if(cfg$options$logging$enabled ==  TRUE){
   }
 
   # Now we dump it to the log file:
-  write(entry, file=cfg$options$logging$file, append=TRUE)
+  isgood = write(entry, file=cfg$options$logging$file, append=TRUE)
   }
-}
+isgood}
 
 #'@export
 #'@title Print and Log Messages
@@ -3605,13 +3872,21 @@ if(cfg$options$logging$enabled ==  TRUE){
 #'
 #'@param cfg ubiquity system object    
 #'@param str sequence of strings to print
+#'
+#'@return Boolean variable indicating success (\code{TRUE}) or failure (\code{FALSE})
+#'
 #'@examples
 #' \donttest{
 #' # Creating a system file from the mab_pk example
-#' system_new(system_file="mab_pk", file_name="system_example.txt", overwrite=TRUE)
-#'
+#' fr = system_new(file_name        = "system.txt", 
+#'                 system_file      = "mab_pk", 
+#'                 overwrite        = TRUE, 
+#'                 output_directory = tempdir())
+#' 
 #' # Building the system 
-#' cfg = build_system("system_example.txt")
+#' cfg = build_system(system_file  = file.path(tempdir(), "system.txt"),
+#'       output_directory          = file.path(tempdir(), "output"),
+#'       temporary_directory       = tempdir())
 #'
 #' # Initialzing the log file
 #' vp(cfg, "Message that will be logged")
@@ -3620,6 +3895,8 @@ vp <- function(cfg, str){
 # logging string 
 system_log_entry(cfg, str)
 
+isgood = FALSE
+
 # printing if verbose is enabled
 if('options' %in% names(cfg)){
 if('verbose' %in% names(cfg$options$logging)){
@@ -3627,8 +3904,9 @@ if(TRUE == cfg$options$logging$verbose){
   for(line in str){
     message(paste("#>", line))
   }
+  isgood = TRUE
   }}}
-}
+isgood}
 
 #'@export
 #'@keywords internal
@@ -3638,9 +3916,11 @@ if(TRUE == cfg$options$logging$verbose){
 #'
 #'@param cfg ubiquity system object    
 #'@param text string to print/log
+#'
+#'@return Boolean variable indicating success (\code{TRUE}) or failure (\code{FALSE})
 GUI_log_entry <-function(cfg, text){
-   system_log_entry(cfg, sprintf("App %s", text))
-}
+ isgood =   system_log_entry(cfg, sprintf("App %s", text))
+isgood}
 
 #'@export
 #'@keywords internal
@@ -3736,9 +4016,10 @@ return(cfg)}
 #'@details 
 #' Each cohort has a name (eg \code{d5mpk}), and the dataset containing the
 #' information for this cohort is identified (the name defined in \code{\link{system_load_data}})
+#'
 #' \preformatted{cohort  = c()
-#'cohort$name    = ’d5mpk’
-#'cohort$dataset = ’pmdata’}
+#'cohort$name    = "d5mpk"
+#'cohort$dataset = "pmdata"}
 #'
 #' Next it is necessary to define a filter (\code{cf} field) that can be
 #' applied to the dataset to only return values relevant to this cohort. For
@@ -3749,11 +4030,23 @@ return(cfg)}
 #' If the dataset has the headings \code{ID}, \code{DOSE} and \code{SEX}  and
 #' cohort filter had the following format:
 #'\preformatted{cohort$cf$ID   = c(1:4)
+#'
 #'cohort$cf$DOSE = c(5,10)
 #'cohort$cf$SEX  = c(1)}
 #'
 #'It would be translated into the boolean filter:
-#'\preformatted{((ID==1) | (ID==2) | (ID==3) | (ID==4)) & ((DOSE == 5) | (DOSE==10)) & (SEX == 1)}
+#'
+#'\preformatted{(ID==1) | (ID==2) | (ID==3) | (ID==4)) & ((DOSE == 5) | (DOSE==10)) & (SEX == 1)}
+#'
+#' Optionally you may want to fix a system parameter to a different value for a
+#' given cohort. This can be done using the cohort parameter (\code{cp}) field.
+#' For example if you had the body weight defined as a system parameter 
+#' (\code{BW}), and you wanted to fix the body weight to 70 for the current
+#' cohort you would do the following:
+#'
+#' \preformatted{cohort$cp$BW = 70}
+#'
+#' Note that you can only fix parameters that are not being estimated.
 #'
 #' Next we define the dosing for this cohort. It is only necessary to define
 #' those inputs that are non-zero. So if the data here were generated from
@@ -3761,6 +4054,7 @@ return(cfg)}
 #' using \code{<B:times>} and \code{<B:events>} dosing into the central
 #' compartment \code{Cp}, you would pass this information to the cohort in the
 #' following manner:
+#'
 #' \preformatted{cohort$inputs$bolus$Cp$AMT   = c(5)
 #'cohort$inputs$bolus$Cp$TIME  = c(0)}
 #'  
@@ -3781,6 +4075,7 @@ return(cfg)}
 #  estimation use \code{'1'}, to weight against the prediction squared use
 #  \code{'PRED^2'}, to incorporate the variance parameter \code{SLOPE} use
 #  something like \code{'SLOPE*PRED^2'}.
+#'
 #'\preformatted{cohort$outputs$ONAME$obs$time        = ’TIMECOL’      
 #'cohort$outputs$ONAME$obs$value       = ’OBSCOL’       
 #'cohort$outputs$ONAME$obs$missing     = -1         
@@ -3798,7 +4093,7 @@ return(cfg)}
 #'
 #' Lastly we define the cohort:
 #'
-#'@seealso Estimation vignette (\code{vignette("Estimation", package = "ubiquity")})
+#'@seealso Estimation vignette (\code{vignette("Estimation", package = "ubiquity")}) and \code{\link{system_select_set}}
 system_define_cohort <- function(cfg, cohort){
   
  if('options' %in% names(cohort)){
@@ -4663,6 +4958,10 @@ return(parameters)
 #'@param SIMINT_varstr string containing variance calculation 
 #'@param SIMINT_odchunk chunk of observation details containing predictions, observations and the time
 #'@param SIMINT_cfg ubiquity system object    
+#'
+#'@return Variance calculated for a given set of parameters in a model
+#'
+#'
 calculate_variance <- function(SIMINT_parameters, SIMINT_varstr, SIMINT_odchunk, SIMINT_cfg){
 
   SIMINT_var = c()
@@ -4889,7 +5188,7 @@ SIMINT_simcommand = ' SIMINT_simout <- deSolve::ode(SIMINT_IC, SIMINT_output_tim
                                            func     = "derivs", 
                                            parms    = unlist(SIMINT_parameters),
                                            jacfunc  = NULL, 
-                                           dllname  = "r_ode_model",
+                                           dllname  = SIMINT_cfg$options$misc$c_libfile_base, 
                                            initfunc = "initparams", 
                                            initforc = "initforcs",
                                            forcings = SIMINT_forces, 
@@ -5144,6 +5443,9 @@ return(df)
 #'@keywords internal
 #'@param pvect      system parameters
 #'@param cfg ubiquity system object    
+#'
+#'@return objective function value
+#'
 calculate_objective_pso <- function(pvect, cfg){
 # calculate_objective takes the parameters as a list, so we take the vector
 # provided by psoptim when it calls the objective function and repackage it as
@@ -5167,8 +5469,11 @@ calculate_objective_pso <- function(pvect, cfg){
 #' negative of the objective (turning the maximization into a minimization) 
 #'
 #'@keywords internal
-#'@param pvect      system parameters
+#'@param pvect system parameters
 #'@param cfg ubiquity system object    
+#'
+#'@return objective function value
+#'
 calculate_objective_ga  <- function(pvect, cfg){
 # calculate_objective takes the parameters as a list, so we take the vector
 # provided by psoptim when it calls the objective function and repackage it as
@@ -5673,6 +5978,13 @@ odtest = calculate_objective(cfg$estimation$parameters$guess, cfg, estimation=FA
     # Saving the report information 
     pest$report = files
 
+    # appending a snapshot of the cohort information to the pest variable for archiving later 
+    pest$cohorts      = cfg$cohorts
+    pest$cohort_view  = system_view(cfg, "cohorts")
+
+    # appending the system file
+    pest$system_file = readLines(cfg$options$misc$system_file)
+
     for(pname in names(pest$estimate)){
       pindex = cfg$parameters$matrix$name == pname
       ptmp = c()
@@ -6039,10 +6351,7 @@ for(output in levels(erp$pred$OUTPUT)){
   if(output_scale == "log"){
      opds = opds[opds$PRED>0 & opds$OBS>0,] }
   
-  # overlaying the line of identity
-  LIDENT = data.frame(OBS  = c(min(opds$PRED, opds$OBS), max(opds$PRED, opds$OBS)),
-                      PRED = c(min(opds$PRED, opds$OBS), max(opds$PRED, opds$OBS)))
-  p = p + geom_line(data=LIDENT, aes(x=PRED, y=OBS), color='black')
+
 
   
   # setting the title to the output label
@@ -6053,8 +6362,24 @@ for(output in levels(erp$pred$OUTPUT)){
   p = p + theme(legend.position = 'bottom')     
 
   if(output_scale == "log"){
-    p = p + scale_x_log10()
-    p = p + scale_y_log10()}
+    if(!is.null(plot_opts$outputs[[output]]$ylim)){
+      p =  gg_axis(fo       = p,
+                   ylim_min = min(plot_opts$outputs[[output]]$ylim),
+                   ylim_max = max(plot_opts$outputs[[output]]$ylim),
+                   xlim_min = min(plot_opts$outputs[[output]]$ylim),
+                   xlim_max = max(plot_opts$outputs[[output]]$ylim))
+    } else {
+      p =  gg_axis(fo       = p,
+                   ylim_min = min(c(tds[!tds$SMOOTH, ]$OBS, tds[!tds$SMOOTH, ]$PRED)),
+                   ylim_max = max(c(tds[!tds$SMOOTH, ]$OBS, tds[!tds$SMOOTH, ]$PRED)),
+                   xlim_min = min(c(tds[!tds$SMOOTH, ]$OBS, tds[!tds$SMOOTH, ]$PRED)),
+                   xlim_max = max(c(tds[!tds$SMOOTH, ]$OBS, tds[!tds$SMOOTH, ]$PRED)))
+    }
+  }
+
+  # overlaying the line of identity
+  p = p + geom_abline(slope=1, intercept=0)
+  p = p + ylab("Observed") + xlab("Predicted")
 
   p = prepare_figure(p, purpose=def$purpose)
   eval(parse(text=sprintf('p = p + scale_colour_manual(values=c(%s))', color_string)))
@@ -6104,7 +6429,7 @@ return(grobs)
 #'@param lb optionally change the lower bound (\code{NULL})
 #'@param ub optionally change the upper bound (\code{NULL}) 
 #'
-#'@return cfg - ubiquity system object with guess and bounds assigned   
+#'@return cfg ubiquity system object with guess and bounds assigned   
 #'
 #' @details 
 #'
@@ -6367,6 +6692,9 @@ return(files)
 #'
 #'@param name analysis name 
 #'@param cfg ubiquity system object    
+#'
+#'@return Boolean variable indicating success (\code{TRUE}) or failure (\code{FALSE})
+#'
 archive_estimation <- function(name, cfg){
 
 
@@ -6399,7 +6727,7 @@ for(fidx in 1:length(f.source)){
     vp(cfg, sprintf('%s --> %s', f.source[fidx], f.destination[fidx]))
   }
 }
-}
+TRUE}
 #/archive_estimation
 #-----------------------------------------------------------
 
@@ -6956,6 +7284,20 @@ res}
 #'@param x_tick_major Boolean value to control grid lines
 #'
 #'@return ggplot object 
+#'
+#'@examples
+#'library("ggplot2")
+#'df = data.frame(x = seq(0.01,10,.01),
+#'                y = seq(0.01,10,.01)^2)
+#'p       = ggplot(df, aes(x=x, y=y)) + geom_line()
+#'# pretty up the axes
+#'p       = prepare_figure(fo=p, purpose="print")
+#'# pretty log10 y-axis 
+#'p_logy  = gg_log10_yaxis(fo=p)
+#'# pretty log10 x-axis 
+#'p_logx  = gg_log10_xaxis(fo=p)
+#'# pretty log10 yx-axis 
+#'p_logxy = gg_axis(fo=p)
 prepare_figure = function(purpose="present", fo,
                           y_tick_minor = FALSE,
                           y_tick_major = FALSE,
@@ -7057,7 +7399,22 @@ return(fo)
 #'@param y_tick_label \code{TRUE} to show y tick labels, \code{FALSE} to hide the y tick labels
 #'
 #'@return ggplot object with formatted axis 
+#'
 #'@seealso \code{\link{gg_log10_xaxis}} and \code{\link{gg_log10_yaxis}}
+#'
+#'@examples
+#'library("ggplot2")
+#'df = data.frame(x = seq(0.01,10,.01),
+#'                y = seq(0.01,10,.01)^2)
+#'p       = ggplot(df, aes(x=x, y=y)) + geom_line()
+#'# pretty up the axes
+#'p       = prepare_figure(fo=p, purpose="print")
+#'# pretty log10 y-axis 
+#'p_logy  = gg_log10_yaxis(fo=p)
+#'# pretty log10 x-axis 
+#'p_logx  = gg_log10_xaxis(fo=p)
+#'# pretty log10 yx-axis 
+#'p_logxy = gg_axis(fo=p)
 gg_axis  = function(fo, 
                      yaxis_scale  = TRUE,
                      xaxis_scale  = TRUE,
@@ -7073,13 +7430,10 @@ gg_axis  = function(fo,
   if(any(is.null(ylim_min),is.null(ylim_min),is.null(xlim_min), is.null(xlim_max))){
     fob = ggplot_build(fo) }
 
-
-
   #
   # Finding the xlim values
   #
   if(any(is.null(xlim_min), is.null(xlim_max))){
-    fob = ggplot_build(fo)
     # looping through the figure object and pulling out all of the y data
     # to get the bounds on the y data
     xdata = c()
@@ -7096,13 +7450,6 @@ gg_axis  = function(fo,
     if(is.null(xlim_max)){
       xlim_max = max(xdata)
     }
-    
-  
-  }
-
-  if(xaxis_scale){
-    xlim_min = 10^floor(log10(xlim_min))
-    xlim_max = 10^ceiling(log10(xlim_max))
   }
 
   data_xlim = c(xlim_min, xlim_max)
@@ -7115,7 +7462,18 @@ gg_axis  = function(fo,
     # to get the bounds on the y data
     ydata = c()
     for(didx in 1:length(fob$data)){
-      ydata = c(ydata, fob$data[[didx]]$y)
+      # For geom_line/geom_point data
+      if("y" %in% names(fob$data[[didx]])){
+        ydata = c(ydata, fob$data[[didx]]$y)
+      }
+
+      # For geom_ribbon data
+      if("ymin" %in% names(fob$data[[didx]])){
+        ydata = c(ydata, fob$data[[didx]]$ymin)
+      }
+      if("ymax" %in% names(fob$data[[didx]])){
+        ydata = c(ydata, fob$data[[didx]]$ymax)
+      }
     }
  
     # Getting only thge positive y data
@@ -7129,14 +7487,7 @@ gg_axis  = function(fo,
     }
   }
 
-  if(yaxis_scale){
-    ylim_min = 10^floor(log10(ylim_min))
-    ylim_max = 10^ceiling(log10(ylim_max))
-  }
- 
   data_ylim = c(ylim_min, ylim_max)
-
-
 
   #
   # Formatting the y axis
@@ -7145,13 +7496,12 @@ gg_axis  = function(fo,
     if(!is.null(data_ylim)){
     
       # Creating the major ticks
-      ytick_major =  10^(log10(data_ylim[1]):log10(data_ylim[2]))
+      ytick_major =  10^(floor(log10(data_ylim[1])):ceiling(log10(data_ylim[2])))
      
       # Expanding the major tick labels beyond the current axis to make sure the
       # minor tick labels get filled out.
       ytick_major = c(min(ytick_major)/10, ytick_major, max(ytick_major)*10)
-     
-     
+
       # defining the axis limits
       myylim = 10^(c(data_ylim))
      
@@ -7175,16 +7525,16 @@ gg_axis  = function(fo,
         fo = fo + scale_y_continuous(breaks       = ytick_major,
                                      minor_breaks = ytick_minor,
                                      trans        = 'log10',
-                                     limits       = myylim,
                                      labels       = eval(parse(text="scales::trans_format('log10', scales::math_format(10^.x))")))
       }
       else{
         fo = fo + scale_y_continuous(breaks       = ytick_major,
                                      minor_breaks = ytick_minor,
                                      trans        = 'log10',
-                                     limits       = myylim,
                                      labels       = NULL)
       }
+
+      fo = fo + coord_cartesian(ylim=myylim)
     }
     fo = fo + annotation_logticks(sides='lr') 
     
@@ -7199,7 +7549,7 @@ gg_axis  = function(fo,
   if(xaxis_scale){
     if(!is.null(data_xlim)){
       # Creating the major ticks
-      xtick_major =  10^(log10(data_xlim[1]):log10(data_xlim[2]))
+      xtick_major =  10^(floor(log10(data_xlim[1])):ceiling(log10(data_xlim[2])))
 
       # Expanding the major tick labels beyond the current axis to make sure the
       # minor tick labels get filled out.
@@ -7228,23 +7578,21 @@ gg_axis  = function(fo,
         fo = fo + scale_x_continuous(breaks       = xtick_major,
                                      minor_breaks = xtick_minor,
                                      trans        = 'log10',
-                                     limits       = myxlim,
+                                    #limits       = myxlim,
                                      labels       = eval(parse(text="scales::trans_format('log10', scales::math_format(10^.x))")))
       }
       else{
         fo = fo + scale_x_continuous(breaks       = xtick_major,
                                      minor_breaks = xtick_minor,
                                      trans        = 'log10',
-                                     limits       = myxlim,
+                                    #limits       = myxlim,
                                      labels       = NULL)
       }
+
+      fo = fo + coord_cartesian(xlim=myxlim)
     }
     fo = fo + annotation_logticks(sides='tb') 
   }
-
-
-
-
 
 fo}
 #/gg_axis
@@ -7265,12 +7613,24 @@ fo}
 #'
 #'@return ggplot object with formatted axis 
 #'@seealso \code{\link{gg_axis}} and \code{\link{gg_log10_xaxis}}
+#'@examples
+#'library("ggplot2")
+#'df = data.frame(x = seq(0.01,10,.01),
+#'                y = seq(0.01,10,.01)^2)
+#'p       = ggplot(df, aes(x=x, y=y)) + geom_line()
+#'# pretty up the axes
+#'p       = prepare_figure(fo=p, purpose="print")
+#'# pretty log10 y-axis 
+#'p_logy  = gg_log10_yaxis(fo=p)
+#'# pretty log10 x-axis 
+#'p_logx  = gg_log10_xaxis(fo=p)
+#'# pretty log10 yx-axis 
+#'p_logxy = gg_axis(fo=p)
 gg_log10_yaxis = function(fo, 
                           ylim_min     = NULL, 
                           ylim_max     = NULL, 
                           y_tick_label = TRUE,
                           x_tick_label = TRUE){
-
 
  fo =  gg_axis(fo=fo,
                yaxis_scale  = TRUE,
@@ -7299,7 +7659,22 @@ fo}
 #'@param y_tick_label \code{TRUE} to show y tick labels, \code{FALSE} to hide the y tick labels
 #'
 #'@return ggplot object with formatted axis 
+#'
 #'@seealso \code{\link{gg_axis}} and \code{\link{gg_log10_xaxis}}
+#'
+#'@examples
+#'library("ggplot2")
+#'df = data.frame(x = seq(0.01,10,.01),
+#'                y = seq(0.01,10,.01)^2)
+#'p       = ggplot(df, aes(x=x, y=y)) + geom_line()
+#'# pretty up the axes
+#'p       = prepare_figure(fo=p, purpose="print")
+#'# pretty log10 y-axis 
+#'p_logy  = gg_log10_yaxis(fo=p)
+#'# pretty log10 x-axis 
+#'p_logx  = gg_log10_xaxis(fo=p)
+#'# pretty log10 yx-axis 
+#'p_logxy = gg_axis(fo=p)
 gg_log10_xaxis = function(fo, 
                           xlim_min     = NULL, 
                           xlim_max     = NULL, 
@@ -7875,6 +8250,17 @@ TSsys}
 #'@param filter List used to filter the dataset or \code{NULL} if the whole dataset is to be used (see filter rules or  \code{\link{nm_select_records}} or a description of how to use this option)
 #'@param INPUTS List mapping input information in the dataset to names used in the system.txt file
 #'@param OBS List mapping obseravation information in the dataset to names used in the system.txt file
+#'
+#'@return list with the following elements 
+#' \itemize{
+#'\item{"isgood"} Boolean variable indicating success (\code{TRUE}) or failure (\code{FALSE})
+#'\item{"mywarning"} Boolean variable indicating warnings (\code{TRUE}) or no warnings (\code{FALSE})
+#'\item{"dsraw"} Dataframe with the filtered raw data that was used
+#'\item{"input_records"} Rows from \code{dsraw} containing the input information
+#'\item{"obs_records"} Rows from \code{dsraw} containing the observation information
+#'\item{"sids"} Subject ids found in code{dsraw}
+#'\item{"TSsys"} system time scale used in the dataset
+#'}
 system_nm_check_ds = function(cfg, 
                               DS        = 'DSNAME',
                               col_ID    = 'ID',
@@ -8215,24 +8601,39 @@ if(isgood){
     
     tab_example = data.frame( Number = c(1,2,3,4),
                               Text   = "Here")
+
+    list_exmaple = c(1, "Top level",
+                     1, "Also top level",
+                     2, "first sub bullet",
+                     2, "second sub bullet",
+                     1, "Third top level")
+
     # Pulling out the different styles
     lay_sum = styles_info(rpt)
     
-    # Looping through each layout
-    for(lidx in 1:length(lay_sum[,1])){
-      style_type   = lay_sum[lidx, ]$style_type
-      style_id     = lay_sum[lidx, ]$style_id
-      style_name   = lay_sum[lidx, ]$style_name
-    
-      # Paragraph styles
-      if(style_type %in% c("paragraph")){
-        str = paste("style_name: ", style_name)
-        rpt = body_add_par(x=rpt, value=str, style=style_name)
-      }
-    
-      # Table styles
-      if(style_type %in% c("table")){
-        rpt = body_add_table(x=rpt, value=tab_example, style = style_name)
+
+    disp_styles = c("paragraph", "character", "table")
+
+    for(style_type in disp_styles){
+      rpt = body_add_par(x=rpt, value="")
+      rpt = body_add_par(x=rpt, value=paste("STYLES: ", style_type))
+
+      tmp_lay_sum =  lay_sum[lay_sum$style_type == style_type, ]
+      for(lidx in 1:length(tmp_lay_sum[,1])){
+        #style_type   = tmp_lay_sum[lidx, ]$style_type
+        style_id     = tmp_lay_sum[lidx, ]$style_id
+        style_name   = tmp_lay_sum[lidx, ]$style_name
+
+        # Paragraph styles
+        if(style_type %in% c("paragraph", "charcter")){
+          rpt = body_add_par(x=rpt, value=paste("style_name: ", style_name), style=style_name)
+        }
+
+        # Table styles
+        if(style_type %in% c("table")){
+          rpt = body_add_par(x=rpt, value=paste("style_name: ", style_name))
+          rpt = body_add_table(x=rpt, value=tab_example, style = style_name)
+        }
       }
     }
   }
@@ -8335,6 +8736,8 @@ return(cfg)}
 #'@param rptname report name initialized with \code{system_report_init}
 #'@param output_file file name of saved report
 #'
+#'@return Boolean variable indicating success (\code{TRUE}) or failure (\code{FALSE})
+#'
 #'@details If you don't specify an output file it will save the report either
 #'report.pptx or report.docx (depending on the type of report) in the current
 #'directory.
@@ -8392,7 +8795,7 @@ system_report_save = function (cfg,
       for(phn in names(cfg$reporting$reports[[rptname]]$meta$ph_content)){
         # Here we pull out the value (phv) and locatio (phl) of each
         # placeholder:
-        pht = paste("U__",phn,"__U", sep="") 
+        pht = paste(":::",phn,":::", sep="") 
         phv = cfg$reporting$reports[[rptname]]$meta$ph_content[[phn]]$content
         phl = cfg$reporting$reports[[rptname]]$meta$ph_content[[phn]]$location
         if(phl == "body"){
@@ -8443,7 +8846,7 @@ system_report_save = function (cfg,
     vp(cfg, sprintf("system_report_save()"))
     vp(cfg, sprintf("Report >%s< not saved.", rptname)) 
   }
-}
+isgood}
 # /system_report_save 
 # -------------------------------------------------------------------------
 # system_report_init 
@@ -8459,6 +8862,8 @@ system_report_save = function (cfg,
 #'@param rptname report name 
 #'@param rpttype type of report to create, can be either \code{NULL}, \code{"PowerPoint"} or \code{"Word"}
 #'@param meta list containing metadata identifying relevant indices for slide layouts
+#'
+#'@return ubiquity system object with estimation report initialized
 #'
 #'@details 
 #'   Either the rpttype can be specified or the template. If a report type is
@@ -8930,7 +9335,7 @@ return(cfg)}
 #'@description Creates a report slide with a section break.
 #'@param cfg ubiquity system object    
 #'@param title                     string with slide title (\code{"Title"})
-#'@param sub_title                 string with slide sub title (code{NULL})
+#'@param sub_title                 string with slide sub title (\code{NULL})
 #'@param rptname                   report name initialized with \code{system_report_init}
 #'
 #'@return ubiquity system object with slide added to report
@@ -9118,7 +9523,7 @@ return(cfg)}
 #'  \item \code{"flextable"} list containing flextable content and other options with the following elements (defaults in parenthesis):
 #'   \itemize{
 #'      \item \code{table} Data frame containing the tabular data
-#'      \item \code{header_top}, \code{header_middle}, \code{header_bottom} (\code{NULL}) a list the same names as the data frame names containing the tabular data and values with the header text to show in the table
+#'      \item \code{header_top}, \code{header_middle}, \code{header_bottom} (\code{NULL}) a list with the same names as the data frame names containing the tabular data and values with the header text to show in the table
 #'      \item \code{merge_header} (\code{TRUE}) Set to true to combine column headers with the same information
 #'      \item \code{table_body_alignment}, table_header_alignment ("center") Controls alignment
 #'      \item \code{table_autofit} (\code{TRUE}) Automatically fit content, or specify the cell width and height with \code{cwidth} (\code{0.75}) and \code{cheight} (\code{0.25})
@@ -9196,7 +9601,7 @@ system_report_ph_content = function(cfg, rpt, content_type, content, type, index
       ft = flextable::regulartable(content$table,  cwidth = cwidth, cheight=cheight)
       
       # Adding headers
-      header_types = c("header_top", "header_middle", "header_bottom")
+      header_types = c("header_bottom", "header_middle", "header_top")
       first_header = TRUE
       for(header_type in header_types){
        
@@ -9255,44 +9660,63 @@ return(rpt)}
 #'@export
 #'@title Add content to Body of a Word Document Report
 #'@description Appends content to the body of a word document
-#'
-#' For example if you have <HEADER_LEFT> in the header of your document and you wanted to
-#' replace it with the text "Upper left" you would do the following:
-#'
-#' \code{
-#'   cfg = system_report_doc_set_ph(cfg, 
-#'         ph_content  = "Upper Left" ,
-#'         ph_name     = "HEADER_LEFT", 
-#'         ph_location = "header")}
-#'
-#' Notice the \code{ph_name} just has \code{HEADER_LEFT} and leaves off the \code{<>}
-#'
 #'@param cfg ubiquity system object    
 #'@param rptname        report name initialized with \code{system_report_init}
 #'@param content_type   name of the placeholder
 #'@param content        list containing content to add 
 #'
-#' For each content type listed below the following content is expected:
+#' For each content type listed below the different content is expected. Text
+#' can be specified in different formats: \code{"text"} indicates plain text,
+#' \code{"fpar"} is formatted text defined by the \code{fpar} command from the
+#' \code{officer} package, and \code{"md"} is text formatted in markdown
+#' format (\code{?md_to_officer} for markdown details).
 #'
 #' \itemize{
-#'  \item \code{"text"} text string of information
-#'  \item \code{"list"} vector of paired values (indent level and text), eg.  c(1, "Main Bullet", 2 "Sub Bullet")
-#'  \item \code{"imagefile"} image from a file
+#'  \item \code{"break"} page break, content is (\code{NULL}) and a page break will be inserted here
+#'  \item \code{"toc"} generates the table of contents, and content is a list 
+#'   \itemize{
+#'      \item \code{"level"} number indicating the depth of the contents to display (\code{3})
+#'    }
+#'  \item \code{"text"} content is a list containing a paragraph of text with the following elements
+#'   \itemize{
+#'      \item \code{"text"} string containing the text content either a string or the output of \code{"fpar"} for formatted text.
+#'      \item \code{"style"} string containing the style either \code{"normal"}, \code{"code"}, \code{"h1"}, \code{"h2"}, \code{"h3"}
+#'      \item \code{"format"} string containing the format, either \code{"text"}, \code{"fpar"}, or \code{"md"} (default \code{NULL} assumes \code{"text"} format)
+#'    }
+#'  \item \code{"imagefile"} content is a list containing describing an image file with the following elements
 #'   \itemize{
 #'      \item \code{image} string containing path to image file
-#'      \item \code{caption} Text containing the caption of the image
+#'      \item \code{caption} caption of the image (\code{NULL})  
+#'      \item \code{caption_format} string containing the format, either \code{"text"}, \code{"fpar"}, or \code{"md"} (default \code{NULL} assumes \code{"text"} format)
+#'      \item \code{height} height of the image (\code{NULL})
+#'      \item \code{width} width of the image (\code{NULL})
 #'    }
-#'  \item \code{"ggplot"} ggplot object, eg. p = ggplot() + ....
+#'  \item \code{"ggplot"} content is a list containing an image from a ggplot object, (eg. p = ggplot() + ....) with the following elements
 #'   \itemize{
 #'      \item \code{image} ggplot object
-#'      \item \code{caption} Text containing the caption of the image
+#'      \item \code{caption} caption of the image (\code{NULL})  
+#'      \item \code{caption_format} string containing the format, either \code{"text"}, \code{"fpar"}, or \code{"md"} (default \code{NULL} assumes \code{"text"} format)
+#'      \item \code{height} height of the image (\code{NULL})
+#'      \item \code{width} width of the image (\code{NULL})
 #'    }
-#'  \item \code{"table"} list containing the table content and other options with the following elements (defaults in parenthesis):
+#'  \item \code{"table"} content list containing the table content and other options with the following elements:
 #'   \itemize{
-#'      \item \code{table} Data frame containing the tabular data
-#'      \item \code{caption} Text containing the caption of the table 
+#'      \item \code{table} data frame containing the tabular data
+#'      \item \code{caption} caption of the table (\code{NULL})  
+#'      \item \code{caption_format} string containing the format, either \code{"text"}, \code{"fpar"}, or \code{"md"} (default \code{NULL} assumes \code{"text"} format)
 #'      \item \code{header} Boolean variable to control displaying the header (\code{TRUE})
 #'      \item \code{first_row} Boolean variable to indicate that the first row contains header information (\code{TRUE})
+#'    }
+#'  \item \code{"flextable"} list containing flextable content and other options with the following elements (defaults in parenthesis):
+#'   \itemize{
+#'      \item \code{table} Data frame containing the tabular data
+#'      \item \code{caption} caption of the table (\code{NULL})  
+#'      \item \code{caption_format} string containing the format, either \code{"text"}, \code{"fpar"}, or \code{"md"} (default \code{NULL} assumes \code{"text"} format)
+#'      \item \code{header_top}, \code{header_middle}, \code{header_bottom} (\code{NULL}) a list with the same names as the data frame names containing the tabular data and values with the header text to show in the table
+#'      \item \code{merge_header} (\code{TRUE}) Set to true to combine column headers with the same information
+#'      \item \code{table_body_alignment}, table_header_alignment ("center") Controls alignment
+#'      \item \code{table_autofit} (\code{TRUE}) Automatically fit content, or specify the cell width and height with \code{cwidth} (\code{0.75}) and \code{cheight} (\code{0.25})
+#'      \item \code{table_theme} (\code{"theme_vanilla"}) Table theme
 #'    }
 #'}
 #'@return cfg ubiquity system object with the content added to the body
@@ -9300,6 +9724,9 @@ system_report_doc_add_content = function(cfg, rptname="default", content_type=NU
 
   isgood = TRUE
 
+ if(content_type == "break"){
+  content = list()
+ }
 
   # Checking things
   if(cfg$reporting$enabled){
@@ -9323,14 +9750,34 @@ system_report_doc_add_content = function(cfg, rptname="default", content_type=NU
     vp(cfg, "Either the content or the content_type was not specified")
   } else {
     # Checking the content type
-    if(!(content_type %in% c("text", "list", "imagefile", "ggplot", "table"))){
+    if(!(content_type %in% c("break", "text", "toc", "imagefile", "ggplot", "table", "flextable"))){
       vp(cfg, paste("the content type >", content_type, "< is not supported",sep=""))
       isgood = FALSE
     } else{
+      # Checking to make sure the text format is correct
+      if(content_type == "text"){
+        ok_styles = c("normal", "code", "h1", "h2", "h3", "toc")
+        if(!(content$style %in% ok_styles)){
+          vp(cfg, paste("the content$style >", content$style, "< is not correct, it should be one of: ", paste(ok_styles, collapse=", "), sep=""))
+          isgood = FALSE
+        }
+      }
       # Checking to make sure the image file exists
       if(content_type == "imagefile"){
-        if(!file.exists(content)){
-          vp(cfg, paste("the imagefile >", content, "< does not exist",sep=""))
+        if(!file.exists(content$image)){
+          vp(cfg, paste("the imagefile >", content$image, "< does not exist", sep=""))
+          isgood = FALSE
+        }
+      }
+      if(content_type == "ggplot"){
+        if(!is.ggplot(content$image)){
+          vp(cfg, paste("the image data found in >content$image< is not a ggplot object",sep=""))
+          isgood = FALSE
+        }
+      }
+      if(content_type == "table"){
+        if(!is.data.frame(content$table)){
+          vp(cfg, paste("the tabular information found in >content$table< is not a data.frame object",sep=""))
           isgood = FALSE
         }
       }
@@ -9339,7 +9786,243 @@ system_report_doc_add_content = function(cfg, rptname="default", content_type=NU
 
   # If all the checks have passed we add the content
   if(isgood){
+    # Pulling out the meta data for the report template
+    meta = cfg$reporting$reports[[rptname]]$meta 
+    # Pulling out the report to make it easier to deal with
+    tmprpt  = cfg$reporting$reports[[rptname]]$report
+
+
+    #-------
+    # Determining the current depth
+    if(is.null(cfg$reporting$reports[[rptname]]$depth)){
+      depth = 1 
+    } else {
+      depth = cfg$reporting$reports[[rptname]]$depth
+    }
+    #-------
+
+    Caption_Location = "none"
+    Caption_Format  = "text"
+    if("caption_format" %in% names(content)){
+      Caption_Format = content$caption_format
+    }
+
+    #------
+    # Figure options 
+    if(content_type == "ggplot" | content_type == "imagefile"){
+      Figure_Width =  meta$styles$Figure_Width
+      if("width" %in% names(content)){
+        Figure_Width = content$width
+      }
+      
+      Figure_Height =  meta$styles$Figure_Height
+      if("height" %in% names(content)){
+        Figure_Height = content$height
+      }
+      Caption_Location = meta$styles$Figure_Caption_Location 
+      Caption_Style    = meta$styles$Figure_Caption
+      Caption_Ref_str  =  paste("tmprpt = shortcuts$slip_in_plotref(tmprpt, depth =", depth, ")")
+    }
     
+    if(content_type == "table" | content_type == "flextable"){
+      Caption_Location = meta$styles$Table_Caption_Location 
+      Caption_Style    = meta$styles$Table_Caption
+      Caption_Ref_str  =  paste("tmprpt = shortcuts$slip_in_tableref(tmprpt, depth =", depth, ")")
+    }
+    #-------
+    # Table options
+    if(content_type == "table"){
+      header    = TRUE
+      if('header' %in% names(content)){
+        header = content$header
+      } 
+      first_row = TRUE
+      if('first_row' %in% names(content)){
+        first_row = content$first_row
+      } 
+    }
+    #-------
+    if(content_type == "flextable"){
+      # These are the default table options
+      # and they can be over written by specifying 
+      # the same fields of the content list
+      header_top              = NULL
+      header_middle           = NULL
+      header_bottom           = NULL
+      merge_header            = TRUE
+      table_body_alignment    ="center"
+      table_header_alignment  ="center"
+      table_autofit           = TRUE
+      table_theme             ="theme_vanilla"
+      cwidth                  = 0.75
+      cheight                 = 0.25
+
+      ftops = c("header_top",             "header_middle",    "header_bottom", 
+                "merge_header",           "table_theme",      "table_body_alignment",
+                "table_header_alignment", "table_autofit",    "cwidth", 
+                "cheight")
+
+
+      # Defining the user specified flextable options:
+      for(ftop in ftops){
+        if(!is.null(content[[ftop]])){
+          eval(parse(text=sprintf('%s = content[[ftop]]', ftop)))
+        }
+      }
+
+      # Creating the table
+      invisible(system_req("flextable"))
+      ft = flextable::regulartable(content$table,  cwidth = cwidth, cheight=cheight)
+      
+      # Adding headers
+      header_types = c("header_bottom", "header_middle", "header_top")
+      first_header = TRUE
+      for(header_type in header_types){
+       
+        if(!is.null(eval(parse(text=header_type)))){
+          eval(parse(text=sprintf("header =  %s", header_type)))
+          # Creating the header
+          if(!is.null(header)){
+            if(length(names(header)) > 0){
+              if(first_header){
+                first_header = FALSE
+                shstr = ' ft = set_header_labels(ft'
+              } else {
+                shstr = ' ft = add_header(ft'
+              }
+              for(hname in names(header)){
+                shstr = sprintf('%s, %s="%s"', shstr, hname, header[[hname]])
+              }
+              # The top=FALSE seems to be breaking things
+              #shstr = sprintf('%s, top=FALSE)', shstr)
+              shstr = sprintf('%s)', shstr)
+              eval(parse(text=shstr))
+            }
+          }
+        }
+      }
+      
+
+      # Setting the theme
+      if(!is.null(table_theme)){
+        eval(parse(text=sprintf('ft = %s(ft)', table_theme))) }
+      
+      # Merging headers
+      if(merge_header){
+        ft = merge_h(ft, part="header") }
+      
+      if(table_autofit){
+        ft = autofit(ft) }
+      
+      # Applying the aligment
+      ft = align(ft, align=table_header_alignment, part="header")
+      ft = align(ft, align=table_body_alignment,   part="body"  )
+      
+    }
+
+    #------
+    # Adding caption to the top of the object
+    if(!is.null(content$caption) & Caption_Location == "top"){
+      if(Caption_Format == "text"){
+        tmprpt = body_add_par(tmprpt, content$caption, style=Caption_Style)
+      } else if(Caption_Format == "fpar"){
+        tmprpt = body_add_fpar(tmprpt, value=content$text, style=Caption_Style)
+      } else if(Caption_Format == "md"){
+        mdout = md_to_officer(content$text)
+        for(pgraph in mdout){
+          tmprpt = body_add_fpar(tmprpt, value=eval(parse(text=pgraph$fpar_cmd)), style=Caption_Style)
+        }
+      }
+      eval(parse(text=Caption_Ref_str))
+    }
+
+    # Adding the image/table
+    if(content_type == "ggplot"){
+      tmprpt = body_add_gg(tmprpt, value=content$image, width = Figure_Width, height = Figure_Height)
+    }
+    if(content_type == "imagefile"){
+      tmprpt = body_add_img(tmprpt, src=content$image, width = Figure_Width, height = Figure_Height)
+    }
+
+    if(content_type == "table"){
+     tmprpt = body_add_table(tmprpt, value=content$table, header=header, first_row=first_row, style=meta$styles$Table)
+    }
+
+    if(content_type == "flextable"){
+      tmprpt = flextable::body_add_flextable(x = tmprpt, value = ft)
+    }
+
+    # Adding caption to the bottom of the object
+    if(!is.null(content$caption) & Caption_Location == "bottom"){
+      if(Caption_Format == "text"){
+        tmprpt = body_add_par(tmprpt, content$caption, style=Caption_Style)
+      } else if(Caption_Format == "fpar"){
+        tmprpt = body_add_fpar(tmprpt, value=content$text, style=Caption_Style)
+      } else if(Caption_Format == "md"){
+        mdout = md_to_officer(content$text)
+        for(pgraph in mdout){
+          tmprpt = body_add_fpar(tmprpt, value=eval(parse(text=pgraph$fpar_cmd)), style=Caption_Style)
+        }
+      }
+      eval(parse(text=Caption_Ref_str))
+    }
+    #------
+    if(content_type == "text"){
+      # defaulting to text format
+      Text_Format = "text"
+      if("format" %in% names(content)){
+        Text_Format = content$format
+      }
+
+      if(content$style == "normal"){
+        text_style = meta$styles$Normal
+      }
+      if(content$style == "code"){
+        text_style = meta$styles$Code  
+      }
+      if(content$style == "h1"){
+        text_style = meta$styles$Heading_1
+        depth = 1
+      }
+      if(content$style == "h2"){
+        text_style = meta$styles$Heading_2
+        depth = 2
+      }
+      if(content$style == "h3"){
+        text_style = meta$styles$Heading_3
+        depth = 3
+      }
+
+      if(Text_Format == "text"){
+        tmprpt =  body_add_par(tmprpt, value=content$text, style=text_style)
+      } else if(Text_Format == "fpar"){
+        tmprpt = body_add_fpar(tmprpt, value=content$text, style=text_style)
+      } else if(Text_Format == "md"){
+        mdout = md_to_officer(content$text)
+        for(pgraph in mdout){
+          tmprpt = body_add_fpar(tmprpt, value=eval(parse(text=pgraph$fpar_cmd)), style=text_style)
+        }
+      }
+    }
+
+    if(content_type == "toc"){
+      if("level" %in% content){
+        level = content$level
+      } else {
+        level = 3
+      }
+      tmprpt = body_add_toc(tmprpt, style=meta$styles$TOC, level=level)
+    }
+
+    if(content_type == "break"){
+      tmprpt = body_add_break(tmprpt)
+    }
+
+    # Putting the report back into cfg
+    cfg$reporting$reports[[rptname]]$report = tmprpt
+    
+    # saving the depth
+    cfg$reporting$reports[[rptname]]$depth = depth
   
   }
   
@@ -9349,9 +10032,385 @@ system_report_doc_add_content = function(cfg, rptname="default", content_type=NU
     vp(cfg, "Unable to add content to document, see above for details")
   }
   
-}
+cfg}
+# /system_report_doc_add_content
 # -------------------------------------------------------------------------
+# -------------------------------------------------------------------------
+# JMH
+# system_report_doc_format_section
+#'@export
+#'@title Formats the Current Document Section  
+#'@description Sets the section format for the content added since the last section content type was defined.  This is a wrapper for the body_end_section* functions in officer.
+#'@param cfg ubiquity system object    
+#'@param rptname        report name initialized with \code{system_report_init}
+#'@param section_type   type of section to apply, either \code{"columns"},  \code{"continuous"}, \code{"landscape"}, \code{"portrait"}, \code{"columns"},  or  \code{"columns_landscape"}
+#'@param w              width  in inches of the section of the page (\code{NULL})
+#'@param h              height in inches of the section of the page (\code{NULL})
+#'@param widths         column widths in inches, number of columns set by number of values (\code{NULL})   
+#'@param space          space in inches between columns (\code{NULL})    
+#'@param sep            Boolean value controlling line separating columns (\code{FALSE})
+#'@return cfg ubiquity system object with the section added to the body
+system_report_doc_format_section = function(cfg, rptname="default", 
+  section_type = NULL,  w      = NULL, h     = NULL,
+  sep          = FALSE, widths = NULL, space = NULL){
+  isgood = TRUE
 
+  allowed_sections = c("columns",  "continuous", "landscape", 
+                       "portrait", "columns",    "columns_landscape")
+
+  allowed_args = list(
+     continuous           = c(),
+     landscape            = c("w",      "h"),
+     portrait             = c("w",      "h"),
+     columns              = c("widths", "space", "sep"),
+     columns_landscape    = c("widths", "space", "sep", "w", "h")
+  )
+
+  if(cfg$reporting$enabled){
+    if(rptname %in% names(cfg$reporting$reports)){
+      if( "Word" != cfg$reporting$reports[[rptname]]$rpttype){
+        isgood = FALSE
+        vp(cfg, paste("Error: Trying to add Word content to >", cfg$reporting$reports[[rptname]]$rpttype,"< report", sep=""))
+      }
+    } else {
+      isgood = FALSE
+      vp(cfg, paste("Error: The report name >", rptname,"< not found", sep=""))
+    }
+  } else {
+    isgood = FALSE
+    vp(cfg, "Error: Reporting not enabled")
+  }
+
+  if(is.null(section_type)){
+    isgood = FALSE
+    vp(cfg, paste('Error; you myst specify a section_type of either: "',  paste(allowed_sections, collapse = '", "'), '"', sep=""))
+  }
+
+
+
+  if(isgood){
+    # Pulling out the meta data for the report template
+    meta = cfg$reporting$reports[[rptname]]$meta 
+    # Pulling out the report to make it easier to deal with
+    tmprpt  = cfg$reporting$reports[[rptname]]$report
+
+    # Creating function arguments
+    fcnargs = c("x=tmprpt")
+
+    if("sep" %in% allowed_args[[section_type]]){
+      if(!is.null(sep)){
+         fcnargs = c(fcnargs, paste("sep=",sep, sep="")) }
+    }
+    if("w" %in% allowed_args[[section_type]]){
+     if(!is.null(w)){
+        fcnargs = c(fcnargs, paste("w=",w, sep="")) }
+    }
+    if("h" %in% allowed_args[[section_type]]){
+      if(!is.null(h)){
+         fcnargs = c(fcnargs, paste("h=",h, sep="")) }
+    }
+    if("widths" %in% allowed_args[[section_type]]){
+      if(!is.null(widths)){
+         fcnargs = c(fcnargs, paste("widths=c(",toString(widths), ")", sep="")) }
+    }
+
+    fcn = paste("body_end_section_", section_type, sep="")
+
+    fcncall = paste("tmprpt = ", fcn, "(", paste(fcnargs, collapse = ", "), ")", sep="")
+
+    eval(parse(text=fcncall))
+
+    # Putting the report back into cfg
+    cfg$reporting$reports[[rptname]]$report = tmprpt
+  }
+cfg}
+# /system_report_doc_format
+# -------------------------------------------------------------------------
+# md_to_officer
+#'@export
+#'@title Parse Markdown for OfficeR
+#'@description Parses text in Markdown format and returns fpar command strings to be used with OfficeR
+#'@param str     string containing Markdown can contain the following elements:
+#' \itemize{
+#'  \item paragraph    Two or more new lines creates a paragraph
+#'  \item \code{"bold"}    Can be either \code{"*text in bold*"} or \code{"_text in bold_"}
+#'  \item \code{"italic"}  Can be either \code{"**text in bold**"} or \code{"__text in bold__"}
+#'  \item \code{"subscript"}  \code{"Normal~subscript~"} 
+#'  \item \code{"superscript"}  \code{"Normal^superscript^"} 
+#'}
+#'@return list with parsed paragraph elements ubiquity system object with the
+#' content added to the body, each paragraph can be found in a numbered list
+#' element (e.g. \code{pgraph_1}, \code{pgraph_2}, etc) each with the following
+#' elements:
+#' \itemize{
+#'  \item \code{locs} Dataframe showing the locations of markdown elements in the current paragraph
+#'  \item \code{pele} These are the individual parsed paragraph elements
+#'  \item \code{fpar_cmd} String containing the fpar_cmd that can be run using
+#'  \code{eval} to return the output of \code{fpar}. For example: 
+#' \preformatted{
+#'   myfpar = eval(parse(text=pgparse$pgraph_1$fpar_cmd))
+#'  }
+#'}
+md_to_officer = function(str){
+
+# First we find paragraphs:
+pgraphs = unlist(base::strsplit(str, split="(\r\n|\r|\n){2,}"))
+
+
+md_info = data.frame(
+  md_name = c( "subscript",         "superscript",     "bold_us",  "bold_st",     "italic",            "color",                     "shading_color",                     "font_family"             ),
+  pattern = c( "~.+?~",             "\\^.+?\\^",       "_.+?_",    "\\*.+?\\*",   "\\%\\%.+?\\%\\%",   "<color:\\S+?>.+?</color>",  "<shade:\\S+?>.+?</shade>",          "<ff:\\S+?>.+?</ff>"      ), 
+  start   = c( "~",                 "\\^",             "_",        "\\*",         "\\%\\%",            "<color:\\S+?>",             "<shade:\\S+?>",                     "<ff:\\S+?>"              ),
+  end     = c( "~",                 "\\^",             "_",        "\\*",         "\\%\\%",            "</color>",                  "</shade>",                          "</ff>"                   ),
+  prop    = c( "vertical.align",    "vertical.align",  "bold",     "bold",        "italic",            "color",                     "shading_color",                     "font.family"             ))
+
+
+pos_start = c()
+pos_stop  = c()
+
+# Saving the parsed paragraphs
+pgraphs_parse = list()
+
+  # Now we walk through each paragraph
+  pgraph_idx = 1
+  for(pgraph_raw in pgraphs){
+
+    # Removing all of the carriage returns in the paragraph:
+    pgraph = gsub(pattern="(\r\n|\r|\n)", replacement=" ", pgraph_raw)
+  
+    # Storing the locations of the markdown in the string
+    locs      = NULL
+
+    # Visual id of md elements to debug finding stuff 
+    md_visual = c()
+
+    # Converting the ** to %% to make it easier to distinguish between bold and
+    # italics
+    pgraph = gsub(pgraph, pattern="\\*\\*", replacement="%%")
+    pgraph = gsub(pgraph, pattern="__", replacement="%%")
+
+    # Finding the locations of the markdown elements
+    for(md_idx  in 1:nrow(md_info)){
+      pattern = as.character(md_info[md_idx, ]$pattern)
+      md_name = as.character(md_info[md_idx, ]$md_name)
+      tmplocs = stringr::str_locate_all(pgraph, pattern)[[1]]
+      if(nrow(tmplocs) > 0){
+        tmplocs = as.data.frame(tmplocs)
+        tmplocs$md_name = md_name
+        locs = rbind(locs, tmplocs)
+      }
+    }
+
+    
+    # if locs is NULL then no markdown elements were found in the current 
+    # current paragraph so we just raap that up
+    if(is.null(locs)){
+      pele     = list()
+      pele$p_1 = list(text      = pgraph,
+                      props     = c("NULL"),
+                      props_cmd = "prop=NULL")
+    } else {
+      # If locs isn't NULL we start working trough the markdown elements:
+
+      # We begin by grouping nested markdown elements
+      locs =locs[order(locs$start), ]
+      locs$group = 1
+      if(nrow(locs) > 1){
+        for(loc_idx in 2:nrow(locs)){
+          # If the current md element starts before the last one stops
+          # they are grouped together, otherwise they become part of a new group
+          if(locs[loc_idx,]$start < locs[loc_idx-1,]$end){
+            locs[loc_idx,]$group = locs[loc_idx-1,]$group
+          } else {
+            locs[loc_idx,]$group = locs[loc_idx-1,]$group + 1
+          }
+        }
+      }
+      
+      # Pulling out the separate paragraph elements
+      pele     = list()
+      pele_idx = 1
+      # Processing each group
+      for(group in unique(locs$group)){
+        # pulling out the markdown elements for that group
+        gr_md   = locs[locs$group == group, ]
+      
+        #----------
+        # if we're dealing with the first group and it starts after the first
+        # character then we add that first chunk of text
+        if(group == 1 & gr_md[1, ]$start > 1){
+          #pele_tmp = list(text = pgraph)
+          pele[[paste('p_', pele_idx, sep="")]] = 
+               list(text      = substr(pgraph, start=1, stop=(gr_md$start-1)),
+                    props     = c("NULL"),
+                    props_cmd = "prop=NULL")
+          pele_idx = pele_idx + 1
+        }
+        #----------
+        # If we're dealing with a group after the first we need to pull out any
+        # text between groups
+        if(group > 1){
+          # Previous group:
+          gr_md_prev   = locs[locs$group == group-1, ]
+      
+          # If there is more than 1 character difference between the last md
+          # element from the previous group and the first of the current group
+          # then we need to add that text
+          if(gr_md[1, ]$start-gr_md_prev[1, ]$end > 1){
+            pele[[paste('p_', pele_idx, sep="")]] = 
+                       list(text      = substr(pgraph, 
+                                               start =(gr_md_prev[1, ]$end + 1),
+                                               stop  =(gr_md[1, ]$start - 1)),
+                            props     = c("NULL"),
+                            props_cmd = "prop=NULL")
+            pele_idx = pele_idx + 1
+          }
+        }
+        #----------
+        # Processing the markdown for a group
+        # First we pull out the text from the inner most markdown element
+        md_text = substr(pgraph, 
+                         start =gr_md[nrow(gr_md), ]$start,
+                         stop  =gr_md[nrow(gr_md), ]$end)
+
+        # now we strip off the beginning and ending of the markdown 
+        md_name  = gr_md[nrow(gr_md), ]$md_name
+      
+        # patterns to strip off the beginning and end
+        md_start = paste("^", as.character(md_info[md_info$md_name == md_name, ]$start), sep="")
+        md_end   = paste(as.character(md_info[md_info$md_name == md_name, ]$end), "$", sep="")
+      
+        # Stripping those patterns off
+        md_text = sub(md_text, pattern=md_start, replacement="")
+        md_text = sub(md_text, pattern=md_end, replacement="")
+
+        if(group == 4){
+        #browser()
+        }
+      
+        # Now we save the text:
+        pele[[paste('p_', pele_idx, sep="")]] = 
+                   list(text      = md_text,
+                        props     = c(),
+                        props_cmd = NULL)
+      
+        tmp_props = c()
+        # Next we add the properties associated with the markdown
+        for(md_name in (gr_md$md_name)){
+          md_start = as.character(md_info[md_info$md_name == md_name, ]$start)
+          md_end   = as.character(md_info[md_info$md_name == md_name, ]$end)
+          md_prop  = as.character(md_info[md_info$md_name == md_name, ]$prop)
+      
+          # Setting properties based on the type of markdown selected
+          if(md_name == "bold_st" | md_name == "bold_us"){
+            tmp_props = c(tmp_props, "bold = TRUE")
+          }
+      
+          if(md_name == "italic"){
+            tmp_props = c(tmp_props, "italic = TRUE")
+          }
+      
+          if(md_name == "superscript"){
+            tmp_props = c(tmp_props, 'vertical.align = "superscript"')
+          }
+      
+          if(md_name == "subscript"){
+            tmp_props = c(tmp_props, 'vertical.align = "subscript"')
+          }
+      
+          if(md_name == "color"){
+            # pulling out the color markdown text. It uses the first entry so
+            # the outer most. There shouldn't be more than one. 
+            md_text = substr(pgraph, 
+                             start = gr_md[gr_md$md_name == "color", ]$start[1],
+                             stop  = gr_md[gr_md$md_name == "color", ]$end[1])
+
+            #extracting the color
+            color = stringr::str_extract(md_text, md_start)
+            color= gsub(color, pattern="<color:", replacement="") 
+            color= gsub(color, pattern=">", replacement="") 
+
+            tmp_props = c(tmp_props, paste('color = "', color, '"', sep=""))
+          }
+          if(md_name == "shading_color"){
+            # pulling out the color markdown text. It uses the first entry so
+            # the outer most. There shouldn't be more than one. 
+            md_text = substr(pgraph, 
+                             start = gr_md[gr_md$md_name == "shading_color", ]$start[1],
+                             stop  = gr_md[gr_md$md_name == "shading_color", ]$end[1])
+
+            #extracting the color
+            color = stringr::str_extract(md_text, md_start)
+            color= gsub(color, pattern="<shade:", replacement="") 
+            color= gsub(color, pattern=">", replacement="") 
+
+            tmp_props = c(tmp_props, paste('shading.color = "', color, '"', sep=""))
+          }
+
+          if(md_name == "font_family"){
+            md_text = substr(pgraph, 
+                             start = gr_md[gr_md$md_name == "font_family", ]$start[1],
+                             stop  = gr_md[gr_md$md_name == "font_family", ]$end[1])
+
+            #extracting the font family
+            ff = stringr::str_extract(md_text, md_start)
+            ff = gsub(ff, pattern="<ff:", replacement="") 
+            ff = gsub(ff, pattern=">", replacement="") 
+            tmp_props = c(tmp_props, paste('font.family = "', ff, '"', sep=""))
+          }
+      
+        }
+      
+        pele[[paste('p_', pele_idx, sep="")]]$props     = tmp_props
+        pele[[paste('p_', pele_idx, sep="")]]$props_cmd = paste("prop=officer::fp_text(", paste(tmp_props, collapse=", "), ")", sep="")
+      
+        pele_idx = pele_idx + 1
+      
+        #----------
+        # If we're at the last group and it doesn't go to the end we add the
+        # last part as well
+        if(group == max(unique(locs$group))){
+          # First we get the last piece of text:
+          text_end = substr(pgraph, start=(gr_md[1, ]$end+1), stop=nchar(pgraph))
+          # If that string isn't empty we add a paragraph element for it
+          if(text_end != ""){
+            pele[[paste('p_', pele_idx, sep="")]] = 
+                       list(text      = text_end,
+                            props     = c("NULL"),
+                            props_cmd = "prop=NULL")
+            pele_idx = pele_idx + 1
+          }
+        }
+        #----------
+      }
+      
+      for(loc_idx in 1:nrow(locs)){
+        tmpstr = paste(rep(" ", nchar(pgraph)), collapse="")
+        tmpstr = paste(tmpstr, ":",  locs[loc_idx, ]$md_name, sep="")
+        substr(tmpstr, locs[loc_idx, ]$start, locs[loc_idx, ]$start)  = "|"
+        substr(tmpstr, locs[loc_idx, ]$end  , locs[loc_idx, ]$end  )  = "|"
+        md_visual = c(md_visual, pgraph, tmpstr)
+      }
+    }
+
+
+  fpar_cmd = ""
+  for(tmpele in pele){
+    if(fpar_cmd != ""){
+     fpar_cmd = paste(fpar_cmd, ',\n') }
+    fpar_cmd = paste(fpar_cmd, 'ftext("', tmpele$text, '", ', tmpele$props_cmd, ')', sep="")
+  }
+  fpar_cmd = paste("fpar(", fpar_cmd, ")", sep="")
+
+  pgraphs_parse[[paste("pgraph_", pgraph_idx, sep="")]]$pele      = pele
+  pgraphs_parse[[paste("pgraph_", pgraph_idx, sep="")]]$locs      = locs
+  pgraphs_parse[[paste("pgraph_", pgraph_idx, sep="")]]$md_visual = md_visual
+  pgraphs_parse[[paste("pgraph_", pgraph_idx, sep="")]]$fpar_cmd  = fpar_cmd
+
+  pgraph_idx = pgraph_idx + 1
+  }
+pgraphs_parse}
+# /md_to_officer
 # -------------------------------------------------------------------------
 # system_report_doc_set_ph
 #'@export
@@ -9433,8 +10492,11 @@ cfg}
 #'@description This will take the output generated during a parameter estimation and append those results to a specified report.
 #'
 #'@param cfg ubiquity system object    
-#'@param rptname report name 
+#'@param rptname report name (either PowerPoint or Word) 
 #'@param analysis_name string containing the name of the estimation analysis and used as a prefix to store the results
+#'
+#'@return ubiquity system object with estimation report appended
+#'
 #'@seealso \code{\link{system_report_init}}, the reporting vignette (\code{vignette("Reporting", package = "ubiquity")})
 #'and the estimation vignette (\code{vignette("Estimation", package = "ubiquity")})
 system_report_estimation = function (cfg,
@@ -9444,7 +10506,7 @@ system_report_estimation = function (cfg,
   output_directory = cfg$options$misc$output_directory 
 
   isgood = TRUE
-  rpttypes = c("PowerPoint")
+  rpttypes = c("PowerPoint", "Word")
 
   if(is.null(analysis_name)){
    isgood = FALSE
@@ -9455,7 +10517,7 @@ system_report_estimation = function (cfg,
     rpttype = cfg$reporting$reports[[rptname]]$rpttype
     if(!(rpttype %in% rpttypes)){
       isgood = FALSE
-      vp(cfg, paste("Estimation reporting does not support this format >", rpttype, ">", sep=""))
+      vp(cfg, paste("Estimation reporting does not support this format >", rpttype, "<", sep=""))
     }
   } else {
     isgood = FALSE
@@ -9465,56 +10527,69 @@ system_report_estimation = function (cfg,
 
   if(isgood){
 
-    # Powerpoint Reporting
-    if("PowerPoint" == rpttype){
-      vp(cfg, "")
-      vp(cfg, paste("Appending estimation results to report"))
-      vp(cfg, paste("  Report:   ", rptname,            sep=""))
-      vp(cfg, paste("  Analysis: ", analysis_name,      sep=""))
+    # File names where the estimation results should be stored:
+    fname_estimate = file.path(output_directory, paste(analysis_name, ".RData",    sep=""))
+    fname_grobs    = file.path(output_directory, paste(analysis_name, "_pr.RData", sep=""))
+    vp(cfg, "")
+    vp(cfg, paste("Appending estimation results to report"))
+    vp(cfg, paste("  Report:   ", rptname,            sep=""))
+    vp(cfg, paste("  Type:     ", rpttype,            sep=""))
+    vp(cfg, paste("  Analysis: ", analysis_name,      sep=""))
+    #---------------------------
+    pe    = NULL
+    pest  = NULL
+    grobs = NULL
+    if(file.exists(fname_estimate)){
+      vp(cfg, paste("Loading estimation results from file:", fname_estimate))
+      # Loads the variable pe and pest
+      load(fname_estimate)
+    } else {
+      vp(cfg, paste("Unable to load the estimate results from file:", fname_estimate))
+    }
+    if(file.exists(fname_grobs)){
+      vp(cfg, paste("Loading the figures from file:", fname_grobs))
+      # Loads the variablegrobs 
+      load(fname_grobs)
+    } else {
+      vp(cfg, paste("Unable to load the figures from file:", fname_grobs))
+    }
+
+    #---------------------------
+    # Parameter estimate table
+    petab = NULL
+    if(!is.null(pe$report$parameters_est)){
+      # pulling out the parameters table
+      petab = as.data.frame(pe$report$parameters_est)
+      # Trimming off the last row and last column
+      petab = petab[1:(nrow(petab)-1),1:(ncol(petab)-1)]
+      # Removing the guess column
+      petab = petab[,c(1,3:ncol(petab))]
     
-      # File names where the estimation results should be stored:
-      fname_estimate = file.path(output_directory, paste(analysis_name, ".RData",    sep=""))
-      fname_grobs    = file.path(output_directory, paste(analysis_name, "_pr.RData", sep=""))
+      ptab       = list()
+      ptab$table = petab
+      ptab$header_top = list(pname    = "Parameter", 
+                             estimate = "Estimate",
+                             cvpct    = "CV Percent", 
+                             cilb     = "Lower Bound", 
+                             ciub     = "Upper Bound", 
+                             units    = "Units")
+    }
+    #---------------------------
+    if("PowerPoint" == rpttype){
       if(file.exists(fname_estimate)){
-        vp(cfg, paste("Loading estimation results from file:", fname_estimate))
-        # Loads the variable pe and pest
-        pe   = NULL
-        pest = NULL
-        load(fname_estimate)
         #
         # Adding a slide with the parameter estimates:
         #  this is triggered when confidence intervals were able to be
         #  calculated 
         if(!is.null(pe$report$parameters_est)){
-          # pulling out the parameters table
-          petab = as.data.frame(pe$report$parameters_est)
-          # Trimming off the last row and last column
-          petab = petab[1:(nrow(petab)-1),1:(ncol(petab)-1)]
-          # Removing the guess column
-          petab = petab[,c(1,3:ncol(petab))]
-    
-          ptab       = list()
-          ptab$table = petab
-          ptab$header_top = list(pname    = "Parameter", 
-                                 estimate = "Estimate",
-                                 cvpct    = "CV Percent", 
-                                 cilb     = "Lower Bound", 
-                                 ciub     = "Upper Bound", 
-                                 units    = "Units")
           cfg = system_report_slide_content(cfg, 
                 title        = "Parameter Estimates",
                 rptname      = rptname,
                 content_type = "flextable",
                 content      = ptab)
         }
-      } else {
-        vp(cfg, paste("Unable to load the estimate results from file:", fname_estimate))
       }
       if(file.exists(fname_grobs)){
-        vp(cfg, paste("Loading the figures from file:", fname_grobs))
-        # Loads the variable pr
-        grobs = NULL
-        load(fname_grobs)
         # Looping through each output and creating a slide for the timecourse
         # and the obs vs pred figures
         for(output in grobs$outputs){
@@ -9528,10 +10603,133 @@ system_report_estimation = function (cfg,
                   right_content      = grobs$obs_pred[[output]])
           }
         }
-      } else {
-        vp(cfg, paste("Unable to load the figures from file:", fname_grobs))
       }
     }
+    #---------------------------
+    if("Word" == rpttype){
+      #---------------------------
+      # Parameter estiamtes
+      if(file.exists(fname_estimate)){
+        # Adding a table with the parameter estimates:
+        if(!is.null(pe$report$parameters_est)){
+          cfg = system_report_doc_add_content(cfg, 
+            content_type  = "text",
+            content       = list(style   = "normal",
+                                 text    = "Parameter Estimates"))
+          cfg = system_report_doc_add_content(cfg=cfg, 
+            rptname       = rptname,
+            content_type  = "flextable",
+            content       = ptab)
+          cfg = system_report_doc_add_content(cfg=cfg, 
+              rptname       = rptname,  
+              content_type  = "break")
+        }
+      }
+
+      #---------------------------
+      # VPCs
+      if(file.exists(fname_grobs)){
+        # Looping through each output and creating a slide for the timecourse
+        # and the obs vs pred figures
+        for(output in grobs$outputs){
+          if(is.ggplot(grobs$timecourse[[output]]) & is.ggplot(grobs$obs_pred[[output]])){
+            cfg = system_report_doc_add_content(cfg, 
+              rptname       = rptname,  
+              content_type  = "ggplot",
+              content       = list(image   = grobs$timecourse[[output]],
+                                   height  = 4.7))
+
+            cfg = system_report_doc_add_content(cfg, 
+              rptname       = rptname,  
+              content_type  = "ggplot",
+              content       = list(image   = grobs$obs_pred[[output]], 
+                                   height  = 4.7))
+          }
+        }
+        cfg = system_report_doc_add_content(cfg=cfg, 
+            rptname       = rptname,  
+            content_type  = "break")
+      }
+
+      #---------------------------
+      # variance/covariance matrix 
+      if(!is.null(pe$statistics_est$covariance)){
+        # If the column headers get too big we switch to landscape:
+        if(stringr::str_length(paste(names(pe$estimate), collapse=" ")) > 40){
+          cfg = system_report_doc_format_section(cfg, section_type="continuous")
+        }
+
+        vcv =  signif(pe$statistics_est$covariance, digits=3)
+        colnames(vcv) <- names(pe$estimate)
+        rownames(vcv) <- names(pe$estimate)
+        vcv = as.data.frame(vcv)
+
+        tcontent = list()
+        tcontent$table     =  vcv
+        tcontent$header    = TRUE 
+        tcontent$first_row = TRUE 
+        tcontent$caption   = "Variance/Covariance Matrix"
+        
+        cfg = system_report_doc_add_content(cfg, 
+          content_type  = "table",
+          content       = tcontent)        
+
+        # If the column headers get too big we switch to landscape:
+        if(stringr::str_length(paste(names(pe$estimate), collapse=" ")) > 40){
+          cfg = system_report_doc_format_section(cfg, section_type="landscape", h=8, w=10)
+        } else {
+          cfg = system_report_doc_add_content(cfg=cfg, 
+              rptname       = rptname,  
+              content_type  = "break")
+        }
+      }
+
+      #---------------------------
+      # Estimation metadata
+        cfg = system_report_doc_add_content(cfg, 
+          content_type  = "text",
+          content       = list(style   = "h1",
+                               text    = "Estimation Details"))
+        cfg = system_report_doc_add_content(cfg, 
+          content_type  = "text",
+          content       = list(style   = "normal",
+                               text    = "Loaded from files:"))
+
+        cfg = system_report_doc_add_content(cfg, 
+          content_type  = "text",
+          content       = list(style   = "code",
+                               text    = fname_estimate))
+
+        cfg = system_report_doc_add_content(cfg, 
+          content_type  = "text",
+          content       = list(style   = "code",
+                               text    = fname_grobs))
+
+      # Appending cohort details
+      cfg = system_report_doc_add_content(cfg, 
+        content_type  = "text",
+        content       = list(style   = "h2",
+                             text    = "Cohort Overview:"))
+      for(line in pe$cohort_view){
+        cfg = system_report_doc_add_content(cfg, 
+          content_type  = "text",
+          content       = list(style   = "code",
+                               text    = line))
+      }
+
+      # Appending contents of system file
+      cfg = system_report_doc_add_content(cfg, 
+        content_type  = "text",
+        content       = list(style   = "h2",
+                             text    = "System File:"))
+      for(line in pe$system_file){
+        cfg = system_report_doc_add_content(cfg, 
+          content_type  = "text",
+          content       = list(style   = "code",
+                               text    = line))
+      }
+    }
+    #---------------------------
   }
 
   if(!isgood){
@@ -9683,8 +10881,13 @@ system_req <- function(pkgs){
       eval(parse(text=sprintf("res_pkg = require(%s, quietly=TRUE)", pkg))) 
       res_pkgs = c(res_pkgs, res_pkg)
     } else {
-    # otherwise we just return a Boolean value to see if the package is installed 
-      res_pkgs = c(res_pkgs, (pkg  %in% row.names(installed.packages())))
+      # otherwise we just return a Boolean value 
+      # indicating if the package is installed 
+      if(system.file(package=pkg) == ""){
+        res_pkgs = c(res_pkgs, FALSE)
+      } else {
+        res_pkgs = c(res_pkgs, TRUE)
+      }
     }
   }
 all(res_pkgs)}
@@ -10173,7 +11376,20 @@ system_nca_run = function(cfg,
 
     # Storing these strings to be used in reporting:
     cfg$nca[[analysis_name]]$text$ID_label = ID_label
-    
+
+    # Storing all of the analysis inputs to be available when reporting
+    cfg$nca[[analysis_name]]$ana_opts$dsname          =  dsname              
+    cfg$nca[[analysis_name]]$ana_opts$dscale          =  dscale             
+    cfg$nca[[analysis_name]]$ana_opts$NCA_min         =  NCA_min            
+    cfg$nca[[analysis_name]]$ana_opts$analysis_name   =  analysis_name      
+    cfg$nca[[analysis_name]]$ana_opts$dsfilter        =  dsfilter           
+    cfg$nca[[analysis_name]]$ana_opts$extrap_C0       =  extrap_C0          
+    cfg$nca[[analysis_name]]$ana_opts$extrap_N        =  extrap_N           
+    cfg$nca[[analysis_name]]$ana_opts$sparse          =  sparse             
+    cfg$nca[[analysis_name]]$ana_opts$dsmap           =  dsmap              
+    cfg$nca[[analysis_name]]$ana_opts$digits          =  digits             
+    cfg$nca[[analysis_name]]$ana_opts$dsinc           =  dsinc              
+
     # Looping through each subject ID
     subs  = unique(DS$SI_ID)
 
@@ -10196,7 +11412,7 @@ system_nca_run = function(cfg,
       }
 
       ptmp = prepare_figure(fo=ptmp, purpose="present")
-      ptmp = gg_log10_yaxis(fo=ptmp, ylim_max=ylim_max, ylim_min=ylim_min)
+      ptmp = gg_log10_yaxis(fo=ptmp) #, ylim_max=ylim_max, ylim_min=ylim_min)
 
       # Next we process each of the doses   
       dosenum_all = unique(SUBDS$SI_DOSENUM)
@@ -10209,6 +11425,7 @@ system_nca_run = function(cfg,
 
         # This contains all of the rows for the current dose number
         TMP_SS_DN  = SUBDS[SUBDS$SI_DOSENUM == dosenum, ]
+
 
         # If this is a sparse sampling analysis we remove redundant time
         # points so we have one concentration per time point for the current
@@ -10262,7 +11479,7 @@ system_nca_run = function(cfg,
           Tmax            = signif(Tmax, digits)
         } 
 
-        # Calculating the predose conc to subtract from the concentration
+        # Finding the predose conc 
         # By default it's zero:
         PREDOSE_CONC = 0.0
         # first we look for observations with time values before the first
@@ -10270,10 +11487,13 @@ system_nca_run = function(cfg,
         if(any(SUBDS[[dsmap$TIME]] < min(SUBDS_DN[[dsmap$TIME]]))){
           # This gets the subject dataset leading up to the current subset
           PREDOSEDS = SUBDS[SUBDS[[dsmap$TIME]] < min(SUBDS_DN[[dsmap$TIME]]), ]
+
+          # Pulling out the values at the last time point
+          PREDOSEDS = PREDOSEDS[PREDOSEDS[[dsmap$TIME]] == max(PREDOSEDS[[dsmap$TIME]]), ]
+
           # Now we pluck off the last value:
           PREDOSE_CONC = PREDOSEDS[nrow(PREDOSEDS), ]$SI_CONC
         }
-
 
         # The nominal time of this point will be 0, but in a multiple dose
         # setting the clock time will be different:
@@ -10470,12 +11690,15 @@ system_nca_run = function(cfg,
                       1, paste("AUC (0-last):"             , var2string(tmpsum$AUClast    , nsig_e=2, nsig_f=2) ), 
                       1, paste("AUC (0-inf, predicted):"   , var2string(tmpsum$AUCinf_pred, nsig_e=2, nsig_f=2) ), 
                       1, paste("AUC (0-inf, observed):"    , var2string(tmpsum$AUCinf_obs , nsig_e=2, nsig_f=2) ))
+
+            all = data.frame(c1=matrix(ncol=2, data=lctmp, byrow=TRUE)[,2], c2=matrix(ncol=2, data=rctmp, byrow=TRUE)[,2])
             
             # storing the actual values to be used in the reporting
             rptobjs[[sub_str]][[dosenum_str]]$dosenum = dosenum
             rptobjs[[sub_str]][[dosenum_str]]$sub     = sub    
-            rptobjs[[sub_str]][[dosenum_str]]$lc = lctmp
-            rptobjs[[sub_str]][[dosenum_str]]$rc = rctmp
+            rptobjs[[sub_str]][[dosenum_str]]$lc      = lctmp
+            rptobjs[[sub_str]][[dosenum_str]]$rc      = rctmp
+            rptobjs[[sub_str]][[dosenum_str]]$all     = all
             
             tmpsum = as.data.frame(tmpsum)
             if(is.null(NCA_sum)){
@@ -10557,7 +11780,7 @@ cfg}
 #'@description Appends the results of NCA to a report
 #'
 #'@param cfg ubiquity system object
-#'@param rptname name of report to append results to (default \code{'default'})
+#'@param rptname report name (either PowerPoint or Word) 
 #'@param analysis_name string containing the name of the analysis (default \code{'analysis'}) to archive to files and reference results later
 #'@param rows_max maximum number of rows per slide when generating tabular data
 #'@param table_headers Boolean variable to add descriptive headers to output tables (default \code{TRUE})
@@ -10569,14 +11792,14 @@ system_report_nca = function(cfg,
                           rows_max      = 10,
                           table_headers = TRUE){
   # Supported report types
-  rpttypes = c("PowerPoint")
+  rpttypes = c("PowerPoint", "Word")
   isgood = TRUE
 
   if(rptname %in% names(cfg$reporting$reports)){
     rpttype = cfg$reporting$reports[[rptname]]$rpttype
     if(!(rpttype %in% rpttypes)){
       isgood = FALSE
-      vp(cfg, paste("NCA reporting does not support this format >", rpttype, ">", sep=""))
+      vp(cfg, paste("NCA reporting does not support this format >", rpttype, "<", sep=""))
     }
   } else {
     isgood = FALSE
@@ -10585,15 +11808,19 @@ system_report_nca = function(cfg,
     vp(cfg, paste("cfg = system_report_init(cfg, rptname='", rptname, "')", sep=""))
   }
 
-  if((analysis_name %in% names(cfg$nca))& isgood){
-    vp(cfg, "")
-    vp(cfg, "Appending NCA results to report")
-    vp(cfg, paste("  Report:   ", rptname,      sep=""))
-    vp(cfg, paste("  Analysis: ", analysis_name,      sep=""))
-  } else {
-    isgood = FALSE
-    vp(cfg, paste("The NCA analysis >", analysis_name, "< was not found", sep=""))
+  if(isgood){
+    if((analysis_name %in% names(cfg$nca))){
+      vp(cfg, "")
+      vp(cfg, "Appending NCA results to report")
+      vp(cfg, paste("  Report:   ", rptname,            sep=""))
+      vp(cfg, paste("  Type:     ", rpttype,            sep=""))
+      vp(cfg, paste("  Analysis: ", analysis_name,      sep=""))
+    } else {
+      isgood = FALSE
+      vp(cfg, paste("The NCA analysis >", analysis_name, "< was not found", sep=""))
+    }
   }
+
 
   if(isgood){
     # Defining the elements to be used locally
@@ -10601,24 +11828,81 @@ system_report_nca = function(cfg,
     grobs_sum =  cfg$nca[[analysis_name]]$grobs_sum
     NCA_sum   =  cfg$nca[[analysis_name]]$NCA_sum
     ID_label  =  cfg$nca[[analysis_name]]$text$ID_label
+    ana_opts  =  cfg$nca[[analysis_name]]$ana_opts
 
+    if(ana_opts$sparse){
+      ana_type = "Naive-pooled NCA"      
+    } else {
+      ana_type = "NCA of individual data"
+    }
+
+    overview = paste(ana_type, " from ", ana_opts$dsname, " (", 
+    cfg$data[[ana_opts$dsname]]$data_file$name, "). For each ", tolower(ID_label),
+    " and dose the NCA parameters will be summarized. For each  ", tolower(ID_label), 
+    " the full time-course will be shown in grey, the data used for each analysis will be shown in green, and extrapolated values and data used for extrapolation will be shown in orange",
+    sep="")
+
+    if(rpttype == "PowerPoint"){
+      cfg = system_report_slide_content(cfg, rptname=rptname,
+                title         = "NCA Overview",
+                content_type  = "text",
+                content        = overview)
+    } else if(rpttype == "Word"){
+      cfg = system_report_doc_add_content(cfg, 
+        content_type  = "text",
+        content       = list(style   = "normal",
+                             text    = overview))
+
+      cfg = system_report_doc_add_content(cfg, 
+        content_type  = "text",
+        content       = list(style   = "h1",
+                             text    = paste("NCA broken down by", ID_label, "and dose")))
+    }
     # Creating subject level slides for each dose and a summary plot
     for(sub_str in names(rptobjs)){
+      #---------------------------------
+      # First we add the summary level information for the current dose
       for(dosenum_str in names(rptobjs[[sub_str]])){
         dosenum = rptobjs[[sub_str]][[dosenum_str]]$dosenum
         sub     = rptobjs[[sub_str]][[dosenum_str]]$sub
-        cfg = system_report_slide_two_col(cfg, rptname=rptname,
-                  title         = paste(ID_label,": ", sub, ",  Dose: ", dosenum, sep=""),
-                  content_type  = "list",
-                  left_content  = rptobjs[[sub_str]][[dosenum_str]]$lc,
-                  right_content = rptobjs[[sub_str]][[dosenum_str]]$rc)
+        if(rpttype == "PowerPoint"){
+          cfg = system_report_slide_two_col(cfg, rptname=rptname,
+                    title         = paste(ID_label,": ", sub, ",  Dose: ", dosenum, sep=""),
+                    content_type  = "list",
+                    left_content  = rptobjs[[sub_str]][[dosenum_str]]$lc,
+                    right_content = rptobjs[[sub_str]][[dosenum_str]]$rc)
+        } else if(rpttype == "Word"){
+          tcontent = list()
+          tcontent$table     = rptobjs[[sub_str]][[dosenum_str]]$all 
+          tcontent$header    = FALSE
+          tcontent$first_row = FALSE
+          tcontent$caption   = paste(ID_label,": ", sub, ",  Dose: ", dosenum, sep="")
+          cfg = system_report_doc_add_content(cfg, 
+            content_type  = "table",
+            content       = tcontent)
+        }
       }
-      cfg = system_report_slide_content(cfg, rptname=rptname,
-                title         = paste(ID_label,": ", sub, sep=""),
-                content_type  = "ggplot",
-                content       = grobs_sum[[sub_str]])
+      #---------------------------------
+      # Now we plot the timecourse for visual confirmation
+        if(rpttype == "PowerPoint"){
+          cfg = system_report_slide_content(cfg, rptname=rptname,
+                    title         = paste(ID_label,": ", sub, sep=""),
+                    content_type  = "ggplot",
+                    content       = grobs_sum[[sub_str]])
+        } else if(rpttype == "Word"){
+          cfg = system_report_doc_add_content(cfg, 
+            content_type  = "ggplot",
+            content       = list(image   = grobs_sum[[sub_str]],
+                                 height  = 4.0,
+                                 width   = 6,
+                                 caption = paste(ID_label,": ", sub, sep="")))
+             
+          cfg = system_report_doc_add_content(cfg=cfg, 
+              rptname       = rptname,  
+              content_type  = "break")
+        }
+      #---------------------------------
     }
-
 
     # Cleaning up the summary level information
     NCA_sum$Dose_Number =  as.factor(NCA_sum$Dose_Number)
@@ -10634,6 +11918,8 @@ system_report_nca = function(cfg,
     NCA_sum$AUCinf_pred = var2string(NCA_sum$AUCinf_pred, nsig_e=2, nsig_f=2)
     NCA_sum$AUCinf_obs  = var2string(NCA_sum$AUCinf_obs , nsig_e=2, nsig_f=2)
 
+    #-----------------------------------
+    # Tabular results in PowerPoint
     # Stepping through the results 
     offset = 0
     while(offset < nrow(NCA_sum)){
@@ -10708,18 +11994,88 @@ system_report_nca = function(cfg,
                   AUCinf_pred = "Inf(Pred)" ,
                   AUCinf_obs  = "Inf(Obs)" )
       }
+
+
       
       # Splitting the table across two slides
-      cfg = system_report_slide_content(cfg, rptname=rptname,
-                 title         = paste("NCA Summary"),
-                 content_type  = "flextable",
-                 content       = tab1)
-      
-      cfg = system_report_slide_content(cfg, rptname=rptname,
-                 title         = paste("NCA Summary"),
-                 content_type  = "flextable",
-                 content       = tab2)
+      if(rpttype == "PowerPoint"){
+        cfg = system_report_slide_content(cfg, rptname=rptname,
+                   title         = paste("NCA Summary"),
+                   content_type  = "flextable",
+                   content       = tab1)
+        
+        cfg = system_report_slide_content(cfg, rptname=rptname,
+                   title         = paste("NCA Summary"),
+                   content_type  = "flextable",
+                   content       = tab2)
+
+      }
+
     }
+    #-----------------------------------
+    # Tabular results in Word
+    if(rpttype == "Word"){
+      taball = list()
+      taball$table = NCA_sum[,c(1:4,6:17) ]
+      if(table_headers){
+        taball$merge_header  = FALSE
+        taball$table_autofit = TRUE
+        taball$table_theme   ='theme_zebra'
+        taball$caption = "NCA Summary"
+        taball$header_top = list(
+                  ID          = ID_label    , 
+                  Nobs        = "N"         ,
+                  Dose_Number = "Dose"      ,
+                  Dose        = "Dose"      ,
+              #   Dose_CU     = "Dose"      ,
+                  Cmax        = "Cmax"      ,
+                  Tmax        = "Tmax"      , 
+                  halflife    = "Halflife"  ,
+                  Vp_obs      = "Vp"        ,
+                  Vss_obs     = "Vss"       ,
+                  Vss_pred    = "Vss"       ,
+                  C0          = "C0"        ,
+                  CL_obs      = "CL"        ,
+                  CL_pred     = "CL"        ,
+                  AUClast     = "AUC"       ,
+                  AUCinf_pred = "AUC"       ,
+                  AUCinf_obs  = "AUC"       )
+
+        
+        taball$header_middle = list(
+                  ID          = ""          ,
+                  Nobs        = "Obs"       ,
+                  Dose_Number = "Number"    ,
+                  Dose        = ""          ,
+               #  Dose_CU     = "CU"        ,
+                  Cmax        = ""          ,
+                  Tmax        = ""          , 
+                  halflife    = ""          ,
+                  Vp_obs      = "Obs"       ,
+                  Vss_obs     = "Obs"       ,
+                  Vss_pred    = "Pred"      ,
+                  C0          = "Extrap"    , 
+                  CL_obs      = "Obs"       ,
+                  CL_pred     = "Pred"      ,
+                  AUClast     = "Last"      ,
+                  AUCinf_pred = "Inf(Pred)" ,
+                  AUCinf_obs  = "Inf(Obs)" )
+      }
+
+     # Flipping to landscape because this will be a pretty wide table.
+     cfg = system_report_doc_format_section(cfg, section_type="continuous")
+     cfg = system_report_doc_add_content(cfg, 
+       content_type  = "text",
+       content       = list(style   = "h1",
+                            text    = paste("Summarized results for each", ID_label)))
+     cfg = system_report_doc_add_content(cfg, 
+       content_type  = "flextable",
+       content       = taball)
+     cfg = system_report_doc_format_section(cfg, section_type="landscape")
+    }
+    #-----------------------------------
+
+
  
   } else {
      vp(cfg, "system_report_nca()")
@@ -10915,6 +12271,11 @@ cfg}
 #'   \item{mod} Result of lm used to fit the log transformed data
 #'   \item{df} Dataframe with the data and predicted values at the time within tmin and tmax
 #' }
+#'@examples
+#' x     = c(0:100)
+#' y     = exp(-.1*x)
+#' th    = calculate_halflife(times=x, values=y)
+#' thalf = th$thalf 
 calculate_halflife = function(times = NULL,
                      values = NULL,
                      tmin = NULL,
@@ -11948,3 +13309,5 @@ system_glp_scenario = function(cfg,
 
 cfg }
 #-------------------------------------------------------------------------
+
+

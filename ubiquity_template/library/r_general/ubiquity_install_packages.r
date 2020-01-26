@@ -6,24 +6,34 @@ options(show.error.locations = TRUE)
 
 
 required_packages= c("deSolve",
-                     "ggplot2",
+                     "digest", 
+                     "doParallel",
+                     "doRNG",
+                     "flextable",
                      "foreach",
-                     "shiny",
+                     "GA",     
+                     "GGally",
+                     "ggrepel",
                      "gdata",
-                     "knitr"
-                     "rmarkdown",     
+                     "gridGraphics",
+                     "gridExtra",
+                     "grid",
+                     "ggplot2",
+                     "knitr",
+                     "MASS",
+                     "officer",
+                     "optimx",
+                     "PKNCA", 
+                     "PSO",
+                     "rmarkdown",
                      "rhandsontable",
                      "rstudioapi",
-                     "optimx",
-                     "officer",
-                     "flextable",
-                     "doParallel",
-                     "doRNG")
+                     "stats", 
+                     "shiny",
+                     "testthat",
+                     "webshot")
 
 
-reccomended_packages = c( "GGally",
-                          "gridExtra",
-                          "gridGraphics")
 
 for(pkg in required_packages){
 
