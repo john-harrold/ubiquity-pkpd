@@ -54,9 +54,9 @@ build_system <- function(system_file          = "system.txt",
                          perlcmd              = "perl",
                          output_directory     = file.path(".", "output"),
                          temporary_directory  = file.path(".", "transient"),
-                         verbose              =  TRUE,
-                         ubiquity_app         =  FALSE,
-                         debug                =  TRUE){
+                         verbose              = TRUE,
+                         ubiquity_app         = FALSE,
+                         debug                = TRUE){
 
 # If we cannot find a system file we create an empty one 
 if(!file.exists(system_file)){
@@ -317,9 +317,13 @@ workshop_fetch <- function(section          = "Simulation",
          write_file   = c(TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE)
       } else if(section=="Reporting") {
          sources      = c(file.path(src_dir, "make_report_PowerPoint.R"), 
+                          file.path(src_dir, "make_report_Word.R"), 
                           file.path(sys_dir, "system-mab_pk.txt"))
-         destinations = c("make_report_PowerPoint.R", "system.txt")
-         write_file   = c(TRUE, TRUE)
+         destinations = c("make_report_PowerPoint.R",
+                          "make_report_Word.R", 
+                          "system.txt")
+
+         write_file   = c(TRUE, TRUE, TRUE)
       } else if(section=="Titration") {
          sources      = c(file.path(src_dir, "analysis_repeat_dosing.r"                     ),
                           file.path(src_dir, "analysis_repeat_infusion.r"                   ),
