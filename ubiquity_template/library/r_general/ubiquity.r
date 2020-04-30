@@ -18,7 +18,7 @@
 #'@importFrom grid pushViewport viewport grid.newpage grid.layout
 #'@importFrom gridExtra grid.arrange
 #'@importFrom utils read.csv read.delim txtProgressBar setTxtProgressBar write.csv tail packageVersion
-#'@importFrom stats median qt
+#'@importFrom stats median qt var
 #'@importFrom MASS mvrnorm
 
 
