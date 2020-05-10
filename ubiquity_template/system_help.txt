@@ -433,9 +433,36 @@
 #  D2 + T1  <=kon_D2_T1:koff_D2_T1=> D2_T1
 #  D2 + T2  <=kon_D2_T2:koff_D2_T2=> D2_T2
 #
+# # The default action for lines with multiple sets is to evaluate every
+# # possible permutation of the set combinations. However, sometimes it may 
+# # be desirable to pair sets together.  You can do this using
+# # SIMINT_SET_ALIGN. 
+#
+# # For example to setup 10 transit compartments in series where CP feed into
+# # TR1, and TR1 feeds into TR2, and TR2 to TR3, etc. Tau is the residence
+# # time.  You would create two sets
+# <PSET:TRIN>   Cp; TR1; TR2; TR3; TR4; TR5; TR6
+# <PSET:TROUT> TR1; TR2; TR3; TR4; TR5; TR6; TR7
+#
+# # These sets are aligned by element number. So TR2 in TRIN is aligned 
+# # with TR3 in TROUT. 
+#
+# SIMINT_SET_ALIGN[TRIN;TROUT][<ODE:{TROUT}> 1.0/tau*({TRIN}-{TROUT})]
+#
+# # This would be expanded internally into:
+#
+# <ODE:TR1> 1.0/tau*(Cp -TR1)
+# <ODE:TR2> 1.0/tau*(TR1-TR2)
+# <ODE:TR3> 1.0/tau*(TR2-TR3)
+# <ODE:TR4> 1.0/tau*(TR3-TR4)
+# <ODE:TR5> 1.0/tau*(TR4-TR5)
+# <ODE:TR6> 1.0/tau*(TR5-TR6)
+# <ODE:TR7> 1.0/tau*(TR6-TR7)
+#
+#
 # # Set functions
 # # SIMINT_SET_SUM[SETNAME][]
-# # SIMINT_SET_PROD[SETNAME][]
+# # SIMINT_SET_PRODUCT[SETNAME][]
 #
 # Using the sum as an example, the general notation is:
 # SIMINT_SET_SUM[SETNAME][(X_{SETNAME} + Y_{SETNAME})/P_{SETNAME}]
