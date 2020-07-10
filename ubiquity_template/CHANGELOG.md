@@ -7,6 +7,12 @@ This is a common changelog for the following repositories:
 - [ubiquity PKPD tools](https://github.com/john-harrold/ubiquity-pkpd)
 - [ubiquity R Package](https://github.com/john-harrold/ubiquity)
 
+
+## 2020-07-09
+
+### R Workflow
+- Bug fixes to stochastic simulations reading from files with covariates
+
 ## 2020-07-08
 
 ### R Workflow
@@ -14,6 +20,8 @@ This is a common changelog for the following repositories:
   saved 
 
 ## 2020-07-05
+
+### R Package V 1.0.2 sent to CRAN
 
 ### R Workflow
 - Uploaded 1.0.2 to CRAN
