@@ -1,5 +1,3 @@
-
-
 ## Common Changelog
 
 This is a common changelog for the following repositories:
@@ -7,8 +5,18 @@ This is a common changelog for the following repositories:
 - [ubiquity PKPD tools](https://github.com/john-harrold/ubiquity-pkpd)
 - [ubiquity R Package](https://github.com/john-harrold/ubiquity)
 
-## 2020-07-21
+## 2020-09-11
 
+### R Workflow
+- Removed the gdata dependency
+- Fixed bug in system_nca_run() that would fail when the dataset was a tibble
+- Fixed NCA template
+- Converted system_nca_run() from using $ to mostly using [[""]]
+- Fixed bug in ShinyApp template where iiv tab was being displayed even when
+  the system had no iiv elements
+
+
+## 2020-07-21
 - Updated example system files
 - Fixed broken reporting examples from the workshop
 
