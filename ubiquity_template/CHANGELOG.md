@@ -5,10 +5,23 @@ This is a common changelog for the following repositories:
 - [ubiquity PKPD tools](https://github.com/john-harrold/ubiquity-pkpd)
 - [ubiquity R Package](https://github.com/john-harrold/ubiquity)
 
+
+## 2020-09-20
+- Fixed coercion warnings for covariates when building the system
+- Using explicit declaration of officer functions and specifying those in importFrom this is to prevent namespace issues with readxl to allow the function readxl::read_xlsx
+
+## 2020-09-12
+
+### R Package V 1.0.3 sent to CRAN
+
+### R Workflow
+- Removed URL redirects from documentation to resolve CRAN submssion warnings
+
 ## 2020-09-11
 
 ### R Workflow
 - Removed the gdata dependency
+- Removed URL redirects from documentation to resolve CRAN submssion warnings
 - Fixed bug in system_nca_run() that would fail when the dataset was a tibble
 - Fixed NCA template
 - Converted system_nca_run() from using $ to mostly using [[""]]
