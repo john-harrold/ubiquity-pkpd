@@ -7,21 +7,24 @@ This is a common changelog for the following repositories:
 
 
 ## 2020-09-20
+
+### R Workflow
 - Fixed coercion warnings for covariates when building the system
 - Using explicit declaration of officer functions and specifying those in importFrom this is to prevent namespace issues with readxl to allow the function readxl::read_xlsx
+- Added the ability to read xlsx data sets with system_load_data
 
 ## 2020-09-12
 
 ### R Package V 1.0.3 sent to CRAN
 
 ### R Workflow
-- Removed URL redirects from documentation to resolve CRAN submssion warnings
+- Removed URL redirects from documentation to resolve CRAN submission warnings
 
 ## 2020-09-11
 
 ### R Workflow
 - Removed the gdata dependency
-- Removed URL redirects from documentation to resolve CRAN submssion warnings
+- Removed URL redirects from documentation to resolve CRAN submission warnings
 - Fixed bug in system_nca_run() that would fail when the dataset was a tibble
 - Fixed NCA template
 - Converted system_nca_run() from using $ to mostly using [[""]]
