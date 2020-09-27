@@ -5,6 +5,11 @@ This is a common changelog for the following repositories:
 - [ubiquity PKPD tools](https://github.com/john-harrold/ubiquity-pkpd)
 - [ubiquity R Package](https://github.com/john-harrold/ubiquity)
 
+## 2020-09-27
+
+### R Workflow
+- Adding shortcuts to officer exports
+- Adding checks in simulate_subjects to ensure required columns are present
 
 ## 2020-09-20
 

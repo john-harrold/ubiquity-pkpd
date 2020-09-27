@@ -16,12 +16,10 @@
 #'@importFrom readxl read_xls read_xlsx
 #'@importFrom grid pushViewport viewport grid.newpage grid.layout
 #'@importFrom gridExtra grid.arrange
-#'@importFrom officer add_slide body_add_break body_add_fpar body_add_par body_add_gg body_add_img body_add_table body_add_toc body_replace_all_text external_img footers_replace_all_text headers_replace_all_text layout_properties layout_summary ph_location_type ph_location_label ph_with read_pptx read_docx styles_info unordered_list
+#'@importFrom officer add_slide body_add_break body_add_fpar body_add_par body_add_gg body_add_img body_add_table body_add_toc body_replace_all_text external_img footers_replace_all_text headers_replace_all_text layout_properties layout_summary ph_location_type ph_location_label ph_with read_pptx read_docx shortcuts styles_info unordered_list
 #'@importFrom utils read.csv read.delim txtProgressBar setTxtProgressBar write.csv tail packageVersion sessionInfo
 #'@importFrom stats median qt var
 #'@importFrom MASS mvrnorm
-
-
 
 #'@export
 #'@title Building The System
@@ -3220,9 +3218,10 @@ if("iiv" %in% names(cfg) | !is.null(sub_file)){
   else{
   
       # Summarizing information about the data file
-      sub_file_dataset        = cfg$data[[sub_file]]$values
+      sub_file_dataset        = cfg[["data"]][[sub_file]][["values"]]
+      sub_file_nrow           = nrow(sub_file_dataset)
       sub_file_nsub           = length(unique(sub_file_dataset[[sub_file_ID_col]]))
-      sub_file_file_name      = cfg$data[[sub_file]]$data_file$name
+      sub_file_file_name      = cfg[["data"]][[sub_file]][["data_file"]][["name"]]
 
       # Parameter information
       sub_file_p_found        =       intersect(names(parameters), names(sub_file_dataset))
@@ -3259,9 +3258,22 @@ if("iiv" %in% names(cfg) | !is.null(sub_file)){
         sub_file_cov_missing_str= "" 
       }
 
-     # Checking to make sure that the 
-     if(!(sub_file_nsub >0)){
-       vp(cfg, paste("Error: The specified dataset: ", sub_file, "contains no data")) 
+     # Checking to make sure that the required rows exist:
+     if(!(sub_file_ID_col %in% names(sub_file_dataset))){
+       vp(cfg, paste("Error: The required column >", sub_file_ID_col, "< specified dataset >", sub_file, "< is missing", sep="")) 
+       vp(cfg, "This column assigns the subject ID to the row.")
+       isgood = FALSE
+     }
+     if(!(sub_file_TIME_col %in% names(sub_file_dataset))){
+       vp(cfg, paste("Error: The required column >", sub_file_TIME_col, "< specified dataset >", sub_file, "< is missing", sep="")) 
+       vp(cfg, "This column associates the system time with the record and should have the same units as the system time.")
+       isgood = FALSE
+     }
+
+
+     # Checking to make sure there is at least one subject:
+     if(!(sub_file_nrow >0)){
+       vp(cfg, paste("Error: The specified dataset:", sub_file, "contains no data", sep="")) 
        isgood = FALSE
      } else {
        if((nsub > sub_file_nsub & sub_file_sample == "without replacement")){
@@ -9522,7 +9534,7 @@ system_report_slide_two_col = function (cfg,
 
     # Adding Slide title/subtitle information
     if(!is.null(title)){
-      tmprpt = officer::ph_with(x=tmprpt, location = ph_location_type(type = "title"),  value=title) } 
+      tmprpt = officer::ph_with(x=tmprpt, location = officer::ph_location_type(type = "title"),  value=title) } 
     if(!is.null(sub_title_index) & !is.null(sub_title)){
       tmprpt = officer::ph_with(x=tmprpt,  location=officer::ph_location_label(ph_label=sub_title_ph_label), value=sub_title) }
 
@@ -10082,13 +10094,13 @@ system_report_doc_add_content = function(cfg, rptname="default", content_type=NU
       }
       Caption_Location = meta$styles$Figure_Caption_Location 
       Caption_Style    = meta$styles$Figure_Caption
-      Caption_Ref_str  =  paste("tmprpt = shortcuts$slip_in_plotref(tmprpt, depth =", depth, ")")
+      Caption_Ref_str  =  paste("tmprpt = officer::shortcuts$slip_in_plotref(tmprpt, depth =", depth, ")")
     }
     
     if(content_type == "table" | content_type == "flextable"){
       Caption_Location = meta$styles$Table_Caption_Location 
       Caption_Style    = meta$styles$Table_Caption
-      Caption_Ref_str  =  paste("tmprpt = shortcuts$slip_in_tableref(tmprpt, depth =", depth, ")")
+      Caption_Ref_str  =  paste("tmprpt = officer::shortcuts$slip_in_tableref(tmprpt, depth =", depth, ")")
     }
     #-------
     # Table options
