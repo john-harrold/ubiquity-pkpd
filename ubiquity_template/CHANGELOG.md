@@ -5,6 +5,23 @@ This is a common changelog for the following repositories:
 - [ubiquity PKPD tools](https://github.com/john-harrold/ubiquity-pkpd)
 - [ubiquity R Package](https://github.com/john-harrold/ubiquity)
 
+
+## 2020-10-25
+
+### R Workflow
+- Fixed bug in system_nca_run where back extrapolation was being done for
+  doses that should have been skipped due to insufficient points. This was
+  causing an error.
+- Removed coercion warnings: In tmpsum$halflife = NCA.res$result[NCA.res$result$PPTESTCD == "half.life",  : Coercing LHS to a list
+- Added the ability to pass PKNCA.options through to system_nca_run
+- Applied significant digits to the Bailers method
+- Allowing pass through of dataset columns to summary NCA output
+
+## 2020-09-27
+
+### R Workflow
+- Updated the RData files for the titration vignette 
+
 ## 2020-09-27
 
 ### R Workflow
