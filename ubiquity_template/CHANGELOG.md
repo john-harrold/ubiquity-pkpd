@@ -6,16 +6,24 @@ This is a common changelog for the following repositories:
 - [ubiquity R Package](https://github.com/john-harrold/ubiquity)
 
 
-## 2020-10-25
+## 2020-11-10
 
 ### R Workflow
-- Fixed bug in system_nca_run where back extrapolation was being done for
-  doses that should have been skipped due to insufficient points. This was
-  causing an error.
+- Fixed bug in system_nca_run where back extrapolation was being done for doses that should have been skipped due to insufficient points. This was causing an error.
 - Removed coercion warnings: In tmpsum$halflife = NCA.res$result[NCA.res$result$PPTESTCD == "half.life",  : Coercing LHS to a list
 - Added the ability to pass PKNCA.options through to system_nca_run
-- Applied significant digits to the Bailers method
+- Added verbose option to the system_view command
 - Allowing pass through of dataset columns to summary NCA output
+- Removed digits input from system_nca_run (this is now handled with system_nca_summary below)
+- Updated system_view to include nca results
+- Updated system_report_ph_content and system_report_doc_add_content to allow for inclusion of flextable objects
+- Updated NCA and reporting examples
+- Added the following functions: 
+  - system_fetch_nca - function to fetch NCA results
+  - system_fetch_nca_columns - function to fetch column descriptors of a specific analysis
+  - system_nca_parameters_meta - list of standard NCA parameters
+  - system_nca_summary - creates summary tables for NCA results
+- Updated documentation/vignettes
 
 ## 2020-09-27
 
