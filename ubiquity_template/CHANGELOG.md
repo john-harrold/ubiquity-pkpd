@@ -6,6 +6,11 @@ This is a common changelog for the following repositories:
 - [ubiquity R Package](https://github.com/john-harrold/ubiquity)
 
 
+## 2020-11-15
+
+### R Workflow
+- Fixed bug in system_nca_run when DOSE is a factor 
+
 ## 2020-11-10
 
 ### R Workflow
