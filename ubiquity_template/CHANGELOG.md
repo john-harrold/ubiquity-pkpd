@@ -6,6 +6,15 @@ This is a common changelog for the following repositories:
 - [ubiquity R Package](https://github.com/john-harrold/ubiquity)
 
 
+
+## 2020-11-15
+
+### R Workflow
+- Added import of officer functions starting with body_end_
+- Created testthat scripts to run through workshop functions
+- Removed aberrant gdata require calls in templates
+- Updated documentation
+
 ## 2020-11-15
 
 ### R Workflow
