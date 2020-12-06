@@ -7,10 +7,13 @@ This is a common changelog for the following repositories:
 
 
 
-## 2020-11-15
+## 2020-12-05
 
 ### R Workflow
 - Added import of officer functions starting with body_end_
+- Changed how table and figure captions were being numbered in word reporting
+- Added optional key fields for tables and figures in word reporting 
+- Updated some more elements where list keys are being referenced with $
 - Created testthat scripts to run through workshop functions
 - Removed aberrant gdata require calls in templates
 - Updated documentation
