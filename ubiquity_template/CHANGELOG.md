@@ -6,7 +6,8 @@ This is a common changelog for the following repositories:
 - [ubiquity R Package](https://github.com/john-harrold/ubiquity)
 
 
-## 2020-12-??
+## 2020-12-13
+
 ### R Workflow
 - For markdown in Word reporting, default font properties have been defined
   and the ability to specify them in the org_functions.R template has been
