@@ -11,13 +11,20 @@
 #'@import stringr
 #'@importFrom digest digest
 #'@importFrom dplyr  all_of select
-#'@importFrom flextable add_header add_footer align autofit body_add_flextable delete_part merge_h regulartable set_header_labels theme_alafoli theme_box theme_tron_legacy theme_vanilla theme_booktabs theme_tron theme_vader theme_zebra
+#'@importFrom flextable add_header add_footer align autofit body_add_flextable delete_part merge_h 
+#'@importFrom flextable regulartable set_header_labels theme_alafoli theme_box theme_tron_legacy 
+#'@importFrom flextable theme_vanilla theme_booktabs theme_tron theme_vader theme_zebra
 #'@importFrom parallel stopCluster makeCluster
 #'@importFrom readxl read_xls read_xlsx
 #'@importFrom grid pushViewport viewport grid.newpage grid.layout
 #'@importFrom gridExtra grid.arrange
 #'@importFrom magrittr "%>%"
-#'@importFrom officer add_slide body_add_break body_add_fpar body_add_par body_add_gg body_add_img body_add_table body_add_toc body_bookmark body_end_section_continuous body_end_section_landscape body_end_section_portrait body_replace_all_text external_img footers_replace_all_text headers_replace_all_text layout_properties layout_summary ph_location_type ph_location_label ph_with read_pptx read_docx shortcuts  slip_in_seqfield slip_in_text styles_info unordered_list
+#'@importFrom officer add_slide annotate_base body_add_break body_add_fpar body_add_par body_add_gg body_add_img 
+#'@importFrom officer body_add_table body_add_toc body_bookmark body_end_section_continuous 
+#'@importFrom officer body_end_section_landscape body_end_section_portrait body_replace_all_text external_img 
+#'@importFrom officer footers_replace_all_text headers_replace_all_text layout_properties layout_summary ph_location_type 
+#'@importFrom officer ph_location_label ph_with read_pptx read_docx shortcuts  slip_in_seqfield slip_in_text 
+#'@importFrom officer styles_info unordered_list
 #'@importFrom PKNCA PKNCA.options PKNCAconc PKNCAdose PKNCAdata pk.nca get.interval.cols
 #'@importFrom utils read.csv read.delim txtProgressBar setTxtProgressBar write.csv tail packageVersion sessionInfo
 #'@importFrom stats median qt var sd
@@ -8905,43 +8912,9 @@ if(isgood){
 if(isgood){
 
   # Dumping PowerPoint layout
-  if(cfg$reporting$reports[[rptname]]$rpttype  == "PowerPoint"){
-    # New document from the template
-    rpt = officer::read_pptx(cfg$reporting$reports[[rptname]]$template)
-    
-    # Pulling out all of the layouts stored in the template
-    lay_sum = officer::layout_summary(rpt)
-    
-    # Looping through each layout
-    for(lidx in 1:length(lay_sum[,1])){
-    
-      # Pulling out the layout properties
-      layout = lay_sum[lidx, 1]
-      master = lay_sum[lidx, 2]
-      lp = officer::layout_properties ( x = rpt, layout = layout, master = master)
-    
-      # Adding a slide for the current layout
-      rpt =  officer::add_slide(x=rpt, layout = layout, master = master) 
-    
-      # Blank slides have nothing
-      if(length(lp[,1] > 0)){
-    
-        # Now we go through each placholder
-        for(pidx in 1:length(lp[,1])){
-          # If it's a text placeholder "body" or "title" we add text indicating
-          # the type and index. If it's title we put the layout and master
-          # information in there as well.
-          if(lp[pidx, ]$type == "body"){
-            textstr = sprintf('type="body", index = %d, ph_label=%s', pidx, lp[pidx, ]$ph_label)
-            rpt = officer::ph_with(x=rpt,  location=officer::ph_location_label(ph_label=lp[pidx, ]$ph_label), index = cfg$reporting$reports[[rptname]]$meta$section$indices$pidx, value=textstr) 
-          } 
-          if(lp[pidx, ]$type %in% c("title", "ctrTitle", "subTitle")){
-            textstr = sprintf('layout="%s", master = "%s", type="%s", index =%d, ph_label=%s', layout, master, lp[pidx, ]$type,  pidx, lp[pidx, ]$ph_label)
-            rpt = officer::ph_with(x=rpt, location=officer::ph_location_label(ph_label=lp[pidx, ]$ph_label), value=textstr)  
-          }
-        }
-      } 
-    }
+  if(cfg[["reporting"]][["reports"]][[rptname]]$rpttype  == "PowerPoint"){
+    # Getting the annotated report
+    rpt = officer::annotate_base(path=cfg[["reporting"]][["reports"]][[rptname]][["template"]], output_file=NULL)
   } 
 
   # Dumping Word layout
@@ -9144,7 +9117,7 @@ system_report_save = function (cfg,
       for(phn in names(cfg$reporting$reports[[rptname]]$meta$ph_content)){
         # Here we pull out the value (phv) and locatio (phl) of each
         # placeholder:
-        pht = paste(":::",phn,":::", sep="") 
+        pht = paste("<::",phn,"::>", sep="") 
         phv = cfg$reporting$reports[[rptname]]$meta$ph_content[[phn]]$content
         phl = cfg$reporting$reports[[rptname]]$meta$ph_content[[phn]]$location
         if(phl == "body"){
@@ -9323,6 +9296,10 @@ if(isgood){
       cfg$reporting$reports[[rptname]]$rpttype = use_rpttype
       # Storing the original template location and creating the empty report
       cfg$reporting$reports[[rptname]]$template = use_template
+
+      # empty table to hold reference keys
+      cfg$reporting$reports[[rptname]]$key_table = NULL
+
      
       # Reading in the template depending on the report type
       if(use_rpttype == "PowerPoint"){
@@ -10363,26 +10340,59 @@ system_report_doc_add_content = function(cfg, rptname="default", content_type=NU
     if(content_type == "text"){
       # defaulting to text format
       Text_Format = "text"
+      # defaulting md_defaults to ubiquity Normal
+      md_defaults = cfg[["reporting"]][["meta_docx"]][["md_def"]][["Normal"]] 
+
       if("format" %in% names(content)){
         Text_Format = content[["format"]]
       }
 
       if(content[["style"]] == "normal"){
         text_style = meta[["styles"]][["Normal"]]
+        # Setting the markdown default properties
+        if("Normal" %in% names(meta[["md_def"]])){
+          md_defaults = meta[["md_def"]][["Normal"]]
+        } else {
+          md_defaults = cfg[["reporting"]][["meta_docx"]][["md_def"]][["Normal"]] 
+        }
       }
       if(content[["style"]] == "code"){
         text_style = meta[["styles"]][["Code"]]
+        # Setting the markdown default properties
+        if("Code" %in% names(meta[["md_def"]])){
+          md_defaults = meta[["md_def"]][["Code"]]
+        } else {
+          md_defaults = cfg[["reporting"]][["meta_docx"]][["md_def"]][["Code"]] 
+        }
       }
       if(content[["style"]] == "h1"){
         text_style = meta[["styles"]][["Heading_1"]]
+        # Setting the markdown default properties
+        if("Heading_1" %in% names(meta[["md_def"]])){
+          md_defaults = meta[["md_def"]][["Heading_1"]]
+        } else {
+          md_defaults = cfg[["reporting"]][["meta_docx"]][["md_def"]][["Heading_1"]] 
+        }
         depth = 1
       }
       if(content[["style"]] == "h2"){
         text_style = meta[["styles"]][["Heading_2"]]
+        # Setting the markdown default properties
+        if("Heading_2" %in% names(meta[["md_def"]])){
+          md_defaults = meta[["md_def"]][["Heading_2"]]
+        } else {
+          md_defaults = cfg[["reporting"]][["meta_docx"]][["md_def"]][["Heading_2"]] 
+        }
         depth = 2
       }
       if(content[["style"]] == "h3"){
         text_style = meta[["styles"]][["Heading_3"]]
+        # Setting the markdown default properties
+        if("Heading_3" %in% names(meta[["md_def"]])){
+          md_defaults = meta[["md_def"]][["Heading_3"]]
+        } else {
+          md_defaults = cfg[["reporting"]][["meta_docx"]][["md_def"]][["Heading_3"]] 
+        }
         depth = 3
       }
 
@@ -10391,7 +10401,7 @@ system_report_doc_add_content = function(cfg, rptname="default", content_type=NU
       } else if(Text_Format == "fpar"){
         tmprpt = officer::body_add_fpar(tmprpt, value=content[["text"]], style=text_style)
       } else if(Text_Format == "md"){
-        mdout = md_to_officer(content[["text"]])
+        mdout = md_to_officer(str=content[["text"]], default_format = md_defaults)
         for(pgraph in mdout){
           tmprpt = officer::body_add_fpar(tmprpt, value=eval(parse(text=pgraph[["fpar_cmd"]])), style=text_style)
         }
@@ -10533,6 +10543,18 @@ cfg}
 #'  \item shade:       \code{"<shade:#33ff33>shading</shade>"} 
 #'  \item font family: \code{"<ff:symbol>symbol</ff>"} 
 #'}
+#'@param default_format  list containing the default format for elements not defined with markdown default vlaues:
+#' \preformatted{
+#'    default_format = list( 
+#'       color          = "black",
+#'       font.size      = 12,
+#'       bold           = FALSE,
+#'       italic         = FALSE,
+#'       underlined     = FALSE,
+#'       font.family    = "Cambria (Body)",
+#'       vertical.align = "baseline",
+#'       shading.color  = "transparent")
+#' }
 #'@return list with parsed paragraph elements ubiquity system object with the
 #' content added to the body, each paragraph can be found in a numbered list
 #' element (e.g. \code{pgraph_1}, \code{pgraph_2}, etc) each with the following
@@ -10546,7 +10568,18 @@ cfg}
 #'   myfpar = eval(parse(text=pgparse$pgraph_1$fpar_cmd))
 #'  }
 #'}
-md_to_officer = function(str){
+md_to_officer = function(str,
+     default_format = list( 
+        color          = "black",
+        font.size      = 12,
+        bold           = FALSE,
+        italic         = FALSE,
+        underlined     = FALSE,
+        font.family    = "Cambria (Body)",
+        vertical.align = "baseline",
+        shading.color  = "transparent")){
+
+
 
 # First we find paragraphs:
 pgraphs = unlist(base::strsplit(str, split="(\r\n|\r|\n){2,}"))
@@ -10563,8 +10596,26 @@ md_info = data.frame(
 pos_start = c()
 pos_stop  = c()
 
-no_props_str = "officer::fp_text()"
-no_props     = officer::fp_text()
+# This is for chunks of text with no formatting. 
+no_props_str = paste('officer::fp_text(bold = ', default_format[["bold"]],',',
+                         'font.size = ',         default_format[["font.size"]], ',', 
+                         'italic = ',            default_format[["italic"]], ',', 
+                         'underlined = ',        default_format[["underlined"]], ',', 
+                         'color = "',            default_format[["color"]], '",', 
+                         'shading.color = "',    default_format[["shading.color"]], '",', 
+                         'vertical.align = "',   default_format[["vertical.align"]], '",', 
+                         'font.family = "',      default_format[["font.family"]],'")', sep = "")
+
+no_props     = officer::fp_text(
+        color          = default_format[["color"]], 
+        font.size      = default_format[["font.size"]], 
+        bold           = default_format[["bold"]], 
+        italic         = default_format[["italic"]], 
+        underlined     = default_format[["underlined"]], 
+        font.family    = default_format[["font.family"]], 
+        vertical.align = default_format[["vertical.align"]],
+        shading.color  = default_format[["shading.color"]]) 
+
 
 # Saving the parsed paragraphs
 pgraphs_parse = list()
@@ -10690,6 +10741,10 @@ pgraphs_parse = list()
                    list(text      = md_text,
                         props     = no_props,
                         props_cmd = no_props)
+        
+        # Making a copy of the format, these will be subtracted below as the
+        # user defined formats are found:
+        tmp_def_props = default_format
       
         tmp_props = c()
         # Next we add the properties associated with the markdown
@@ -10701,18 +10756,26 @@ pgraphs_parse = list()
           # Setting properties based on the type of markdown selected
           if(md_name == "bold_st" | md_name == "bold_us"){
             tmp_props = c(tmp_props, "bold = TRUE")
+            # subtracting the default value
+            tmp_def_props[["bold"]] = NULL
           }
       
           if(md_name == "italic"){
             tmp_props = c(tmp_props, "italic = TRUE")
+            # subtracting the default value
+            tmp_def_props[["italic"]] = NULL
           }
       
           if(md_name == "superscript"){
             tmp_props = c(tmp_props, 'vertical.align = "superscript"')
+            # subtracting the default value
+            tmp_def_props[["vertical.align"]] = NULL
           }
       
           if(md_name == "subscript"){
             tmp_props = c(tmp_props, 'vertical.align = "subscript"')
+            # subtracting the default value
+            tmp_def_props[["vertical.align"]] = NULL
           }
       
           if(md_name == "color"){
@@ -10728,6 +10791,8 @@ pgraphs_parse = list()
             color= gsub(color, pattern=">", replacement="") 
 
             tmp_props = c(tmp_props, paste('color = "', color, '"', sep=""))
+            # subtracting the default value
+            tmp_def_props[["color"]] = NULL
           }
           if(md_name == "shading_color"){
             # pulling out the color markdown text. It uses the first entry so
@@ -10742,6 +10807,8 @@ pgraphs_parse = list()
             color= gsub(color, pattern=">", replacement="") 
 
             tmp_props = c(tmp_props, paste('shading.color = "', color, '"', sep=""))
+            # subtracting the default value
+            tmp_def_props[["shading.color"]] = NULL
           }
 
           if(md_name == "font_family"){
@@ -10754,9 +10821,20 @@ pgraphs_parse = list()
             ff = gsub(ff, pattern="<ff:", replacement="") 
             ff = gsub(ff, pattern=">", replacement="") 
             tmp_props = c(tmp_props, paste('font.family = "', ff, '"', sep=""))
+            # subtracting the default value
+            tmp_def_props[["font.family"]] = NULL
           }
-      
         }
+
+        # Now we add in the default properties that are left over
+        if("color"            %in% names(tmp_def_props)){ tmp_props = c(tmp_props, paste( 'color = "',          tmp_def_props[["color"]],         '"',  sep=""))}
+        if("font.size"        %in% names(tmp_def_props)){ tmp_props = c(tmp_props, paste( 'font.size = ',       tmp_def_props[["font.size"]],           sep=""))}
+        if("bold"             %in% names(tmp_def_props)){ tmp_props = c(tmp_props, paste( 'bold = ',            tmp_def_props[["bold"]],                sep=""))}
+        if("italic"           %in% names(tmp_def_props)){ tmp_props = c(tmp_props, paste( 'italic = ',          tmp_def_props[["talic"]],               sep=""))}
+        if("underlined"       %in% names(tmp_def_props)){ tmp_props = c(tmp_props, paste( 'underlined = ',      tmp_def_props[["underlined"]],          sep=""))}
+        if("font.family"      %in% names(tmp_def_props)){ tmp_props = c(tmp_props, paste( 'font.family = "',    tmp_def_props[["font.family"]],   '"',  sep=""))}
+        if("vertical.align"   %in% names(tmp_def_props)){ tmp_props = c(tmp_props, paste( 'vertical.align = "', tmp_def_props[["vertical.align"]], '"', sep=""))}
+        if("shading.color"    %in% names(tmp_def_props)){ tmp_props = c(tmp_props, paste( 'shading.color = "',  tmp_def_props[["shading.color"]], '"',  sep=""))}
       
         pele[[paste('p_', pele_idx, sep="")]]$props     = tmp_props
         pele[[paste('p_', pele_idx, sep="")]]$props_cmd = paste("prop=officer::fp_text(", paste(tmp_props, collapse=", "), ")", sep="")
@@ -10814,7 +10892,7 @@ pgraphs_parse}
 #'@title Sets Placeholder Content for Word Document Report
 #'@description Adds or updates content to be substituted for placeholders in the specified report.  
 #'
-#' For example if you have <HEADER_LEFT> in the header of your document and you wanted to
+#' For example if you have <::HEADER_LEFT::> in the header of your document and you wanted to
 #' replace it with the text "Upper left" you would do the following:
 #'
 #' \code{
@@ -10823,7 +10901,7 @@ pgraphs_parse}
 #'         ph_name     = "HEADER_LEFT", 
 #'         ph_location = "header")}
 #'
-#' Notice the \code{ph_name} just has \code{HEADER_LEFT} and leaves off the \code{<>}
+#' Notice the \code{ph_name} just has \code{HEADER_LEFT} and leaves off the \code{<::::>}
 #'
 #'@param cfg ubiquity system object    
 #'@param rptname   report name initialized with \code{system_report_init}
