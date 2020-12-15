@@ -5,6 +5,12 @@ This is a common changelog for the following repositories:
 - [ubiquity PKPD tools](https://github.com/john-harrold/ubiquity-pkpd)
 - [ubiquity R Package](https://github.com/john-harrold/ubiquity)
 
+## 2020-12-14
+
+### R Workflow
+- Added system_set_option general group and output_directory option
+- Updated the default report.docx
+- Updated custom shiny app server.R file 
 
 ## 2020-12-13
 
