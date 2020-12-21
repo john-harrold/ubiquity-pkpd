@@ -5,6 +5,13 @@ This is a common changelog for the following repositories:
 - [ubiquity PKPD tools](https://github.com/john-harrold/ubiquity-pkpd)
 - [ubiquity R Package](https://github.com/john-harrold/ubiquity)
 
+
+## 2020-12-20
+
+### R Workflow
+- Added as_paragraph output to the code generation in md_to_officer
+- Added md_to_oo allow running md_to_officer with small snippets of markdown to be used with flextable
+
 ## 2020-12-14
 
 ### R Workflow
