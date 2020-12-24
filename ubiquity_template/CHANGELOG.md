@@ -6,6 +6,20 @@ This is a common changelog for the following repositories:
 - [ubiquity R Package](https://github.com/john-harrold/ubiquity)
 
 
+## 2020-12-23
+
+### R Workflow
+
+uploaded to github for package:
+- Added system_fetch_report_format
+- Renamed system_report_fetch to system_fetch_report
+- Integrated the markdown (md) header format option with flextable outputs
+- Added default for cfg$reporting$ebabled (FALSE)
+- Added the support for markdown in flextable headers in NCA summary tables
+- Added the ability to use markdown for the NCA summary tables generated with
+  system_nca_summary
+- Fixed the placeholder text, now the delimiters are === on either side of the text
+
 ## 2020-12-20
 
 ### R Workflow

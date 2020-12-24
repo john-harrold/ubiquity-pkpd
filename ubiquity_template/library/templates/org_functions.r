@@ -32,7 +32,12 @@ org_pptx_meta = function(){
 # Set sub_title fields to NULL if they do not exist in the template
 #
 
-meta = list()
+meta = list(title          = list(),
+            section        = list(),
+            content        = list(),
+            two_col        = list(),
+            md_def         = list())
+
 # this is the information the title slide
 meta$title$layout$general                      = "title_slide"
 meta$title$master$general                      = "Office Theme"             
@@ -129,6 +134,34 @@ meta$two_col$ph_labels$text_sub_title         = "Content Placeholder 10"
 meta$two_col$ph_labels$text_left              = "Content Placeholder 2" 
 meta$two_col$ph_labels$text_right             = "Content Placeholder 3" 
 
+
+# When using markdown text you have to specify the default properties of text
+# for the Table 
+#
+# Table_Labels refers to the footers and headers while Table is the defaults
+# for the body of the table
+meta[["md_def"]][["Table_Labels"]] = list(
+        color          = "black",
+        font.size      = 12,
+        bold           = TRUE, 
+        italic         = FALSE,
+        underlined     = FALSE,
+        font.family    = "Helvetica",
+        vertical.align = "baseline",
+        shading.color  = "transparent")
+
+
+meta[["md_def"]][["Table"]] = list(
+        color          = "black",
+        font.size      = 12,
+        bold           = FALSE,
+        italic         = FALSE,
+        underlined     = FALSE,
+        font.family    = "Helvetica",
+        vertical.align = "baseline",
+        shading.color  = "transparent")
+
+
 return(meta)}
 
 
@@ -161,15 +194,15 @@ meta = list(ph_content = list(),
 # placeholders here. 
 #
 # The ph_content field should be the placeholder without the surrounding
-# offset characters. So for example if you had U__HEADER_LEFT__U in your
+# offset characters. So for example if you had ===HEADERLEFT=== in your
 # doucment template you would use the following to replace that with empty
 # content by default:
 #
 # For each placeholder there should be a location and a content element. The
 # location can be either "header", "footer" or "body", and the content will be
 # the default value. 
-meta[["ph_content"]][["HEADER_LEFT"]][["location"]]   = "header"
-meta[["ph_content"]][["HEADER_LEFT"]][["content"]]    = ""
+meta[["ph_content"]][["HEADERLEFT"]][["location"]]   = "header"
+meta[["ph_content"]][["HEADERLEFT"]][["content"]]    = ""
 
 # You'll need to create a template with the following styles defined.
 meta[["styles"]][["Normal"]]                 = "Normal"
@@ -265,13 +298,25 @@ meta[["md_def"]][["Heading_3"]] = list(
         vertical.align = "baseline",
         shading.color  = "transparent")
 
+# Table_Labels refers to the footers and headers while Table is the defaults
+# for the body of the table
+meta[["md_def"]][["Table_Labels"]] = list(
+        color          = "black",
+        font.size      = 12,
+        bold           = TRUE, 
+        italic         = FALSE,
+        underlined     = FALSE,
+        font.family    = "Helvetica",
+        vertical.align = "baseline",
+        shading.color  = "transparent")
+
 meta[["md_def"]][["Table"]] = list(
         color          = "black",
         font.size      = 12,
         bold           = FALSE,
         italic         = FALSE,
         underlined     = FALSE,
-        font.family    = "Cambria (Body)",
+        font.family    = "Helvetica",
         vertical.align = "baseline",
         shading.color  = "transparent")
 

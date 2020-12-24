@@ -44,13 +44,15 @@ cfg[["estimation"]]    = list(options        = list(),
 
 
 cfg[["reporting"]]                    = list(meta_pptx      = list(),
-                                             meta_docx      = list())
+                                             meta_docx      = list(),
+                                             enabled        = FALSE)
                                     
 cfg[["reporting"]][["meta_pptx"]]     = 
                          list(title          = list(),
                               section        = list(),
                               content        = list(),
-                              two_col        = list())
+                              two_col        = list(),
+                              md_def         = list())
 
 cfg[["reporting"]][["meta_docx"]]     = 
                          list(ph_content     = list(),
@@ -300,17 +302,41 @@ cfg[["reporting"]][["meta_pptx"]][["two_col"]][["ph_labels"]]$text_sub_title    
 cfg[["reporting"]][["meta_pptx"]][["two_col"]][["ph_labels"]]$text_left               = "Content Placeholder 2" 
 cfg[["reporting"]][["meta_pptx"]][["two_col"]][["ph_labels"]]$text_right              = "Content Placeholder 3" 
 
+# MD format for tables
+# Table_Labels is the footers and headers while Table is the defaults for the
+# body of the table
+cfg[["reporting"]][["meta_pptx"]][["md_def"]][["Table_Labels"]] = list(
+        color          = "black",
+        font.size      = 11,
+        bold           = TRUE, 
+        italic         = FALSE,
+        underlined     = FALSE,
+        font.family    = "Helvetica",
+        vertical.align = "baseline",
+        shading.color  = "transparent")
+
+cfg[["reporting"]][["meta_pptx"]][["md_def"]][["Table"]] = list(
+        color          = "black",
+        font.size      = 11,
+        bold           = FALSE,
+        italic         = FALSE,
+        underlined     = FALSE,
+        font.family    = "Helvetica",
+        vertical.align = "baseline",
+        shading.color  = "transparent")
+
+
 
 #--------------------------------------------------------------------
 # default reporting options for Word
-cfg[["reporting"]][["meta_docx"]][["ph_content"]]$HEADER_LEFT$location               = "header"
-cfg[["reporting"]][["meta_docx"]][["ph_content"]]$HEADER_LEFT$content                = ""
-cfg[["reporting"]][["meta_docx"]][["ph_content"]]$HEADER_RIGHT$location              = "header"
-cfg[["reporting"]][["meta_docx"]][["ph_content"]]$HEADER_RIGHT$content               = ""
-cfg[["reporting"]][["meta_docx"]][["ph_content"]]$FOOTER_LEFT$location               = "footer"
-cfg[["reporting"]][["meta_docx"]][["ph_content"]]$FOOTER_LEFT$content                = ""
-cfg[["reporting"]][["meta_docx"]][["ph_content"]]$FOOTER_RIGHT$location              = "footer"
-cfg[["reporting"]][["meta_docx"]][["ph_content"]]$FOOTER_RIGHT$content               = ""
+cfg[["reporting"]][["meta_docx"]][["ph_content"]]$HEADERLEFT$location                = "header"
+cfg[["reporting"]][["meta_docx"]][["ph_content"]]$HEADERLEFT$content                 = ""
+cfg[["reporting"]][["meta_docx"]][["ph_content"]]$HEADERRIGHT$location               = "header"
+cfg[["reporting"]][["meta_docx"]][["ph_content"]]$HEADERRIGHT$content                = ""
+cfg[["reporting"]][["meta_docx"]][["ph_content"]]$FOOTERLEFT$location                = "footer"
+cfg[["reporting"]][["meta_docx"]][["ph_content"]]$FOOTERLEFT$content                 = ""
+cfg[["reporting"]][["meta_docx"]][["ph_content"]]$FOOTERRIGHT$location               = "footer"
+cfg[["reporting"]][["meta_docx"]][["ph_content"]]$FOOTERRIGHT$content                = ""
 cfg[["reporting"]][["meta_docx"]][["styles"]]$Normal                                 = "Normal"
 cfg[["reporting"]][["meta_docx"]][["styles"]]$Code                                   = "Code"
 cfg[["reporting"]][["meta_docx"]][["styles"]]$Default                                = "Default"
@@ -406,16 +432,29 @@ cfg[["reporting"]][["meta_docx"]][["md_def"]][["Heading_3"]] = list(
         vertical.align = "baseline",
         shading.color  = "transparent")
 
+# MD format for tables
+# Table_Labels is the footers and headers while Table is the defaults for the
+# body of the table
+cfg[["reporting"]][["meta_docx"]][["md_def"]][["Table_Labels"]] = list(
+        color          = "black",
+        font.size      = 12,
+        bold           = TRUE, 
+        italic         = FALSE,
+        underlined     = FALSE,
+        font.family    = "Helvetica", 
+        vertical.align = "baseline",
+        shading.color  = "transparent")
+
+
 cfg[["reporting"]][["meta_docx"]][["md_def"]][["Table"]] = list(
         color          = "black",
         font.size      = 12,
         bold           = FALSE,
         italic         = FALSE,
         underlined     = FALSE,
-        font.family    = "Cambria (Body)",
+        font.family    = "Helvetica", 
         vertical.align = "baseline",
         shading.color  = "transparent")
-
 
 cfg[["reporting"]][["meta_docx"]][["md_def"]][["Table_Caption"]] = list(
         color          = "black",
