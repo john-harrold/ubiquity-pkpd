@@ -5,10 +5,16 @@ This is a common changelog for the following repositories:
 - [ubiquity PKPD tools](https://github.com/john-harrold/ubiquity-pkpd)
 - [ubiquity R Package](https://github.com/john-harrold/ubiquity)
 
-## 2020-12-26
+## 2020-12-27
 
 ### R Workflow
 
+- Added sessionInfo() to estimation Word reporting
+- Cleaned up some of the reporting code and fixed some random bugs
+
+## 2020-12-26
+
+### R Workflow
 - Fixed a bug in system_report_save()
 
 ## 2020-12-23
