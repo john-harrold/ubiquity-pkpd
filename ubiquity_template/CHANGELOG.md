@@ -5,10 +5,16 @@ This is a common changelog for the following repositories:
 - [ubiquity PKPD tools](https://github.com/john-harrold/ubiquity-pkpd)
 - [ubiquity R Package](https://github.com/john-harrold/ubiquity)
 
+
+## 2020-12-30
+
+### R Workflow
+- Updated Reporting vignette
+- Updated NCA vignette
+
 ## 2020-12-27
 
 ### R Workflow
-
 - Added sessionInfo() to estimation Word reporting
 - Cleaned up some of the reporting code and fixed some random bugs
 
@@ -20,7 +26,6 @@ This is a common changelog for the following repositories:
 ## 2020-12-23
 
 ### R Workflow
-
 - Added system_fetch_report_format
 - Renamed system_report_fetch to system_fetch_report
 - Integrated the markdown (md) header format option with flextable outputs
