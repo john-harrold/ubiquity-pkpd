@@ -6,11 +6,13 @@ This is a common changelog for the following repositories:
 - [ubiquity R Package](https://github.com/john-harrold/ubiquity)
 
 
-## 2020-12-30
+## 2020-12-31
 
 ### R Workflow
 - Updated Reporting vignette
 - Updated NCA vignette
+- Added checks in estimation routines to check for reasonable bounds for
+  global optimizer and to notify users when estimates are near bounds
 
 ## 2020-12-27
 
