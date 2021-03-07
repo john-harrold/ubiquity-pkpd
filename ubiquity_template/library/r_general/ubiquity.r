@@ -517,7 +517,7 @@ isgood}
 # -------------------------------------------------------------------------
 # -------------------------------------------------------------------------
 #'@export
-#'@title Fetch list of internal system templates
+#'@title Fetch List of Available System Templates
 #'
 #'@description  Returns a list of internal templates with descriptions of their contents and file locations
 #'
@@ -575,7 +575,7 @@ sfs}
 # -------------------------------------------------------------------------
 
 #'@export
-#'@title Create New Template After Building System File
+#'@title Create New Analysis Template 
 #'
 #'@description Building a system file will produce templates for R and other languages.
 #' This function provides a method to make local copies of these templates.
@@ -2642,7 +2642,7 @@ toc <- function()
 #'       output_directory          = file.path(tempdir(), "output"),
 #'       temporary_directory       = tempdir())
 #'
-#'   system_view(cfg, verbose=TRUE)
+#'   msgs = system_view(cfg, verbose=TRUE)
 #' }
 system_view <- function(cfg,field="all", verbose=FALSE) {
   
@@ -2859,7 +2859,16 @@ system_view <- function(cfg,field="all", verbose=FALSE) {
          msgs = c(msgs,sprintf(" Cohort: %s", ch_name))
          msgs = c(msgs, paste(replicate(20, "-"), collapse = ""))
          msgs = c(msgs,sprintf(" dataset: %s; (%s)", cfg$cohorts[[ch_name]]$dataset, cfg$data[[cfg$cohorts[[ch_name]]$dataset]]$data_file$name))
+
+         # output times
+         if("output_times" %in% names(cfg[["cohorts"]][[ch_name]])){
+           msgs = c(msgs,sprintf(" Cohort-specific output times (output_times) "))
+           msgs = c(msgs, sprintf("     output_times = %s", var2string_gen(cfg[["cohorts"]][[ch_name]][["output_times"]])))
+           msgs = c(msgs, "")
+         }
+
          msgs = c(msgs,sprintf(" Cohort options (options) "))
+
          #options
          if('options' %in% names(cfg$cohorts[[ch_name]])){
            for(opname in names(cfg$cohorts[[ch_name]]$options)){
@@ -2884,7 +2893,7 @@ system_view <- function(cfg,field="all", verbose=FALSE) {
          msgs = c(msgs, " Cohort-specific parameters (cp)")
          if('cp' %in% names(cfg$cohorts[[ch_name]])){
            for(pname in names(cfg$cohorts[[ch_name]]$cp)){
-             msgs = msgs(sprintf("     %s = %s", pname, toString(cfg$cohorts[[ch_name]]$cp[[pname]])))
+             msgs = c(msgs, sprintf("     %s = %s", pname, toString(cfg$cohorts[[ch_name]]$cp[[pname]])))
            }
          } else{
            msgs = c(msgs, "     none")
@@ -4069,7 +4078,7 @@ generate_parameter = function (SIMINT_parameters, SIMINT_cfg, SIMINT_PARAMETER_T
 #'       temporary_directory       = tempdir())
 #'
 #' # Initialzing the log file
-#' system_log_init(cfg)
+#' cfg = system_log_init(cfg)
 #'}
 system_log_init = function (cfg){
 # initializes the log file then enables logging
@@ -4318,7 +4327,7 @@ system_ts_to_simtime <-function(cfg, tstime, ts){
 #'
 #'@return ubiquity system object with no cohorts defined
 system_clear_cohorts  <- function(cfg){
-  cfg$cohorts = c()
+  cfg[["cohorts"]] = c()
 return(cfg)}
 
 #'@export
@@ -4368,6 +4377,14 @@ return(cfg)}
 #' \preformatted{cohort[["cp"]]   = list(BW        = c(70))}
 #'
 #' Note that you can only fix parameters that are not being estimated.
+#'
+#' By default the underlying simulation output times will be taken from the
+#' general output_times option (see \code{\link{system_set_option}}). However It may also be 
+#' necessary to specify simulation output times for a specific cohort. The
+#' \code{output_times} field can be used for this. Simply provide a vector of
+#'  output times:
+#'
+#' \preformatted{cohort[["output_times"]]   = seq(0,100,2)}
 #'
 #' Next we define the dosing for this cohort. It is only necessary to define
 #' those inputs that are non-zero. So if the data here were generated from
@@ -4457,9 +4474,9 @@ system_define_cohort <- function(cfg, cohort){
    cohort$options = c() }
 
  defopts = c()
- defopts$marker_color   = 'black'           
- defopts$marker_shape   = 0           
- defopts$marker_line    = 1
+ defopts[["marker_color"]]   = 'black'           
+ defopts[["marker_shape"]]   = 0           
+ defopts[["marker_line"]]    = 1
  
  validopts = c('marker_color', 'marker_shape', 'marker_line')
 
@@ -4474,19 +4491,19 @@ system_define_cohort <- function(cfg, cohort){
  # checking the cohort name
  #
  if('name' %in% names(cohort)){
-  if(cohort$name %in% names(cfg$cohorts)){
+  if(cohort[["name"]] %in% names(cfg[["cohorts"]])){
     isgood = FALSE
-    vp(cfg, sprintf('Error: cohort with name >%s< has already been defined', cohort$name))
+    vp(cfg, sprintf('Error: cohort with name >%s< has already been defined', cohort[["name"]]))
   }
   else{
-    name_check = ubiquity_name_check(cohort$name)
+    name_check = ubiquity_name_check(cohort[["name"]])
 
-    cohort_name = cohort$name 
+    cohort_name = cohort[["name"]]
     # Checking the cohort name
-    if(!name_check$isgood){
+    if(!name_check[["isgood"]]){
       isgood = FALSE
-      vp(cfg, sprintf('Error: cohort with name >%s< is invalid', cohort$name))
-      vp(cfg, sprintf('Problems: %s', name_check$msg))
+      vp(cfg, sprintf('Error: cohort with name >%s< is invalid', cohort[["name"]]))
+      vp(cfg, sprintf('Problems: %s', name_check[["msg"]]))
       }
     }
  }
@@ -4738,7 +4755,7 @@ system_define_cohort <- function(cfg, cohort){
        else{
          isgood = FALSE 
          vp(cfg, sprintf('Error: For the output >%s<the column for the "value" must be specified', oname))
-         vp(cfg, sprintf("       cohort$outputs$%s$obs$value  = 'name'; ", oname))
+         vp(cfg, sprintf('       cohort$outputs$%s$obs$value  = "name"; ', oname))
        }
 
      
@@ -4746,8 +4763,8 @@ system_define_cohort <- function(cfg, cohort){
      else{
       isgood = FALSE 
       vp(cfg, sprintf('Error: For the output >%s< no observation information was specified', oname))
-      vp(cfg, sprintf("       cohort$outputs$%s$obs$time  = 'name'; ", oname))
-      vp(cfg, sprintf("       cohort$outputs$%s$obs$value = 'name'; ", oname))
+      vp(cfg, sprintf('       cohort$outputs$%s$obs$time  = "name"; ', oname))
+      vp(cfg, sprintf('       cohort$outputs$%s$obs$value = "name"; ', oname))
      }
 
      # This checks the user information against 
@@ -4923,15 +4940,28 @@ if(isgood){
     # now we convert the time to the simulation timescale
     tmpop$simtime = system_ts_to_simtime(cfg, tmpop$time, cohort$outputs[[oname]]$model$time)
 
+
     # adding the observation times to the smooth output times
     choutput_times = unique(sort(c(tmpop$simtime, choutput_times)))
 
     # storing the data for the cohort/output 
     cohort$outputs[[oname]]$data = tmpop;
   }
-
+  
   # storing all of the observation times for the cohort
   cohort$observation_simtimes = choutput_times
+
+  # If the cohort has output times specified we check those to make sure that
+  # the observation times lie within the range
+  if("output_times" %in% names(cohort)){
+    if(min(choutput_times) < min(cohort[["output_times"]]) |
+       max(cohort[["output_times"]]) <  max(choutput_times)){
+       vp(cfg, "Warning: cohort specified observation times lie outside of the range of")
+       vp(cfg, "         specified output_times, the output_times will be automatically")
+       vp(cfg, "         expanded to include these observation times.")
+
+    }
+  } 
 }
 
 
@@ -5017,8 +5047,8 @@ for(cohort_name in names(cfg$cohorts)){
 
   # If this cohort has a different set of output times then 
   # we overwrite the defaults
-  if("output_times" %in% names(cohort$options)){
-    choutput_times = cohort$options$output_times
+  if("output_times" %in% names(cohort)){
+    choutput_times = cohort[["output_times"]]
   }
 
   # Adding all of the observation times to the output times to make sure the
@@ -6733,14 +6763,25 @@ for(output in unique(erp$pred$OUTPUT)){
         SMOOTH = SMOOTH[SMOOTH$PRED > 0,]
       }
       
-      co_options  = cfg$cohorts[[cohort]]$outputs[[output]]$options
-      eval(parse(text = sprintf('p = p + geom_point(data=SAMPLE, aes(x=TIME, y=OBS), color="%s", shape=co_options$marker_shape,   size=2.0)', co_options$marker_color)))
-      eval(parse(text = sprintf('p = p + geom_line( data=SMOOTH, aes(x=TIME, y=PRED, color="%s"), linetype=co_options$marker_line, size=0.9)',cohort)))
+      co_options  = cfg$cohorts[[cohort]]$outputs[[output]][["options"]]
+      #eval(parse(text = sprintf('p = p + geom_point(data=SAMPLE, aes(x=TIME, y=OBS), color="%s", shape=co_options$marker_shape,   size=2.0)', co_options[["marker_color"]])))
+      #eval(parse(text = sprintf('p = p + geom_line( data=SMOOTH, aes(x=TIME, y=PRED, color="%s"), linetype=co_options$marker_line, size=0.9)',cohort)))
       
+      marker_shape = co_options[["marker_shape"]]
+      if(is.character(marker_shape)){
+        marker_shape = as.numeric(marker_shape)
+      }
+      marker_line = co_options[["marker_line"]]
+      if(is.character(marker_line)){
+        marker_line  = as.numeric(marker_line )
+      }
+      eval(parse(text = paste('p = p + geom_point(data=SAMPLE, aes(x=TIME, y=OBS), color=co_options[["marker_color"]], shape=marker_shape, size=2.0)', sep="" )))
+      eval(parse(text = paste('p = p + geom_line( data=SMOOTH, aes(x=TIME, y=PRED, color="', cohort, '"), linetype=marker_line, size=0.9)',sep="")))
+
       if(is.null(color_string)){
-        color_string = sprintf('"%s"="%s"', cohort, co_options$marker_color)
+        color_string = sprintf('"%s"="%s"', cohort, co_options[["marker_color"]])
       } else{
-        color_string = sprintf('%s, "%s"="%s"', color_string, cohort, co_options$marker_color)
+        color_string = sprintf('%s, "%s"="%s"', color_string, cohort, co_options[["marker_color"]])
       }
     }
 
@@ -6781,6 +6822,7 @@ for(output in unique(erp$pred$OUTPUT)){
     if(!is.null(plot_opts$outputs[[output]]$ylim)){
       p = p + ylim(plot_opts$outputs[[output]]$ylim) } 
   }
+
 
   fname_pdf = file.path(output_directory, paste(analysis_name, "_timecourse_", output, ".pdf", sep=""))
   ggsave(fname_pdf, plot=p, device="pdf", height=def$dim$tc$height, width=def$dim$tc$width)
@@ -6825,14 +6867,19 @@ for(output in unique(erp$pred$OUTPUT)){
       if(output_scale == "log"){
         SAMPLE = SAMPLE[SAMPLE$OBS  > 0,]
       }
-      
-      co_options  = cfg$cohorts[[cohort]]$outputs[[output]]$options
-      eval(parse(text = sprintf('p = p + geom_point( data=SAMPLE, aes(x=PRED, y=OBS, color="%s"), shape=co_options$marker_shape, size=2.0)',cohort)))
+
+      co_options  = cfg$cohorts[[cohort]]$outputs[[output]][["options"]]
+      marker_shape = co_options[["marker_shape"]]
+      if(is.character(marker_shape)){
+        marker_shape = as.numeric(marker_shape)
+      }
+      #eval(parse(text = sprintf('p = p + geom_point( data=SAMPLE, aes(x=PRED, y=OBS, color="%s"), shape=co_options$marker_shape, size=2.0)',cohort)))
+      eval(parse(text = paste('p = p + geom_point( data=SAMPLE, aes(x=PRED, y=OBS, color="',cohort, '"), shape=marker_shape, size=2.0)',sep = "")))
 
       if(is.null(color_string)){
-        color_string = sprintf('"%s"="%s"', cohort, co_options$marker_color)
+        color_string = sprintf('"%s"="%s"', cohort, co_options[["marker_color"]])
       } else{
-        color_string = sprintf('%s, "%s"="%s"', color_string, cohort, co_options$marker_color)
+        color_string = sprintf('%s, "%s"="%s"', color_string, cohort, co_options[["marker_color"]])
       }
     }
 
@@ -6877,6 +6924,8 @@ for(output in unique(erp$pred$OUTPUT)){
   p = prepare_figure(p, purpose=def$purpose)
   eval(parse(text=sprintf('p = p + scale_colour_manual(values=c(%s))', color_string)))
 
+
+
   fname_pdf = file.path(output_directory, paste(analysis_name, "_obs_pred_", output, ".pdf", sep=""))
   ggsave(fname_pdf, plot=p, device="pdf", height=def$dim$op$height, width=def$dim$op$width)
   vp(cfg, sprintf('Figure written: %s', fname_pdf))
@@ -6884,7 +6933,6 @@ for(output in unique(erp$pred$OUTPUT)){
   fname_png = file.path(output_directory, paste(analysis_name, "_obs_pred_", output, ".png", sep=""))
   ggsave(fname_png, plot=p, device="png", height=def$dim$op$height, width=def$dim$op$width)
   vp(cfg, sprintf('Figure written: %s', fname_png))
-
 
   # storing the plot object to be returned to the user
   eval(parse(text=sprintf('grobs$obs_pred$%s     = p',         output)))
@@ -7924,6 +7972,12 @@ gg_axis  = function(fo,
                      xlim_max     = NULL, 
                      x_tick_label = TRUE,
                      y_tick_label = TRUE){
+
+
+  # Defaulting the limits to null
+  myxlim = NULL
+  myylim = NULL
+
   # If any of the limits are null we build out the figure object so we can
   # pull the limits from that object
 
@@ -8023,6 +8077,7 @@ gg_axis  = function(fo,
       if(y_tick_label){
         fo = fo + scale_y_continuous(breaks       = ytick_major,
                                      minor_breaks = ytick_minor,
+                                     oob = scales::squish_infinite,
                                      trans        = 'log10',
                                      labels       = eval(parse(text="scales::trans_format('log10', scales::math_format(10^.x))")))
       }
@@ -8032,8 +8087,6 @@ gg_axis  = function(fo,
                                      trans        = 'log10',
                                      labels       = NULL)
       }
-
-      fo = fo + coord_cartesian(ylim=myylim)
     }
     fo = fo + annotation_logticks(sides='lr') 
     
@@ -8087,11 +8140,12 @@ gg_axis  = function(fo,
                                     #limits       = myxlim,
                                      labels       = NULL)
       }
-
-      fo = fo + coord_cartesian(xlim=myxlim)
     }
     fo = fo + annotation_logticks(sides='tb') 
   }
+
+
+  fo = fo + coord_cartesian(xlim=myxlim, ylim=myylim, default=TRUE, clip="on")
 
 fo}
 #/gg_axis
@@ -12722,6 +12776,8 @@ system_nca_run = function(cfg,
             }
             
             
+            # Creating shaded region:
+            ptmp = eval(parse(text="ptmp + geom_ribbon(data=NCA_CONCDS, aes(x=TIME, ymax=CONC), ymin=0, color=NA, fill='green', alpha=.09)"))
             # Overlaying the concentration values used
             ptmp = eval(parse(text="ptmp + geom_point(data=NCA_CONCDS, aes(x=TIME, y=CONC), shape=1,           color='green')"))
             ptmp = eval(parse(text="ptmp +  geom_line(data=NCA_CONCDS, aes(x=TIME, y=CONC), linetype='dashed', color='green')"))
@@ -12888,7 +12944,7 @@ if((analysis_name %in% names(cfg[["nca"]]))){
    } else {
      isgood = FALSE
      vp(cfg, "Error evaluating ds_wrangle option:")
-     # This shoudl push the actual error message out to the user:
+     # This should push the actual error message out to the user:
      vp(cfg, tcres$value$message)
    }
 
@@ -13413,6 +13469,7 @@ res}
 #'    \item \code{len_label}       maximum length of the \code{label} column
 #'    \item \code{len_description} maximum length of the \code{description} column
 #' }
+#'@seealso Vignette on NCA (\code{\link{system_nca_parameters_meta}}) 
 system_fetch_nca_columns = function(cfg, 
                                    analysis_name = "analysis"){
 
@@ -13544,7 +13601,7 @@ system_report_nca = function(cfg,
     overview = paste(ana_type, " from ", ana_opts$dsname, " (", 
     cfg$data[[ana_opts$dsname]]$data_file$name, "). For each ", tolower(ID_label),
     " and dose the NCA parameters will be summarized. For each  ", tolower(ID_label), 
-    " the full time-course will be shown in grey, the data used for each analysis will be shown in green, and extrapolated values and data used for extrapolation will be shown in orange",
+    " the full time-course will be shown in grey, the data used for each analysis will be shown in green, the observed AUC will be shown by a green shaded region, and extrapolated values and data used for extrapolation will be shown in orange",
     sep="")
 
     if(rpttype == "PowerPoint"){

@@ -5,6 +5,21 @@ This is a common changelog for the following repositories:
 - [ubiquity PKPD tools](https://github.com/john-harrold/ubiquity-pkpd)
 - [ubiquity R Package](https://github.com/john-harrold/ubiquity)
 
+## 2021-03-07
+
+### R Workflow
+- Fixed "Coordinate system already present..."  warning in gg_axis
+- Added shaded region for observed AUC in NCA reporting
+- Fixed location of table generation in example script analysis_nca_md.R so that table styles would be picked up properly
+
+## 2021-02-15
+
+### R Workflow
+- Added cohort-specific output times option to the estimation workflow
+- Bug in system view when there are cohort-specific parameters defined
+- Fixed figure generation errors in the estimation workflow
+- Updated references in the documentation and templates to point to r.ubiquity.tools
+
 
 ## 2020-12-31
 
