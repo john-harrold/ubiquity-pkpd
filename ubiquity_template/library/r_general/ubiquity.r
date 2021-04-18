@@ -11,7 +11,7 @@
 #'@import stringr
 #'@importFrom digest digest
 #'@importFrom dplyr  all_of select
-#'@importFrom flextable add_header add_footer align autofit body_add_flextable delete_part merge_h 
+#'@importFrom flextable add_header add_footer align as_chunk as_paragraph autofit body_add_flextable delete_part merge_h 
 #'@importFrom flextable regulartable set_header_labels theme_alafoli theme_box theme_tron_legacy 
 #'@importFrom flextable theme_vanilla theme_booktabs theme_tron theme_vader theme_zebra
 #'@importFrom parallel stopCluster makeCluster
@@ -28,6 +28,7 @@
 #'@importFrom PKNCA PKNCA.options PKNCAconc PKNCAdose PKNCAdata pk.nca get.interval.cols
 #'@importFrom utils capture.output read.csv read.delim txtProgressBar setTxtProgressBar write.csv tail packageVersion sessionInfo
 #'@importFrom stats median qt var sd
+#'@importFrom scales trans_format  math_format squish_infinite
 #'@importFrom MASS mvrnorm
 
 
@@ -463,9 +464,9 @@ return(res)}
 #'
 #' \itemize{
 #' \item{[ADAPT]} Adapt 5 Users Guide \url{https://bmsr.usc.edu/files/2013/02/ADAPT5-User-Guide.pdf}
-#' \item{[DG]} Davda et. al. mAbs (2014) 6(4):1094-1102  \url{https://doi.org/10.4161/mabs.29095}
-#' \item{[LB]} Lobo, E.D. & Balthasar, J.P. AAPS J (2002) 4, 212-222  \url{https://doi.org/10.1208/ps040442}
-#' \item{[SB]} Shah, D.K. & Betts, A.M. JPKPD (2012) 39 (1), 67-86 \url{https://doi.org/10.1007/s10928-011-9232-2}
+#' \item{[DG]} Davda et. al. mAbs (2014) 6(4):1094-1102  \doi{10.4161/mabs.29095}
+#' \item{[LB]} Lobo, E.D. & Balthasar, J.P. AAPS J (2002) 4, 212-222  \doi{10.1208/ps040442}
+#' \item{[SB]} Shah, D.K. & Betts, A.M. JPKPD (2012) 39 (1), 67-86 \doi{10.1007/s10928-011-9232-2}
 #'}
 #'
 #'
@@ -2553,55 +2554,6 @@ system_set_iiv <- function(cfg, IIV1, IIV2, value){
     vp(cfg, "------------------------------------")
   }
 return(cfg)}
-
-#'@export
-#'@title Implementation of Matlab \code{tic()} command
-#'@description Used in conjunction with \code{toc()} to find the elapsed time
-#' when code is executed. Adapted from:
-#' http://stackoverflow.com/questions/1716012/stopwatch-function-in-r
-#'
-#'@param gcFirst controls garbage collection
-#'@param type can be either \code{"elapsed"} \code{"user.self"} or \code{"sys.self"} 
-#'
-#'@return time tic was called
-#'
-#'@examples
-#' tic()
-#' Sys.sleep(3)
-#' toc()
-#'@seealso \code{\link{toc}}
-tic <- function(gcFirst = TRUE, type=c("elapsed", "user.self", "sys.self"))
-{
-  type <- match.arg(type)
-  assign(".type", type, envir=baseenv())
-  if(gcFirst) gc(FALSE)
-  tic <- proc.time()[type]         
-  assign(".tic", tic, envir=baseenv())
-  invisible(tic)
-}
-
-#'@export
-#'@title Implementation of Matlab \code{toc()} command
-#'@description Used in conjunction with \code{tic()} to find the elapsed time
-#' when code is executed. Adapted from:
-#' http://stackoverflow.com/questions/1716012/stopwatch-function-in-r
-#'
-#'@return time in seconds since tic() was called
-#'
-#'@examples
-#' tic()
-#' Sys.sleep(3)
-#' toc()
-#'@seealso \code{\link{tic}}
-toc <- function()
-{
-  type <- get(".type", envir=baseenv())
-  toc <- proc.time()[type]
-  tic <- get(".tic", envir=baseenv())
-  invisible(toc)
-
-  return(toc-tic)
-} 
 
 #-----------------------------------------------------------
 #'@export
@@ -6233,8 +6185,7 @@ odtest = calculate_objective(cfg$estimation$parameters$guess, cfg, estimation=FA
         }
       }
 
-      tic()
-
+      estimation_tic = proc.time()
       #
       # We perform the estimation depending on the optimizer selected 
       #
@@ -6298,7 +6249,8 @@ odtest = calculate_objective(cfg$estimation$parameters$guess, cfg, estimation=FA
 
       }
 
-      elapsed = toc()
+      estimation_toc = proc.time()
+      elapsed =  (estimation_toc - estimation_tic)[["elapsed"]]
 
       if(elapsed < 120){
         elapsed_time = var2string(elapsed, nsig_f=2, nsig_e=2)   
@@ -9663,6 +9615,7 @@ system_report_slide_content = function (cfg,
     type   = "body"
     tmprpt = system_report_ph_content(cfg          = cfg,          
                                       rpt          = tmprpt, 
+                                      rptname      = rptname,
                                       content_type = content_type, 
                                       content      = content, 
                                       type         = type,         
@@ -9847,6 +9800,7 @@ system_report_slide_two_col = function (cfg,
     if(!is.null(left_content_header)){
       tmprpt = system_report_ph_content(cfg          = cfg,          
                                         rpt          = tmprpt, 
+                                        rptname      = rptname,
                                         content_type = left_content_header_type, 
                                         content      = left_content_header, 
                                         type         = "body",         
@@ -9856,6 +9810,7 @@ system_report_slide_two_col = function (cfg,
     if(!is.null(right_content_header)){
       tmprpt = system_report_ph_content(cfg          = cfg,          
                                         rpt          = tmprpt, 
+                                        rptname      = rptname,
                                         content_type = right_content_header_type, 
                                         content      = right_content_header, 
                                         type         = "body",         
@@ -9869,6 +9824,7 @@ system_report_slide_two_col = function (cfg,
     if(!is.null(left_content)){
       tmprpt = system_report_ph_content(cfg          = cfg,          
                                         rpt          = tmprpt, 
+                                        rptname      = rptname,
                                         content_type = left_content_type, 
                                         content      = left_content, 
                                         type         = "body",         
@@ -9878,6 +9834,7 @@ system_report_slide_two_col = function (cfg,
     if(!is.null(right_content)){
       tmprpt = system_report_ph_content(cfg          = cfg,          
                                         rpt          = tmprpt, 
+                                        rptname      = rptname,
                                         content_type = right_content_type, 
                                         content      = right_content, 
                                         type         = "body",         
@@ -10071,6 +10028,7 @@ return(cfg)}
 #'
 #'@param cfg ubiquity system object    
 #'@param rpt officer pptx object
+#'@param rptname report name initialized with \code{system_report_init}
 #'@param content_type string indicating the content type 
 #'@param content content
 #'@param type    placeholder type (\code{"body"})
@@ -10109,7 +10067,7 @@ return(cfg)}
 #'  }
 #'
 #'@seealso \code{\link{system_report_view_layout}}
-system_report_ph_content = function(cfg, rpt, content_type, content, type, index, ph_label){
+system_report_ph_content = function(cfg, rpt, rptname, content_type, content, type, index, ph_label){
 
     if(content_type == "text"){
       rpt = officer::ph_with(x=rpt,  location=officer::ph_location_label(ph_label=ph_label), value=content) 
@@ -11290,9 +11248,9 @@ pgraphs_parse = list()
   for(tmpele in pele){
     if(as_paragraph_cmd != ""){
      as_paragraph_cmd = paste(as_paragraph_cmd, ',\n') }
-    as_paragraph_cmd = paste(as_paragraph_cmd, 'as_chunk("', tmpele$text, '", ', tmpele$props_cmd, ')', sep="")
+    as_paragraph_cmd = paste(as_paragraph_cmd, 'flextable::as_chunk("', tmpele$text, '", ', tmpele$props_cmd, ')', sep="")
   }
-  as_paragraph_cmd = paste("as_paragraph(", as_paragraph_cmd, ")", sep="")
+  as_paragraph_cmd = paste("flextable::as_paragraph(", as_paragraph_cmd, ")", sep="")
 
 
 
@@ -12808,27 +12766,34 @@ system_nca_run = function(cfg,
     }
 
     # Sorting the NCA table by ID then Dose_Number
-    NCA_sum = NCA_sum[ with(NCA_sum, order(Dose_Number, ID)), ]
-
-    pkncaraw_file  = file.path(output_directory, paste(analysis_name, "-pknca_raw.csv" , sep=""))
-    csv_file       = file.path(output_directory, paste(analysis_name, "-nca_summary-pknca.csv" , sep=""))
-    data_file      = file.path(output_directory, paste(analysis_name, "-nca_data.RData" , sep=""))
-    write.csv(NCA_sum,       file=csv_file,      row.names=FALSE, quote=FALSE)
-    write.csv(PKNCA_raw_all, file=pkncaraw_file, row.names=FALSE, quote=FALSE)
-    save(grobs_sum, NCA_sum, file=data_file)
-
-    cfg[["nca"]][[analysis_name]]$grobs_sum     = grobs_sum
-    cfg[["nca"]][[analysis_name]]$NCA_sum       = NCA_sum
-    cfg[["nca"]][[analysis_name]]$data_raw      = DS
-    cfg[["nca"]][[analysis_name]]$PKNCA_raw     = PKNCA_raw_all
-    cfg[["nca"]][[analysis_name]]$rptobjs       = rptobjs      
-
     vp(cfg, "")
-    vp(cfg, paste("NCA results for ", analysis_name, " written to", sep=""))
-    vp(cfg, paste("  Summary output:   ", csv_file,      sep=""))
-    vp(cfg, paste("  R objects:        ", data_file,     sep=""))
-    vp(cfg, paste("  PKNCA raw output: ", pkncaraw_file, sep=""))
+    # If NCA_sum is null then something is up
+    if(is.null(NCA_sum)){
+      cfg[["nca"]][[analysis_name]] = NULL
+      vp(cfg, paste("NCA for ", analysis_name, " failed. This can happen when none of the subjects ", sep=""))
+      vp(cfg, paste("or groups have enough data for NCA_min", sep=""))
 
+    } else {
+      NCA_sum = NCA_sum[ with(NCA_sum, order(Dose_Number, ID)), ]
+      
+      pkncaraw_file  = file.path(output_directory, paste(analysis_name, "-pknca_raw.csv" , sep=""))
+      csv_file       = file.path(output_directory, paste(analysis_name, "-nca_summary-pknca.csv" , sep=""))
+      data_file      = file.path(output_directory, paste(analysis_name, "-nca_data.RData" , sep=""))
+      write.csv(NCA_sum,       file=csv_file,      row.names=FALSE, quote=FALSE)
+      write.csv(PKNCA_raw_all, file=pkncaraw_file, row.names=FALSE, quote=FALSE)
+      save(grobs_sum, NCA_sum, file=data_file)
+      
+      cfg[["nca"]][[analysis_name]]$grobs_sum     = grobs_sum
+      cfg[["nca"]][[analysis_name]]$NCA_sum       = NCA_sum
+      cfg[["nca"]][[analysis_name]]$data_raw      = DS
+      cfg[["nca"]][[analysis_name]]$PKNCA_raw     = PKNCA_raw_all
+      cfg[["nca"]][[analysis_name]]$rptobjs       = rptobjs      
+      
+      vp(cfg, paste("NCA results for ", analysis_name, " written to", sep=""))
+      vp(cfg, paste("  Summary output:   ", csv_file,      sep=""))
+      vp(cfg, paste("  R objects:        ", data_file,     sep=""))
+      vp(cfg, paste("  PKNCA raw output: ", pkncaraw_file, sep=""))
+    }
   } else {
      vp(cfg, "system_nca_run()")
      vp(cfg, "Errors were found see messages above for more information")

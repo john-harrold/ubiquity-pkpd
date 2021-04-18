@@ -5,12 +5,29 @@ This is a common changelog for the following repositories:
 - [ubiquity PKPD tools](https://github.com/john-harrold/ubiquity-pkpd)
 - [ubiquity R Package](https://github.com/john-harrold/ubiquity)
 
+
+## 2021-04-18
+
+### R Package V 1.0.4 sent to CRAN
+
+### R Workflow
+- CRAN erroring out because of tic() function. Removed tic() and toc()
+  functions
+- Other small updates to get things ready for CRAN submission
+
+## 2021-03-15
+
+### R Workflow
+- Fixed a bug where the dataset given to system_run_nca does not have enough valid data to actually run NCA
+
 ## 2021-03-07
 
 ### R Workflow
 - Fixed "Coordinate system already present..."  warning in gg_axis
 - Added shaded region for observed AUC in NCA reporting
 - Fixed location of table generation in example script analysis_nca_md.R so that table styles would be picked up properly
+- Added scales package requirement
+- Fixed missing rptname inputs to system_report_ph_content
 
 ## 2021-02-15
 
