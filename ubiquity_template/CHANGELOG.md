@@ -6,6 +6,66 @@ This is a common changelog for the following repositories:
 - [ubiquity R Package](https://github.com/john-harrold/ubiquity)
 
 
+### Matlab Workflow
+- Fixed bug in `system_plot_cohorts` where titles were not being placed on
+  figures
+
+### R Workflow
+
+- Lots of small updates to function documentation and the vignettes
+
+- Completely replaced the reporting functionality. Now using the `onbrand`
+  package for templated reporting.  **Note:** This will break all reporting in 
+  version 1 of the R package. Old Word and PowerPoint templates will work, but
+  you will need to create a yaml mapping file.
+
+- Reporting changes added the following functions
+  - `system_rpt_add_slide()`
+  - `system_rpt_add_doc_content()`
+  - `system_rpt_read_template()`
+  - `system_rpt_save_report()`
+  - `system_rpt_template_details()`
+  - `system_fetch_rpt_officer_object()`
+  - `system_fetch_rpt_onbrand_object()`
+  - `system_set_rpt_officer_object()`
+  - `system_set_rpt_onbrand_object()`
+
+- Reporting changes removed the following functions:
+  - `system_report_doc_add_content()`
+  - `system_report_doc_format_section()`
+  - `system_report_doc_set_ph()`
+  - `system_report_estimation()`
+  - `system_report_glp()`
+  - `system_report_init()`
+  - `system_report_nca()`
+  - `system_report_ph_content()`
+  - `system_report_save()`
+  - `system_report_set()`
+  - `system_report_slide_content()`
+  - `system_report_slide_section()`
+  - `system_report_slide_title()`
+  - `system_report_slide_two_col()`
+  - `system_report_view_layout()`
+  - `system_fetch_report()`
+  - `system_fetch_report_format()`
+  - `md_to_officer()`
+  - `md_to_oo()`
+
+- Reporting changes updated vignettes, example scripts and function templates
+
+
+## 2021-04-25
+
+### ubiquity 
+- Added Fortran wrapping at "." character to account for conditional
+  statements that are too long
+- Removed debug printing of rate information  
+
+### R Workflow
+- Fixed error in server.R for Shiny app when the tic() and toc() commands 
+  were removed 
+- Added tic() and toc() functions
+
 ## 2021-04-18
 
 ### R Package V 1.0.4 sent to CRAN

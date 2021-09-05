@@ -4213,6 +4213,7 @@ sub fortranify_line
       '-' => 1,
       '/' => 1,
       '*' => 1,
+      '.' => 1,
       ' ' => 1 };
 
 #                              1         2         3         4         5         6         7
@@ -5773,7 +5774,8 @@ sub extract_coeff
         $species = substr($ostr, $ridx+1, $pidx-$ridx-1);
       }
 
-      print "$offset [$lidx ]$ridx +$pidx C>$coeff< S>$species<\n";
+      # This debugs things
+      # print "$offset [$lidx ]$ridx +$pidx C>$coeff< S>$species<\n";
 
       # Now we store the species/coeff
       $coeffs->{species}->{$species} = $coeff;

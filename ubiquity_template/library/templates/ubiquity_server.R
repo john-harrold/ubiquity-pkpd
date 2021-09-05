@@ -7,6 +7,8 @@ require(ggplot2)
 require(foreach)
 require(doParallel)
 require(rhandsontable)
+require(grid)          
+require(gridExtra)
 
 #
 # If we're operating out of a "stand alone" directory we load the files from
@@ -1963,7 +1965,7 @@ update_simulation <- function(input, output, session) {
     # Running simulations
     # If check_variability is true
     # then we run stochastic simulations
-    tic()
+    sim_tic  = proc.time()
     system_log_debug_save(cfg, 
        file_name = 'app_pre_sim',
        values    = list(cfg=cfg, parameters=parameters))
@@ -2001,7 +2003,8 @@ update_simulation <- function(input, output, session) {
 
 
     gui_save_som(som, session)
-    telapsed = toc()
+    sim_toc  = proc.time()
+    telapsed =  (sim_toc - sim_tic)[["elapsed"]]
     user_log_entry(cfg, sprintf("Simulation complete (%s seconds)", var2string(telapsed, 1)))
     cfg$gui$sim_status = 'Fresh'
     # storing the sysel in the cfg variable

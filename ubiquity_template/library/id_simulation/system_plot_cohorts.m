@@ -92,6 +92,7 @@ spctr  = 1;
 cohorts = fieldnames(erp.cohorts); 
 
 for opidx = 1:length(erp.meta.outputs)
+  oname = erp.meta.outputs{opidx};
   figure(figctr); hold on;
   
   clear myylim;
@@ -195,6 +196,12 @@ for opidx = 1:length(erp.meta.outputs)
     else
       xlabel(chmodel.time, 'interpreter', 'none');
     end
+
+    if(isfield(op_plot_opts, 'title'))
+      title(op_plot_opts.title, 'interpreter', 'none');
+    else
+      title(oname, 'interpreter', 'none');
+    end
   
     if(isfield(op_plot_opts, 'ylabel'))
       ylabel(op_plot_opts.ylabel, 'interpreter', 'none');
@@ -296,7 +303,13 @@ for opidx = 1:length(erp.meta.outputs)
     set(gca, 'xscale', op_plot_opts.yscale);
     plot(bounds, bounds, '--k');
     prepare_figure('present');
-    title(oname, 'interpreter', 'none')
+
+    if(isfield(op_plot_opts, 'title'))
+      title(op_plot_opts.title, 'interpreter', 'none');
+    else
+      title(oname, 'interpreter', 'none');
+    end
+
     xlabel('Predicted')
     ylabel('Observed')
     legend(lh, ll, 'location', 'best', 'interpreter', 'none');
