@@ -5,6 +5,20 @@ This is a common changelog for the following repositories:
 - [ubiquity PKPD tools](https://github.com/john-harrold/ubiquity-pkpd)
 - [ubiquity R Package](https://github.com/john-harrold/ubiquity)
 
+## 2021-11-??
+
+### R Workflow
+- Removed some cruft (extra files that were no longer used and should have
+  been removed before)
+- Added documentation for creating user defined observation functions when running parameter estimation
+- Updated the reporting template to work with the development version of `onbrand`
+- Changed terminal messaging to use `cli`
+- Added termination criteria in estimation output
+
+### ubiquity 
+- Fixed wrapping issue in Fortran output where unwrappable strings resulted in infinte loop
+
+## 2021-05-05
 
 ### Matlab Workflow
 - Fixed bug in `system_plot_cohorts` where titles were not being placed on
