@@ -5,7 +5,7 @@ This is a common changelog for the following repositories:
 - [ubiquity PKPD tools](https://github.com/john-harrold/ubiquity-pkpd)
 - [ubiquity R Package](https://github.com/john-harrold/ubiquity)
 
-## 2021-11-??
+## 2021-12-31
 
 ### R Workflow
 - Removed some cruft (extra files that were no longer used and should have
@@ -14,9 +14,16 @@ This is a common changelog for the following repositories:
 - Updated the reporting template to work with the development version of `onbrand`
 - Changed terminal messaging to use `cli`
 - Added termination criteria in estimation output
+- Added template creation for NONMEM, Monolix, and nlmixr
 
 ### ubiquity 
 - Fixed wrapping issue in Fortran output where unwrappable strings resulted in infinte loop
+- Added the ability to specify `<EST:LT>` parameters to be estimated in the log space
+- Added the ability to specify `<EST:P>` parameters to be estimated leaving the others fixed
+- Deprecaited the `<GUIDE>` descriptor
+- Added nlmxir output target
+- Depreciated the CVTYP now using CVINTERP
+- Added system-testing.txt example 
 
 ## 2021-05-05
 

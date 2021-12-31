@@ -598,7 +598,8 @@ sfs}
 #' and corresponding write success (\code{write_file}), also a list element
 #' indicating the overall success of the function call (\code{isgood})
 #'
-#'@details The template argument can have the following values
+#'@details The template argument can have the following values for the R
+#'workflow:
 #'
 #' \itemize{
 #'  \item{"Simulation"}       produces \code{analysis_simulate.R}: R-Script named with placeholders used to run simulations
@@ -608,9 +609,17 @@ sfs}
 #'  \item{"Model Diagram"}    produces \code{system.svg}: SVG template for producing a model diagram (Goto \url{https://inkscape.org} for a free SVG editor)
 #'  \item{"Shiny Rmd Report"} produces \code{system_report.Rmd} and \code{test_system_report.R}: R-Markdown file used to generate report tabs for the Shiny App and a script to test it
 #'  \item{"myOrg"}            produces \code{myOrg.R}: R-Script for defining functions used within your organization
-#'  \item{"mrgsolve"}         produces \code{system_mrgsolve.cpp}: text file with the model and the currently selected parameter set in mrgsolve format  
-#'  \item{"Berkeley Madonna"} produces \code{system_berkeley_madonna.txt}: text file with the model and the currently selected parameter set in Berkeley Madonna format
+#'}
+#'
+#'And this will create files to use in other software:
+#'
+#' \itemize{
 #'  \item{"Adapt"}            produces \code{system_adapt.for} and \code{system_adapt.prm}: Fortran and parameter files for the currently selected parameter set in Adapt format.
+#'  \item{"Berkeley Madonna"} produces \code{system_berkeley_madonna.txt}: text file with the model and the currently selected parameter set in Berkeley Madonna format
+#'  \item{"nlmixr"}           produces \code{system_nlmixr.R} For the currently selected parameter set to define the system in the `nlmixr` format.
+#'  \item{"NONMEM"}           produces \code{system_nonmem.R} For the currently selected parameter set as a NONMEM conntrol stream.
+#'  \item{"Monolix"}          produces \code{system_monolix.txt} For the currently selected parameter set as a NONMEM conntrol stream.
+#'  \item{"mrgsolve"}         produces \code{system_mrgsolve.cpp}: text file with the model and the currently selected parameter set in mrgsolve format  
 #'}
 #'
 #'
@@ -639,9 +648,13 @@ system_fetch_template  <- function(cfg, template="Simulation", overwrite=FALSE, 
  allowed = c("Simulation", "Estimation", 
              "ShinyApp",   "Shiny Rmd Report",
              "NCA", 
-             "mrgsolve",   "Berkeley Madonna", 
-             "Adapt",      "myOrg", 
-             "Model Diagram")
+             "mrgsolve",   
+             "myOrg", 
+             "Model Diagram",
+             "Berkeley Madonna", 
+             "Adapt", "nlmixr",
+             "NONMEM", "Monolix",
+             "mrgsolve")
 
 
  # default value for the return variable
@@ -656,10 +669,10 @@ system_fetch_template  <- function(cfg, template="Simulation", overwrite=FALSE, 
    else {
      template_dir = file.path('library', 'templates')
    }
-   temp_directory = cfg$options$misc$temp_directory
+   temp_directory = cfg[["options"]][["misc"]][["temp_directory"]]
 
    # pulling the current parameter set
-   current_set = cfg$parameters$current_set
+   current_set = cfg[["parameters"]][["current_set"]]
   
    # building up the lists of sources and destinations
    sources      = c()
@@ -720,6 +733,21 @@ system_fetch_template  <- function(cfg, template="Simulation", overwrite=FALSE, 
      sources      = c(file.path(template_dir, sprintf("system.svg")))
      destinations = c("system.svg")
      write_file   = c(TRUE)
+   }
+   if(template == "NONMEM"){
+     sources      = c(file.path(temp_directory, sprintf("target_nonmem-%s.ctl",current_set)))
+     destinations = c("system_nonmem.ctl")
+     write_file   = c(TRUE, TRUE)
+   }
+   if(template == "Monolix"){
+     sources      = c(file.path(temp_directory, sprintf("target_monolix-%s.txt",current_set)))
+     destinations = c("system_monolix.txt")
+     write_file   = c(TRUE, TRUE)
+   }
+   if(template == "nlmixr"){
+     sources      = c(file.path(temp_directory, sprintf("target_nlmixr-%s.R",current_set)))
+     destinations = c("system_nlmixr.R")
+     write_file   = c(TRUE, TRUE)
    }
 
    # if overwrite ifs FALSE we check each of the destination files to see if
@@ -2722,7 +2750,7 @@ system_view <- function(cfg,field="all", verbose=FALSE) {
                      pad_string(paste(cfg$options$inputs$covariates[[covariate]]$times$values, collapse=" "), 10),
                      pad_string(      cfg$options$inputs$covariates[[covariate]]$times$units, 10)))
           msgs = c(msgs, sprintf("%s | %s | %s | %s",
-                     pad_string(sprintf('(%s)', cfg$options$inputs$covariates[[covariate]]$cv_type), 10),
+                     pad_string(sprintf('(%s)', cfg$options$inputs$covariates[[covariate]]$cv_interp), 10),
                      pad_string('levels', 10),
                      pad_string(paste(cfg$options$inputs$covariates[[covariate]]$values$values, collapse=" "), 10),
                      pad_string(      cfg$options$inputs$covariates[[covariate]]$values$units,  10)))
@@ -5496,7 +5524,7 @@ for(SIMINT_cv_name in names(SIMINT_cfg$options$inputs$covariates)){
   # the full covariate (time varying component)
   SIMINT_my_ff = make_forcing_function(SIMINT_my_cv$times$values,
                                        SIMINT_my_cv$values$values,
-                                       SIMINT_my_cv$cv_type, 
+                                       SIMINT_my_cv$cv_interp, 
                                        SIMINT_simulation_options$output_times,
                                        SIMINT_simulation_options$sample_forcing_delta)
   eval(parse(text=sprintf("SIMINT_forces$%s = SIMINT_my_ff", SIMINT_cv_name)))
@@ -5506,7 +5534,7 @@ for(SIMINT_cv_name in names(SIMINT_cfg$options$inputs$covariates)){
   # covariate evaluated at the initial condition and carried forward
   SIMINT_my_ff = make_forcing_function(SIMINT_my_cv$times$values[1],
                                        SIMINT_my_cv$values$values[1],
-                                       SIMINT_my_cv$cv_type, 
+                                       SIMINT_my_cv$cv_interp, 
                                        SIMINT_simulation_options$output_times,
                                        SIMINT_simulation_options$sample_forcing_delta)
   eval(parse(text=sprintf("SIMINT_forces$SIMINT_CVIC_%s = SIMINT_my_ff", SIMINT_cv_name)))
@@ -6355,14 +6383,16 @@ odtest = calculate_objective(cfg$estimation$parameters$guess, cfg, estimation=FA
         conv_text = conv_lookup[[conv_num]]
       }
     }
+    conv_desc = paste0("Exit status: (", conv_num, ") ", conv_text)
 
     vp(cfg, paste("Estimation Complete", sep=""), "h2")
     vp(cfg, paste("Duration: ", elapsed_time, " ", elapsed_units, sep=""))
-    vp(cfg, paste("Exit status: (", conv_num, ") ", conv_text, sep=""))
+    vp(cfg, conv_desc)
 
     # Keeping the convergence informaation 
     pest[["conv"]] = list(num  = conv_num,
-                          text = conv_text)
+                          text = conv_text,
+                          desc = conv_desc)
 
     # because each optimizer returns solutions in a different format
     # we collect them here in a common structure
@@ -6424,8 +6454,8 @@ odtest = calculate_objective(cfg$estimation$parameters$guess, cfg, estimation=FA
       files = generate_report(parameters = pest$estimate, 
                               ss         = pest$statistics_est, 
                               cfg        = cfg,
-                              conv_num   = conv_num,
-                              conv_text  = conv_text)
+                              conv_desc  = conv_desc)
+
       vp(cfg, "Contents of report.txt", fmt="h2")
       vp(cfg, files$report_file_contents, fmt="verbatim")
       
@@ -7018,8 +7048,7 @@ return(cfg)
 #'@param cfg ubiquity system object    
 #'@param parameters list of parameter estimates
 #'@param ss output from solution_statistics 
-#'@param conv_num numerical convergence criteria
-#'@param conv_text textual convergence criteria
+#'@param conv_desc description of convergence criteria
 #'
 #'@return List with the following elements: 
 #'
@@ -7029,7 +7058,7 @@ return(cfg)
 #'   \item \code{parameters_all_file} name of CSV file with all parameters 
 #'   \item \code{parameters_est_file} name of CSV file with only the estimates 
 #'}
-generate_report  <- function( parameters, ss, cfg, conv_num, conv_text){
+generate_report  <- function( parameters, ss, cfg, conv_desc){
 
 
 parameters_full = fetch_full_parameters(cfg=cfg, pest=parameters)
@@ -7042,7 +7071,7 @@ parameters_all_file = file.path(output_directory,"parameters_all.csv")
 parameters_est_file = file.path(output_directory,"parameters_est.csv")
 
 notes_str = 'F=Fixed parameter, L=estimate at/near lower bound, U=estimate at/near upper bound'; 
-notes_str = paste0(notes_str, "; Exit status: (", conv_num, ") ", conv_text)
+notes_str = paste0(notes_str, "; ", conv_desc)
 
 cn =  c('pname', 'guess',  'estimate', 'cvpct', 'cilb', 'ciub', 'units', 'notes')
 
@@ -7160,7 +7189,7 @@ rl = c(rl, '', '', '',
 rl = c(rl, sprintf('OBJ = %s', var2string(maxlength=1, vars=ss$objective)))
 rl = c(rl, sprintf('AIC = %s', var2string(maxlength=1, vars=ss$aic)))
 rl = c(rl, sprintf('BIC = %s', var2string(maxlength=1, vars=ss$bic)))
-rl = c(rl, paste0("Exit status: (", conv_num, ") ", conv_text))
+rl = c(rl, conv_desc)
 
 fileConn<-file(report_file)
 writeLines(rl, fileConn)
@@ -9179,6 +9208,25 @@ if(isgood){
         }
       }
     }
+
+
+    # Summarizing estimation details
+    if(!is.null(pe$report$parameters_est)){
+
+      elist = c("1", paste0("Objective: ", pe[["obj"]]),
+                "1", paste0("Objective: ", pe[["conv"]][["desc"]]))
+
+      cfg = system_rpt_add_slide(cfg, 
+        rptname  = rptname,
+        template = "content_list",
+        elements = list(
+           title=
+             list(content = "Estimation Details",
+                  type    = "text"),
+           content_body=
+             list(content = elist,
+                  type    = "list")))
+    }
   }
   #---------------------------
   if("Word" == rpttype){
@@ -9193,6 +9241,8 @@ if(isgood){
           content       = list(style   = "Normal",
                                text    = "Parameter Estimates"))
 
+        # Adding notes to the parameters table:
+        ptab[["notes"]] = pe[["conv"]][["desc"]]
         cfg = system_rpt_add_doc_content(cfg=cfg,
           rptname       = rptname,
           type          = "flextable",

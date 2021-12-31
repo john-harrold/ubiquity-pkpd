@@ -13,15 +13,15 @@ for cov_idx = 1:length(cfg.options.inputs.covariate_names)
 
   % constructing time varying inputs from
   % the covariates 
-  if(strcmp(mycov.cv_type, 'linear'))
+  if(strcmp(mycov.cv_interp, 'linear'))
     simulation_options.mytimevarying(tvcounter).name        = mycov_str;          
     simulation_options.mytimevarying(tvcounter).value(1,:)  = mycov.times.values;
     simulation_options.mytimevarying(tvcounter).value(2,:)  = mycov.values.values;
-  elseif(strcmp(mycov.cv_type, 'step'))
+  elseif(strcmp(mycov.cv_interp, 'step'))
     simulation_options.mytimevarying(tvcounter).name        = mycov_str;          
     simulation_options.mytimevarying(tvcounter).value       = make_step([mycov.times.values; mycov.values.values], simulation_options.output_times)';
   else
-    vp(cfg, sprintf('Unknown covariate type (%s) for covariate (%s)', mycov.cv_type, mycov_str));
+    vp(cfg, sprintf('Unknown covariate type (%s) for covariate (%s)', mycov.cv_interp, mycov_str));
   end
   tvcounter = tvcounter +1;
 

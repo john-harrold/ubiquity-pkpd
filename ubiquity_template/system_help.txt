@@ -547,6 +547,24 @@
 #
 #  <IIVCOR:ETACL:ETAV> 0.01
 #
+#
+#
+# Parameter estimation information <EST:?>? 
+# -----------------------------------------
+# This descriptor specifies information about parameters for estimation.
+# Sometimes it is necessary to estimate parameters in the log space. Here you
+# can specify the parmaeters to log transform (LT). If you wanted to log
+# transform parameters P1, P2, and P3 you would do the following:
+#
+# <EST:LT> P1; P2; P3
+#
+# By default all parameters will be specified for estimation. If you want to
+# estimate a subset of parameters (P), say P1 and p2, you can use the following:
+#
+# <EST:P> P1; P2
+#
+# Applies to the following targets: nlmixr, and NONMEM
+#
 # Variance Parameters <VP>
 # ------------------------
 #   
@@ -554,12 +572,6 @@
 #
 #   #    name       value    lb     ub   units  editable type
 #   <VP> Slope_Cp   0.1      eps    inf   1/hr  yes      Variance
-#
-# Variance Error model  <VE:?> ?
-# 
-# The variance error model is assigned to an output and is an equations
-# written in terms of the output and the variance parameters. It take the
-# general form of:
 #
 # <VE:OUTPUT> expression
 # ----------------------
@@ -573,6 +585,26 @@
 # <VE:Cp>   Slope_Cp*SIMINT_POWER[PRED][2.0]
 #
 # Where PRED is the prediction of Cp.
+#
+# <OE:OUTPUT> expression
+# ----------------------
+#
+# This defines the output error model. The OUTPUT can be the name of any
+# output defined with <O>. The expression is a model type (add for additive,
+# and prop for proportional) with an equal sign and the name of the variance
+# paramter (<VP>) to use. To use more than one error model type you separate
+# the statments with ";" For example if you define the variance parameters
+# add_err and prop_err and want to use a proportional error model to the
+# output Cp you would use:
+#
+# <OE:Cp> prop=prop_err
+#
+# To use both additive and proportional error the following would work:
+#
+# <OE:Cp> add=add_err; prop=prop_err
+#
+#
+#
 #
 # Data file specification <DATA:?:?>?
 # -----------------------------------
@@ -643,17 +675,18 @@
 # of amounts. You can tell the system to automatically convert certain states
 # into amounts using the following:
 #
-# <AMTIFY> CONC; AMT; REL
+# <AMTIFY> CONC; AMT; VOL
 #
-# Where CONC is the concentration that the model was developed in and AMT is
-# the name of the amount to be used in it's place.  Lastly you need to define
-# the relationship between these to with REL. For example, if you modeled the
-# central compartment as a concentration (Cp) but wanted to use the amount
-# (Ap) instead, and the volume of the central compartment is Vp the following
-# would be used:
+# Where CONC is the concentration that the model was developed in and AMT is the
+# name of the amount to be used in it's place.  Lastly you need to define the
+# volume to scale by (VOL) . For example, if you modeled the central compartment
+# as a concentration (Cp) but wanted to use the amount (Ap) instead, and the
+# volume of the central compartment is Vp the following would be used:
 #
-# <AMTIFY> Cp; Ap; Ap/Vp 
+# <AMTIFY> Cp; Ap; Vp 
 #
+#
+# This applies to the following output targets: nlmixr, NONMEM
 #
 # Default options <OPT:?> 
 # -----------------------
@@ -667,10 +700,6 @@
 #      <OPT:xlim> [0 100]
 #      <OPT:ylim> [1e-5 1e5]
 #
-#   The x and y scales
-#      <OPT:xscale> linear
-#      <OPT:yscale> log
-#
 #   Preferred timescale for GUI and plotting
 #   # if weeks is defined using the <TS> option above
 #   # then the following will set weeks as the default 
@@ -678,65 +707,25 @@
 #
 #      <OPT:TS>  weeks
 #
-#
-#  <OPT:callback_gui>
-#  # optional callback statement that is evaluated before performing the
-#  # simulation in the GUI. You must create the function which can use the
-#  # following variables from the workspace:
-#
-#  SIMINT_handles - handles to the different elements of the gui
-#  SIMINT_cfg     - result of auto_fetch_system_information
-#  SIMINT_parameters
-#                 - current parameter set including changes made in the GUI,
-#                   use SIMINT_cfg to identify the indices of specific
-#                   parameters
-#  SIMINT_simulation_options 
-#                 - the components which control the execution of the
-#                   simulation (see help for run_simulation_generic.m for what
-#                   the fields in this data structure mean).
-#      
-#  <OPT:callback_gui> [SIMINT_simulation_options] = update_dosing(SIMINT_cfg, SIMINT_parameters, SIMINT_simulation_options, SIMINT_handles);
-#
-# Creating visual guide lines with <GUIDE>
-# ---------------------------------------
-#
-# Begin a line with the string <GUIDE> and the line has a semicolon delimited
-# format of:
-#
-# <GUIDE>  type; name; value, marker, color
-#
-#   type   - can be vertical or horiztonal
-#   name   - is a unique identifer
-#   value  - is the vertical or horizontal level where the guide will be drawn
-#   marker - this is the matlab marker specification in single quotes
-#   color  - is either a standard matlab color specification in single quotes
-#            or an RGB specification in Matlab vector format
-#
-# Examples:
-#
-#         type        name        y      marker    color
-# <GUIDE>  horizontal; level   ; 10.0;   '-.';     'g'
-# <GUIDE>  vertical;   time    ; 15.0;   '-.';     [170  0 255]./255
-#
-#
 # NONMEM specific options
 # -----------------------
 #
 # It may be desirable to drop specific columns from a dataset and it may also
-# be necessary to rename columns inthe dataset. For example to drop the column
+# be necessary to rename columns in the dataset. For example to drop the column
 # UNIT and rename the column ATIME to TIME, the following two lines can be
 # used:
 #
 # <NONMEM:INPUT:DROP:UNIT>
 # <NONMEM:INPUT:RENAME:ATIME> TIME
 #
-# To append ignore information to the data declaration use the following
-# descriptor: 
+# To append nonmem data specifications such as ignore information to the data
+# declaration use the following descriptor: 
 # 
 # <NONMEM:DATA> ?
 #
-# Where the ? indicates an ignore statement. For example the following will
-# ignore records that begin with text (@) and records that have an ID > 0
+# Where the ? indicates a statement to pass onto NONMEM. For example the
+# following will ignore records that begin with text (@) and records that have
+# an ID > 0
 #
 # <NONMEM:DATA> IGNORE=@
 # <NONMEM:DATA> IGNORE=(ID.GT.0)
