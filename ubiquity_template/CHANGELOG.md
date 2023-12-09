@@ -5,6 +5,10 @@ This is a common changelog for the following repositories:
 - [ubiquity PKPD tools](https://github.com/john-harrold/ubiquity-pkpd)
 - [ubiquity R Package](https://github.com/john-harrold/ubiquity)
 
+## 2023-12-09
+- Fixed bug in nlmxir2 output where comments in IIV broke things
+- Fixed bug in R build where spaces in file path broke compilation
+
 ## 2022-03-14
 - updated custom ubiquity apps (`ubiquity_server_custom.R`)
 
