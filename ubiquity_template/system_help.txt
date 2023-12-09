@@ -547,7 +547,13 @@
 #
 #  <IIVCOR:ETACL:ETAV> 0.01
 #
+# Variance Parameters <VP>
+# ------------------------
+#   
+#   The format here is the same as the format for paramters (<P>) above:
 #
+#   #    name       value    lb     ub   units  editable type
+#   <VP> Slope_Cp   0.1      eps    inf   1/hr  yes      Variance
 #
 # Parameter estimation information <EST:?>? 
 # -----------------------------------------
@@ -564,14 +570,6 @@
 # <EST:P> P1; P2
 #
 # Applies to the following targets: nlmixr, and NONMEM
-#
-# Variance Parameters <VP>
-# ------------------------
-#   
-#   The format here is the same as the format for paramters (<P>) above:
-#
-#   #    name       value    lb     ub   units  editable type
-#   <VP> Slope_Cp   0.1      eps    inf   1/hr  yes      Variance
 #
 # <VE:OUTPUT> expression
 # ----------------------

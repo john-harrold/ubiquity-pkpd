@@ -411,8 +411,8 @@ if num_bolus > 0
     % Adding a sample point the next bolus event to prevent linear
     % interpolation between the sample point just before the bolus. This is
     % done if the last two points are far enough apart (more than 1000*eps)
-    if(abs(output_times(end) - output_times(end-1)) > 1000*eps)
-      output_times = [output_times(1:end-2); (output_times(end)-500*eps); output_times(end)];
+    if(abs(output_times(end) - output_times(end-1)) > 2*250000000*eps)
+      output_times = [output_times(1:end-2); (output_times(end)-250000000*eps); output_times(end)];
     end
 
 
@@ -448,8 +448,8 @@ if num_bolus > 0
           % Adding a sample point the next bolus event to prevent linear
           % interpolation between the sample point just before the bolus
           % done if the last two points are far enough apart (more than 1000*eps)
-          if(abs(output_times(end) - output_times(end-1)) > 1000*eps)
-            output_times = [output_times(1:end-2); (output_times(end)-500*eps); output_times(end)];
+          if(abs(output_times(end) - output_times(end-1)) > 2*250000000*eps)
+            output_times = [output_times(1:end-2); (output_times(end)-250000000*eps); output_times(end)];
           end
         else
           output_times = linspace(simulation_options.bolus_inputs(1,bolus_id),  max(simulation_options.output_times),10)';
@@ -637,9 +637,9 @@ for i = 1:numel(switch_times)
       infusion = [switch_times(i) magnitude(i)];
     else
       if(switch_times(i) == 0)
-        delta         =  250*eps;
+        delta         =  250000000*eps;
       else
-        delta         =  250*eps*switch_times(i);
+        delta         =  250000000*eps*switch_times(i);
       end
       infusion = [infusion
                   (switch_times(i)-delta)   magnitude(i-1)

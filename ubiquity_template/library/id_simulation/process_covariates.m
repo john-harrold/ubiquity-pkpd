@@ -47,9 +47,9 @@ for i = 1:numel(switch_times)
       step_val = [switch_times(i) magnitude(i)];
     else
       if(switch_times(i) == 0)
-        delta         = 250*eps;
+        delta         = 250000000*eps;
       else
-        delta         = 250*eps*switch_times(i);
+        delta         = 250000000*eps*switch_times(i);
       end
       step_val = [step_val
                   (switch_times(i)-delta)   magnitude(i-1)

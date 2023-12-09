@@ -5,6 +5,9 @@ This is a common changelog for the following repositories:
 - [ubiquity PKPD tools](https://github.com/john-harrold/ubiquity-pkpd)
 - [ubiquity R Package](https://github.com/john-harrold/ubiquity)
 
+## 2022-03-14
+- updated custom ubiquity apps (`ubiquity_server_custom.R`)
+
 ## 2021-12-31
 
 ### R Workflow

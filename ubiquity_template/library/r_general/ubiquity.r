@@ -83,10 +83,10 @@ if(!file.exists(system_file)){
 
  
 # model base file used for the c library
+system_file_full = normalizePath(system_file, winslash = "/")
 if(ubiquity_app){
   system_checksum = "app_base"
 } else {
-  system_file_full = normalizePath(system_file)
   system_checksum = as.character(digest::digest(system_file_full, algo=c("md5")))
 }
 
@@ -94,6 +94,7 @@ c_libfile_base    =  paste("ubiquity_", system_checksum, sep="")
 c_libfile_base_c  =  paste("ubiquity_", system_checksum, ".c", sep="")
 c_libfile_base_o  =  paste("ubiquity_", system_checksum, ".o", sep="")
 
+temporary_directory = normalizePath(temporary_directory, winslash="/")
 temp_directory  = file.path(temporary_directory, system_checksum)
 
 # if the temporary directory does not exist we create it
@@ -160,7 +161,9 @@ if(file.exists(system_file)){
   }
 
   
-  build_command = sprintf('%s "%s" "%s" "%s" "%s" "%s" "%s"', perlcmd, build_script_pl, system_file, temp_directory, templates, distribution, c_libfile_base)
+  build_command = sprintf('%s "%s" "%s" "%s" "%s" "%s" "%s"', 
+                          perlcmd, build_script_pl, system_file_full, 
+                          temp_directory, templates, distribution, c_libfile_base)
   output = system(build_command, intern=TRUE)
   
   # CFILE is used to indicate if we have compiled and loaded the CFILE successfully 
@@ -202,6 +205,9 @@ if(file.exists(system_file)){
   if(verbose == TRUE){
     cli::cli_alert("Compiling C version of system")
   }
+  # Command used to compile C version of the model:
+  compile_cmd =  paste(file.path(R.home("bin"), "R"), ' CMD SHLIB "', file.path(temp_directory, c_libfile_base_c), '"', sep="")
+
   if(file.exists(file.path(temp_directory, 'r_ode_model.c'))){
     # storing the working directory and 
     # changing the working directory to the
@@ -212,7 +218,7 @@ if(file.exists(system_file)){
               to   =file.path(temp_directory, c_libfile_base_c), 
               overwrite=TRUE)
     # Compling the C file
-    output =  system(paste('R CMD SHLIB "', file.path(temp_directory, c_libfile_base_c), '"', sep=""), intern=TRUE) 
+    output =  system(compile_cmd, intern=TRUE) 
     if("status" %in% names(attributes(output))){
       if(verbose == TRUE){
         if(debug == TRUE){
@@ -246,10 +252,12 @@ if(file.exists(system_file)){
     CFILE = FALSE
   }
   
+
   if(CFILE == FALSE){
     if(verbose == TRUE){
       cli::cli_alert_warning("C model not available. Compile manually using the") 
       cli::cli_alert_warning("following command to debug:          ") 
+     #cli::cli_alert_warning(paste("system('", compile_cmd,"')"))
       cli::cli_alert_warning(sprintf("system('R CMD SHLIB \"%s%sr_ode_model.c\"')", temp_directory, .Platform$file.sep))
     }
   }
@@ -4042,8 +4050,8 @@ return(subject)
 #'
 #'@param SIMINT_parameters parameters vector containing the typical values
 #'@param SIMINT_cfg ubiquity system object    
-#'@param SIMINT_PARAMETERS_TV  Typical value of the parameter in question
-#'@param SIMINT_PARAMETERS_IIV_VALUE sample from mvr distribution
+#'@param SIMINT_PARAMETER_TV  Typical value of the parameter in question
+#'@param SIMINT_IIV_VALUE sample from mvr distribution
 #'@param SIMINT_equation equation relating IIV and typical value to the parameter value with variability
 #'
 #'@return parameter value with the variability applied
@@ -5570,6 +5578,10 @@ if("yes" == SIMINT_simulation_options$include_important_output_times){
 } else {
   SIMINT_output_times_actual = SIMINT_simulation_options$output_times}
 
+# RN:: round to 10 decimals (failing to do this results in duplicate values)
+# fixes the LSODA error
+# Error in lsoda(y, times, func, parms, ...) : illegal input detected before taking any integration steps - see written message
+SIMINT_output_times_actual = sort(unique(round(SIMINT_output_times_actual,10)))
 
 if(!SIMINT_isgood){
   vp(SIMINT_cfg, "run_simulation_ubiquity()")
@@ -5632,7 +5644,7 @@ if("r-file" == SIMINT_simulation_options$integrate_with){
   SIMINT_MAP_tic = proc.time()
   SIMINT_simout  = eval(parse(text=paste0(
                               "system_map_output_", 
-                              cfg[["options"]][["misc"]][["c_libfile_base"]],
+                              SIMINT_cfg[["options"]][["misc"]][["c_libfile_base"]],
                               "(SIMINT_cfg, SIMINT_simout, SIMINT_parameters, SIMINT_eventdata)")))
   SIMINT_MAP_toc = proc.time()
   # Adding the timing for the mapping
@@ -8830,7 +8842,7 @@ TSsys}
 #'\item{"dsraw"} Dataframe with the filtered raw data that was used
 #'\item{"input_records"} Rows from \code{dsraw} containing the input information
 #'\item{"obs_records"} Rows from \code{dsraw} containing the observation information
-#'\item{"sids"} Subject ids found in code{dsraw}
+#'\item{"sids"} Subject ids found in \code{dsraw}
 #'\item{"TSsys"} system time scale used in the dataset
 #'}
 system_nm_check_ds = function(cfg, 
@@ -9433,7 +9445,8 @@ if("step" == type){
 
  # The delta here is the switching time between steps. Below calculates it as
  # .1% of the smallest time between steps. 
- delta         = 250000*.Machine$double.eps
+ # delta         = 250000*.Machine$double.eps
+  delta         = 250000000*.Machine$double.eps 
  if(length(times) > 1){
     offsets = ( times[2:length(times)] - times[1:length(times)-1])
     delta = sample_delta_mult*min(offsets)
@@ -9647,7 +9660,7 @@ void derivs (int *neq, double *t, double *y, double *ydot,
       dyn.unload(getLoadedDLLs()$mymod[["path"]])}
 
     # temporary working direcotry
-    twd = tempdir()
+    twd = normalizePath(tempdir(), winslash = "/")
     dyn_file = file.path(twd, paste("mymod", .Platform$dynlib.ext, sep = ""))
     c_file   = file.path(twd, "mymod.c")
     o_file   = file.path(twd, "mymod.o")
@@ -9668,7 +9681,8 @@ void derivs (int *neq, double *t, double *y, double *ydot,
     
     # Compiling the C file
     if(verbose == TRUE){ message("#> Attempting to compile C file")}
-    compile_result = system(paste("R CMD SHLIB ", c_file), ignore.stderr=TRUE, ignore.stdout=TRUE)
+    compile_result = system(paste(file.path(R.home("bin"), "R")," CMD SHLIB ", c_file), ignore.stderr=TRUE, ignore.stdout=TRUE)
+    #compile_result = system(paste("R CMD SHLIB ", c_file), ignore.stderr=TRUE, ignore.stdout=TRUE)
 
     if(compile_result == 0){
       if(verbose == TRUE){ message("#>    > Success: C file compiled")}
@@ -9908,9 +9922,9 @@ res}
 #'@param dsinc (NOT CURRENTLY IMPLEMENTED) optional character vector of columns from the dataset to include in the output summary (default \code{NULL})
 #'@return cfg ubiquity system object with the NCA results and if the analysis name is specified:
 #' \itemize{
-#'     \item{output/{analysis_name}-nca_summary-pknca.csv} NCA summary 
-#'     \item{output/{analysis_name}-pknca_summary.csv} Raw output from PKNCA with subject and dose number columns appended 
-#'     \item{output/{analysis_name}-nca_data.RData} objects containing the NCA summary and a list with the ggplot grobs
+#'     \item{output/analysis_name-nca_summary-pknca.csv} NCA summary 
+#'     \item{output/analysis_name-pknca_summary.csv} Raw output from PKNCA with subject and dose number columns appended 
+#'     \item{output/analysis_name-nca_data.RData} objects containing the NCA summary and a list with the ggplot grobs
 #' }
 #'@seealso Vignette on NCA (\code{vignette("NCA", package = "ubiquity")}) 
 system_nca_run = function(cfg, 
@@ -11160,7 +11174,7 @@ res}
 #'@param cfg ubiquity system object
 #'@param analysis_name string containing the name of the NCA analysis (default \code{'analysis'})
 #'
-#'@return List with a data frame of the NCA results (\code{NCA_sum}), the raw
+#'@return List with a data frame of the NCA results (\code{NCA_summary}), the raw
 #' output from PKNCA (\code{PKNCA_results}), and also a list element indicating the
 #' overall success of the function call (\code{isgood})
 #'@seealso Vignette on NCA (\code{vignette("NCA", package = "ubiquity")}) 
