@@ -569,7 +569,7 @@
 #
 # <EST:P> P1; P2
 #
-# Applies to the following targets: nlmixr, and NONMEM
+# Applies to the following targets: nlmixr
 #
 # <VE:OUTPUT> expression
 # ----------------------
@@ -704,27 +704,3 @@
 #   # for generated output
 #
 #      <OPT:TS>  weeks
-#
-# NONMEM specific options
-# -----------------------
-#
-# It may be desirable to drop specific columns from a dataset and it may also
-# be necessary to rename columns in the dataset. For example to drop the column
-# UNIT and rename the column ATIME to TIME, the following two lines can be
-# used:
-#
-# <NONMEM:INPUT:DROP:UNIT>
-# <NONMEM:INPUT:RENAME:ATIME> TIME
-#
-# To append nonmem data specifications such as ignore information to the data
-# declaration use the following descriptor: 
-# 
-# <NONMEM:DATA> ?
-#
-# Where the ? indicates a statement to pass onto NONMEM. For example the
-# following will ignore records that begin with text (@) and records that have
-# an ID > 0
-#
-# <NONMEM:DATA> IGNORE=@
-# <NONMEM:DATA> IGNORE=(ID.GT.0)
-#
