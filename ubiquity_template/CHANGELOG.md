@@ -6,6 +6,9 @@ This is a common changelog for the following repositories:
 - [ubiquity R Package](https://github.com/john-harrold/ubiquity)
 
 ## 2023-12-09
+- Removed the NONMEM and Monolix outputs
+
+## 2023-12-09
 - Fixed bug in nlmxir2 output where comments in IIV broke things
 - Fixed bug in R build where spaces in file path broke compilation
 
