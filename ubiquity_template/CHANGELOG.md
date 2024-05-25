@@ -7,6 +7,7 @@ This is a common changelog for the following repositories:
 
 ## 2023-12-09
 - Removed the NONMEM and Monolix outputs
+- Added translation of rxode2 output into NONMEM and Monolix outputs 
 
 ## 2023-12-09
 - Fixed bug in nlmxir2 output where comments in IIV broke things

@@ -796,14 +796,11 @@ sub dump_nlmixr
       } else {
         if(grep( /^$pname$/, @{$cfg->{options}->{est}->{lt}})){
           $m_ele->{SYSTEM_PARAMS_TV}  .= $indent."TV_".$pname.&fetch_padding($pname, $cfg->{parameters_length}).' =   log('.$pvstr.")\n";
-          $pname_trans   = "exp(TV_$pname)";
         } else {
           $m_ele->{SYSTEM_PARAMS_TV}  .= $indent."TV_".$pname.&fetch_padding($pname, $cfg->{parameters_length}).' = '.$pvstr."\n";
-          $pname_trans   = "TV_$pname";
         }
+        $pname_trans   = "TV_$pname";
       }
-
-
        
       # I the model portion we create the actual named parameters:
       if(!grep( /^$pname$/, @{$cfg->{parameters_variance_index}})){
@@ -812,6 +809,15 @@ sub dump_nlmixr
           # This creates the algebraic relationnship between the IIV term and
           # the typical value:
           $tv_trans = &make_iiv($cfg, $pname, 'rproject', $parameter_set);
+
+          # IF the parameter is log transformed and the distribution is log
+          # normal we move the parameter name into the exponential to make
+          # mu-referencing work correctly
+          my $distribution = $cfg->{iiv}->{$parameter_set}->{parameters}->{$pname}->{distribution};
+          if(grep( /^$pname$/, @{$cfg->{options}->{est}->{lt}}) and $distribution eq 'LN'){
+            $tv_trans =~ s#SIMINT_PARAMETER_TV\*##g;
+            $tv_trans =~ s#SIMINT_IIV_VALUE#SIMINT_PARAMETER_TV + SIMINT_IIV_VALUE#g;
+          }
           $tv_trans =~ s#SIMINT_PARAMETER_TV#$pname_trans#g;
           $tv_trans =~ s#SIMINT_IIV_VALUE#$cfg->{iiv}->{$iiv_set}->{parameters}->{$pname}->{iiv_name}#g;
           $m_ele->{SYSTEM_PARAMS} .= $tv_trans."\n";
