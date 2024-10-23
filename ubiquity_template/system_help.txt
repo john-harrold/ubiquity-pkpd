@@ -571,18 +571,21 @@
 #
 # Applies to the following targets: nlmixr
 #
-# <VE:OUTPUT> expression
-# ----------------------
+#-----------------------------------
+# The <VE:?> delimiter has been deprecaited. Use OE below to define the variance
+# in terms of output error.
+# # <VE:OUTPUT> expression
+# # ----------------------
+# #  This describes the residual error in terms of a variance model. This is used
+# #  in ADAPT, Matlab and R. Where the OUTPUT is the name of the output defined
+# #  above (<O>) and expression is the mathematical expression. For example to
+# #  model the error of an output Cp as proportional to the square of Cp we would
+# #  use the following:
 #
-# This describes the residual error in terms of a variance model. This is used
-# in ADAPT, Matlab and R. Where the OUTPUT is the name of the output defined
-# above (<O>) and expression is the mathematical expression. For example to
-# model the error of an output Cp as proportional to the square of Cp we would
-# use the following:
+# #  <VE:Cp>   Slope_Cp*SIMINT_POWER[PRED][2.0]
 #
-# <VE:Cp>   Slope_Cp*SIMINT_POWER[PRED][2.0]
-#
-# Where PRED is the prediction of Cp.
+# #  Where PRED is the prediction of Cp.
+#-----------------------------------
 #
 # <OE:OUTPUT> expression
 # ----------------------
@@ -600,9 +603,6 @@
 # To use both additive and proportional error the following would work:
 #
 # <OE:Cp> add=add_err; prop=prop_err
-#
-#
-#
 #
 # Data file specification <DATA:?:?>?
 # -----------------------------------

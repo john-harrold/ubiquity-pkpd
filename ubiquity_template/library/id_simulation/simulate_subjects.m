@@ -131,7 +131,6 @@ if(isfield(cfg.options.stochastic, 'outputs'))
       output_names(end+1) = {sprintf('SIOE_%s', output_name)};
     end
   end
-
 end
 
 

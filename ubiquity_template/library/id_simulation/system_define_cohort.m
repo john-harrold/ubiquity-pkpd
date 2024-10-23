@@ -503,9 +503,18 @@ if(isfield(cohort, 'outputs'))
       % variance component
       % 
       if(~isfield(output.model, 'variance'))
-        isgood = false;
-        vp(cfg, sprintf('Error: For the output >%s< the model variance must be specified', outputs{opidx}));
-        vp(cfg, sprintf('       cohort.outputs.%s.model.variance = ''PRED^2''; ', outputs{opidx}));
+        if(isfield(cfg.ve, output.model.value))
+          output.model.variance = getfield(cfg.ve, output.model.value)
+        else
+          vp(cfg, sprintf('Warning: For the output >%s< the model variance was not specified. You can ', outputs{opidx}));
+          vp(cfg, sprintf('         do this two ways. Either when defining the cohort:'))
+          vp(cfg, sprintf(' '))
+          vp(cfg, sprintf('           cohort$outputs$%s$model$variance = "PRED^2" ', outputs{opidx}))
+          vp(cfg, sprintf(' '))
+          vp(cfg, sprintf('         Or in the system file using the <OE:?> descriptor.'))
+          vp(cfg, sprintf('         Defaulting to PRED^2.'))
+          output.model.variance = "PRED^2";
+        end
       end
     else
       isgood = false;
