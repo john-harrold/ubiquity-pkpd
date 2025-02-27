@@ -17,7 +17,6 @@
 #'@importFrom flextable theme_vanilla theme_booktabs theme_tron theme_vader theme_zebra
 #'@importFrom parallel stopCluster makeCluster
 #'@importFrom readxl read_xls read_xlsx
-#'@importFrom magrittr "%>%"
 #'@importFrom PKNCA PKNCA.options PKNCAconc PKNCAdose PKNCAdata pk.nca get.interval.cols
 #'@importFrom utils capture.output read.csv read.delim txtProgressBar setTxtProgressBar write.csv tail packageVersion sessionInfo
 #'@importFrom stats median qt var sd
@@ -758,6 +757,8 @@ system_fetch_template  <- function(cfg, template="Simulation", overwrite=FALSE, 
      write_file   = c(TRUE)
    }
    if(template == "NONMEM" || template == "Monolix" ){
+     # Needed because capture is created in an eval
+     capture    = NULL
      deps_found = TRUE
      # Walking through the dependencies to make sure everything is needed
      if(system.file(package="rxode2") == ""){
@@ -10771,7 +10772,6 @@ system_nca_summary = function(cfg,
                           table_theme       = "theme_zebra"
                           ){
 
-invisible(system_req("magrittr"))
 invisible(system_req("dplyr"))
 invisible(system_req("flextable"))
 # Setting defaults for the function
@@ -11020,16 +11020,16 @@ if(isgood){
   #------------------------------------------
   # Creating the flextable object
   sum_table_ft = 
-       flextable::flextable(rows_data)                       %>% 
-       flextable::delete_part(part = "header")               %>%
+       flextable::flextable(rows_data)                       |>  
+       flextable::delete_part(part = "header")               |>  
        flextable::add_header(values =as.list(rows_header))  
 
   # If the user specified a summary row we add that here:
   if(!is.null(summary_stats)){
-    sum_table_ft = sum_table_ft %>% flextable::add_footer(values =as.list(rows_summary)) 
+    sum_table_ft = sum_table_ft |>  flextable::add_footer(values =as.list(rows_summary)) 
   } 
   if(!is.null(table_theme)){
-    eval(parse(text=paste("sum_table_ft = sum_table_ft %>% flextable::", table_theme, "()", sep="")))
+    eval(parse(text=paste("sum_table_ft = sum_table_ft |>  flextable::", table_theme, "()", sep="")))
   }
   #------------------------------------------
   # Applying markdown formatting
